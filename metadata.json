@@ -1,0 +1,6 @@
+{
+  "name": "SMC Gold Bot — Institutional XAUUSD Terminal",
+  "description": "Institutional-grade Smart Money Concepts (SMC) algorithmic trading engine and dashboard for XAUUSD with order blocks, fair value gaps, market structure, and confluence scoring.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

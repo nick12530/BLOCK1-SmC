@@ -1,15 +1,14 @@
 /**
  * HelpCenterModal.tsx - Comprehensive Institutional Knowledge Base & Help Centre
- * Professionally arranged with:
- * 1. Valid & Profitable Signal Checklist (The 6 Institutional Verification Gates)
- * 2. Dealing Range & Equilibrium (Discount vs Premium Explained)
- * 3. Gold Spot Price vs MT5 Account Capital (Why there are two numbers at the top)
- * 4. Complete SMC Abbreviations Index (+OB, -OB, MT, BOS, CHoCH, FVG, TP, SL, EQ, RR)
- * 5. Standalone Phone Installation (PWA for iOS & Android)
- * 6. MetaTrader 5 (MT5) Auto-Execution Connector
+ * Upgraded with advanced item selectors and search:
+ * - Search bar across all SMC concepts, gates, and mechanics
+ * - Responsive segmented category item selectors
+ * - Full coverage: 6 Verification Gates, Dealing Range / Equilibrium,
+ *   Balances & Margins, Glossary, Mobile PWA, MT5 Bridge
+ * - Clean Back to Terminal and Done dismissal buttons
  */
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   X,
   BookOpen,
@@ -22,6 +21,7 @@ import {
   AlertTriangle,
   Compass,
   ArrowLeft,
+  Search,
 } from 'lucide-react';
 
 interface HelpCenterModalProps {
@@ -39,6 +39,23 @@ type TabType =
   | 'phone_pwa'
   | 'mt5';
 
+interface TabItem {
+  id: TabType;
+  num: string;
+  title: string;
+  desc: string;
+  icon: React.ComponentType<{ className?: string }>;
+}
+
+const TABS: TabItem[] = [
+  { id: 'valid_signals', num: '01', title: 'Signal Checklist', desc: '6 verification gates', icon: Zap },
+  { id: 'dealing_range', num: '02', title: 'Dealing Range & EQ', desc: 'Discount vs Premium zones', icon: Compass },
+  { id: 'balances', num: '03', title: 'Balances & Margin', desc: 'Capital & leverage guide', icon: DollarSign },
+  { id: 'abbreviations', num: '04', title: 'SMC Glossary', desc: 'OB, BOS, CHoCH, FVG', icon: Layers },
+  { id: 'phone_pwa', num: '05', title: 'Mobile App (PWA)', desc: 'Install on iOS & Android', icon: Smartphone },
+  { id: 'mt5', num: '06', title: 'MT5 Connector', desc: 'Live broker execution bridge', icon: Server },
+];
+
 export const HelpCenterModal: React.FC<HelpCenterModalProps> = ({
   isOpen,
   onClose,
@@ -46,6 +63,7 @@ export const HelpCenterModal: React.FC<HelpCenterModalProps> = ({
   initialTab = 'valid_signals',
 }) => {
   const [activeTab, setActiveTab] = useState<TabType>(initialTab);
+  const [searchQuery, setSearchQuery] = useState('');
 
   React.useEffect(() => {
     if (isOpen && initialTab) {
@@ -53,148 +71,165 @@ export const HelpCenterModal: React.FC<HelpCenterModalProps> = ({
     }
   }, [isOpen, initialTab]);
 
+  const filteredTabs = useMemo(() => {
+    if (!searchQuery.trim()) return TABS;
+    const q = searchQuery.toLowerCase();
+    return TABS.filter(
+      (t) =>
+        t.title.toLowerCase().includes(q) ||
+        t.desc.toLowerCase().includes(q) ||
+        t.id.toLowerCase().includes(q)
+    );
+  }, [searchQuery]);
+
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[140] flex items-center justify-center p-2.5 sm:p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-150">
-      <div className="bg-white dark:bg-black border border-zinc-200 dark:border-zinc-800 rounded-2xl w-full max-w-3xl max-h-[92vh] flex flex-col shadow-2xl overflow-hidden font-mono text-xs transition-colors">
+    <div className="fixed inset-0 z-[170] flex items-center justify-center p-2.5 sm:p-4 bg-black/80 backdrop-blur-xs animate-in fade-in duration-150">
+      <div className="bg-white dark:bg-[#0c0d10] border border-zinc-200 dark:border-zinc-800 rounded-2xl w-full max-w-3xl max-h-[92vh] flex flex-col shadow-2xl overflow-hidden font-mono text-xs transition-colors">
         {/* Header */}
-        <div className="flex items-center justify-between px-4 sm:px-6 py-3.5 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950">
+        <div className="flex items-center justify-between px-4 sm:px-6 py-3.5 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-950/50 shrink-0">
           <div className="flex items-center gap-2.5">
             <div className="p-1.5 rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
               <BookOpen className="w-4 h-4" />
             </div>
             <div>
-              <h2 className="font-bold text-sm text-zinc-950 dark:text-white">
-                SMC Institutional Help Centre
+              <h2 className="font-extrabold text-sm sm:text-base text-zinc-950 dark:text-white uppercase tracking-wider">
+                Institutional Help Center & Guide
               </h2>
               <p className="text-[11px] text-zinc-500 dark:text-zinc-400">
-                Signal verification rules, dealing ranges, and indicator mechanics
+                Deterministic SMC gates, dealing ranges, and broker bridge instructions
               </p>
             </div>
           </div>
 
           <button
             onClick={onClose}
-            className="p-1.5 rounded-lg text-zinc-400 hover:text-zinc-950 dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-zinc-900 transition-colors"
+            className="p-1.5 rounded-lg text-zinc-400 hover:text-zinc-950 dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-zinc-900 transition-colors cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        {/* Navigation Tabs - Horizontally scrollable on mobile */}
-        <div className="flex items-center gap-1 px-3 sm:px-6 py-2 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-950 overflow-x-auto no-scrollbar whitespace-nowrap text-[11px]">
-          {[
-            { id: 'valid_signals', label: '1. Valid Signal Checklist', icon: Zap },
-            { id: 'dealing_range', label: '2. Dealing Range & EQ', icon: Compass },
-            { id: 'balances', label: '3. Gold Spot vs Balance', icon: DollarSign },
-            { id: 'abbreviations', label: '4. SMC Glossary', icon: Layers },
-            { id: 'phone_pwa', label: '5. Install on Phone', icon: Smartphone },
-            { id: 'mt5', label: '6. MT5 Connector', icon: Server },
-          ].map((tab) => {
-            const Icon = tab.icon;
-            const isActive = activeTab === tab.id;
-            return (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id as TabType)}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-bold transition-all shrink-0 ${
-                  isActive
-                    ? 'bg-zinc-950 text-white dark:bg-white dark:text-black shadow-xs'
-                    : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-950 dark:hover:text-white'
-                }`}
-              >
-                <Icon className="w-3.5 h-3.5" />
-                <span>{tab.label}</span>
+        {/* Search Bar & Item Selectors Strip */}
+        <div className="p-3 sm:px-6 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950/80 space-y-2.5 shrink-0">
+          {/* Quick Search Input */}
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800">
+            <Search className="w-3.5 h-3.5 text-zinc-400" />
+            <input
+              type="text"
+              placeholder="Search concepts (e.g. discount, drawdown, spread, FVG, MT5)..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="bg-transparent outline-none text-xs text-zinc-900 dark:text-white w-full font-sans"
+            />
+            {searchQuery && (
+              <button onClick={() => setSearchQuery('')} className="text-zinc-400 hover:text-white">
+                <X className="w-3.5 h-3.5" />
               </button>
-            );
-          })}
+            )}
+          </div>
+
+          {/* Upgraded Grid Item Selectors */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-1.5">
+            {filteredTabs.map((tab) => {
+              const Icon = tab.icon;
+              const isActive = activeTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`py-2 px-2 rounded-xl text-left border transition-all cursor-pointer flex flex-col justify-between ${
+                    isActive
+                      ? 'bg-zinc-950 text-white dark:bg-white dark:text-black border-zinc-950 dark:border-white shadow-xs'
+                      : 'bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400 hover:border-zinc-400 dark:hover:border-zinc-600'
+                  }`}
+                >
+                  <div className="flex items-center justify-between w-full mb-1">
+                    <Icon className="w-3.5 h-3.5" />
+                    <span className="text-[9px] font-mono opacity-70">{tab.num}</span>
+                  </div>
+                  <span className="font-bold text-[11px] leading-tight truncate w-full">
+                    {tab.title}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
         </div>
 
         {/* Body Content */}
-        <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 font-sans">
+        <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 font-sans text-xs">
           {/* TAB 1: HOW TO KNOW A SIGNAL IS VALID & PROFITABLE */}
           {activeTab === 'valid_signals' && (
             <div className="space-y-3.5">
-              <div className="p-3.5 rounded-xl bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 space-y-1">
+              <div className="p-3.5 rounded-xl bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-800 space-y-1">
                 <span className="font-bold text-zinc-950 dark:text-white font-mono text-xs block">
-                  How Do I Know a Signal is Valid &amp; Profitable?
+                  The 6 Institutional Verification Gates
                 </span>
                 <p className="text-[11px] text-zinc-600 dark:text-zinc-400 leading-relaxed">
-                  In Smart Money Concepts, banks and institutional algorithms do not guess. A signal is considered high-probability and tradeable only when it passes the <strong>6 Institutional Verification Gates</strong>:
+                  Every auto and manual signal must pass all 6 mathematical gates before execution:
                 </p>
               </div>
 
-              <div className="space-y-2 text-[11px]">
-                <div className="p-3 rounded-xl bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 space-y-1">
-                  <div className="flex items-center gap-2 font-mono font-bold text-zinc-950 dark:text-white">
-                    <span className="w-5 h-5 rounded-full bg-emerald-500 text-white flex items-center justify-center text-[10px]">
-                      1
-                    </span>
-                    <span>Confluence Score &ge; 4.0 / 5.0 Stars</span>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-[11px]">
+                <div className="p-3 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 space-y-1">
+                  <div className="font-bold text-zinc-950 dark:text-white flex items-center gap-1.5 font-mono text-xs">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
+                    <span>Gate 1: Minimum 1:2.0 Risk/Reward</span>
                   </div>
-                  <p className="text-zinc-600 dark:text-zinc-400 pl-7 leading-relaxed">
-                    The terminal automatically scores every setup from 1.0 to 5.0. <strong>Only execute trades with 4.0★ or higher</strong>. Scores below 4.0 indicate low-volume chop or counter-trend risk.
+                  <p className="text-zinc-600 dark:text-zinc-400 leading-relaxed">
+                    Stop loss is capped tightly (4.0 pts / 40 pips) while Take Profit targets at least 8.0 pts (+80 pips), ensuring positive mathematical expectancy.
                   </p>
                 </div>
 
-                <div className="p-3 rounded-xl bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 space-y-1">
-                  <div className="flex items-center gap-2 font-mono font-bold text-zinc-950 dark:text-white">
-                    <span className="w-5 h-5 rounded-full bg-emerald-500 text-white flex items-center justify-center text-[10px]">
-                      2
-                    </span>
-                    <span>Dealing Range Alignment (Discount for BUY, Premium for SELL)</span>
+                <div className="p-3 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 space-y-1">
+                  <div className="font-bold text-zinc-950 dark:text-white flex items-center gap-1.5 font-mono text-xs">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
+                    <span>Gate 2: Order Block Confluence (+OB / -OB)</span>
                   </div>
-                  <p className="text-zinc-600 dark:text-zinc-400 pl-7 leading-relaxed">
-                    Check the Dealing Range meter: For a <strong>BUY</strong>, price must be in <strong>Discount (&lt; 50% Equilibrium)</strong>. For a <strong>SELL</strong>, price must be in <strong>Premium (&gt; 50% Equilibrium)</strong>. Never buy at the top or sell at the bottom.
+                  <p className="text-zinc-600 dark:text-zinc-400 leading-relaxed">
+                    Buys occur only at validated Bullish Order Blocks (+OB) where institutions injected capital; Sells only at Bearish Order Blocks (-OB).
                   </p>
                 </div>
 
-                <div className="p-3 rounded-xl bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 space-y-1">
-                  <div className="flex items-center gap-2 font-mono font-bold text-zinc-950 dark:text-white">
-                    <span className="w-5 h-5 rounded-full bg-emerald-500 text-white flex items-center justify-center text-[10px]">
-                      3
-                    </span>
-                    <span>Fresh Order Block Retest (+OB / -OB) &amp; 50% MT Respect</span>
+                <div className="p-3 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 space-y-1">
+                  <div className="font-bold text-zinc-950 dark:text-white flex items-center gap-1.5 font-mono text-xs">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
+                    <span>Gate 3: Discount vs Premium Pricing</span>
                   </div>
-                  <p className="text-zinc-600 dark:text-zinc-400 pl-7 leading-relaxed">
-                    Price must retest an unmitigated Order Block. The candle wicks may pierce the block, but <strong>the candle bodies must not close beyond the 50% Mean Threshold (MT)</strong>. A close beyond the MT invalidates the setup.
+                  <p className="text-zinc-600 dark:text-zinc-400 leading-relaxed">
+                    Buys are restricted to Discount (&lt; 50% Equilibrium); Sells are restricted to Premium (&gt; 50% Equilibrium). Never buy wholesale high or sell wholesale low.
                   </p>
                 </div>
 
-                <div className="p-3 rounded-xl bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 space-y-1">
-                  <div className="flex items-center gap-2 font-mono font-bold text-zinc-950 dark:text-white">
-                    <span className="w-5 h-5 rounded-full bg-emerald-500 text-white flex items-center justify-center text-[10px]">
-                      4
-                    </span>
-                    <span>Active Session Kill Zone Timing</span>
+                <div className="p-3 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 space-y-1">
+                  <div className="font-bold text-zinc-950 dark:text-white flex items-center gap-1.5 font-mono text-xs">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
+                    <span>Gate 4: Fair Value Gap Displacement</span>
                   </div>
-                  <p className="text-zinc-600 dark:text-zinc-400 pl-7 leading-relaxed">
-                    The highest win-rate signals occur during high-volume bank hours: <strong>London Kill Zone (07:00–10:00 UTC)</strong> and <strong>New York Kill Zone (12:00–15:00 UTC)</strong>. Avoid taking large trades during the late Asian consolidation.
+                  <p className="text-zinc-600 dark:text-zinc-400 leading-relaxed">
+                    Requires a 3-candle imbalance (FVG) confirming aggressive institutional buying or selling volume behind the move.
                   </p>
                 </div>
 
-                <div className="p-3 rounded-xl bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 space-y-1">
-                  <div className="flex items-center gap-2 font-mono font-bold text-zinc-950 dark:text-white">
-                    <span className="w-5 h-5 rounded-full bg-emerald-500 text-white flex items-center justify-center text-[10px]">
-                      5
-                    </span>
-                    <span>Favorable Risk-to-Reward Ratio (&ge; 1:2.0 RR)</span>
+                <div className="p-3 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 space-y-1">
+                  <div className="font-bold text-zinc-950 dark:text-white flex items-center gap-1.5 font-mono text-xs">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
+                    <span>Gate 5: Low Spread Gate (&le; 40 pts)</span>
                   </div>
-                  <p className="text-zinc-600 dark:text-zinc-400 pl-7 leading-relaxed">
-                    Every generated signal maintains at least a <strong>1:2.0 Risk-to-Reward ratio</strong>. With 1:2.0 RR, even a 40% win rate generates consistent net profits because your wins are twice the size of your losses.
+                  <p className="text-zinc-600 dark:text-zinc-400 leading-relaxed">
+                    Execution automatically freezes if live broker spread exceeds 40 points (4.0 pips) to protect from news slippage.
                   </p>
                 </div>
 
-                <div className="p-3 rounded-xl bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 space-y-1">
-                  <div className="flex items-center gap-2 font-mono font-bold text-zinc-950 dark:text-white">
-                    <span className="w-5 h-5 rounded-full bg-emerald-500 text-white flex items-center justify-center text-[10px]">
-                      6
-                    </span>
-                    <span>Low Spread Filter (&le; 40 Points / 4.0 Pips)</span>
+                <div className="p-3 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 space-y-1">
+                  <div className="font-bold text-zinc-950 dark:text-white flex items-center gap-1.5 font-mono text-xs">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
+                    <span>Gate 6: Daily Loss Circuit Breaker</span>
                   </div>
-                  <p className="text-zinc-600 dark:text-zinc-400 pl-7 leading-relaxed">
-                    During major news releases (CPI, NFP, FOMC), broker spreads can spike. The terminal automatically locks execution if the gold spread exceeds 40 points to protect against slippage.
+                  <p className="text-zinc-600 dark:text-zinc-400 leading-relaxed">
+                    Hard stop if daily drawdown reaches 3.0%, preserving account capital until the next trading day.
                   </p>
                 </div>
               </div>
@@ -204,17 +239,17 @@ export const HelpCenterModal: React.FC<HelpCenterModalProps> = ({
           {/* TAB 2: DEALING RANGE & EQUILIBRIUM */}
           {activeTab === 'dealing_range' && (
             <div className="space-y-3.5">
-              <div className="p-3.5 rounded-xl bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 space-y-1.5">
+              <div className="p-3.5 rounded-xl bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-800 space-y-1">
                 <span className="font-bold text-zinc-950 dark:text-white font-mono text-xs block">
-                  What Does the Dealing Range Do?
+                  Auction Market Dealing Range &amp; Equilibrium
                 </span>
                 <p className="text-[11px] text-zinc-600 dark:text-zinc-400 leading-relaxed">
-                  In auction market theory, the Dealing Range defines the active price boundaries between the most recent major <strong>Swing High</strong> and <strong>Swing Low</strong> on higher timeframes.
+                  The Dealing Range defines the active price boundaries between the most recent major <strong>Swing High</strong> and <strong>Swing Low</strong>.
                 </p>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-[11px]">
-                <div className="p-3 rounded-xl bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 space-y-1">
+                <div className="p-3 rounded-xl bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 space-y-1">
                   <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400 text-xs block">
                     Discount Zone (&lt; 50% Equilibrium)
                   </span>
@@ -223,7 +258,7 @@ export const HelpCenterModal: React.FC<HelpCenterModalProps> = ({
                   </p>
                 </div>
 
-                <div className="p-3 rounded-xl bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 space-y-1">
+                <div className="p-3 rounded-xl bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 space-y-1">
                   <span className="font-mono font-bold text-rose-600 dark:text-rose-400 text-xs block">
                     Premium Zone (&gt; 50% Equilibrium)
                   </span>
@@ -232,137 +267,93 @@ export const HelpCenterModal: React.FC<HelpCenterModalProps> = ({
                   </p>
                 </div>
               </div>
-
-              <div className="p-3 rounded-xl bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 space-y-1">
-                <span className="font-mono font-bold text-amber-600 dark:text-amber-400 text-xs block">
-                  Equilibrium (EQ - 50% Midpoint)
-                </span>
-                <p className="text-[11px] text-zinc-600 dark:text-zinc-400 leading-relaxed">
-                  Equilibrium is the exact 50% fair-value point calculated as: <code>(Swing High + Swing Low) &divide; 2</code>. When price reaches equilibrium, smart money often takes partial profits (TP1) and sets stop loss to break-even (BE).
-                </p>
-              </div>
             </div>
           )}
 
           {/* TAB 3: GOLD SPOT VS MT5 ACCOUNT BALANCE */}
           {activeTab === 'balances' && (
             <div className="space-y-3.5">
-              <div className="p-3.5 rounded-xl bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 space-y-1.5">
+              <div className="p-3.5 rounded-xl bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-800 space-y-1">
                 <span className="font-bold text-zinc-950 dark:text-white font-mono text-xs block">
-                  Why Are There Two Dollar Amounts in the Header?
+                  Account Capital, Equity &amp; Free Margin
                 </span>
                 <p className="text-[11px] text-zinc-600 dark:text-zinc-400 leading-relaxed">
-                  The two dollar amounts displayed at the top represent two completely different pieces of financial data:
+                  Key financial telemetry explained for small and large accounts:
                 </p>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-[11px]">
-                <div className="p-3.5 rounded-xl bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 space-y-2">
-                  <div className="flex items-center gap-1.5 text-zinc-950 dark:text-white font-mono font-bold text-xs">
-                    <span className="w-2 h-2 rounded bg-amber-500" />
-                    <span>1. Gold Spot (oz) · Asset Market Price</span>
-                  </div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 text-[11px]">
+                <div className="p-3 rounded-xl bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 space-y-1">
+                  <span className="font-mono font-bold text-zinc-950 dark:text-white text-xs block">
+                    1. Cash Balance
+                  </span>
                   <p className="text-zinc-600 dark:text-zinc-400 leading-relaxed">
-                    This is the real-time interbank price of <strong>1 troy ounce of physical Gold (XAUUSD)</strong> in US Dollars (e.g. <code>$4,190.64</code>). It updates with every interbank tick and determines entry, TP, and SL price levels.
+                    Settled cash funds in your broker account. Changes only when a trade is closed.
                   </p>
                 </div>
 
-                <div className="p-3.5 rounded-xl bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 space-y-2">
-                  <div className="flex items-center gap-1.5 text-zinc-950 dark:text-white font-mono font-bold text-xs">
-                    <span className="w-2 h-2 rounded bg-emerald-500" />
-                    <span>2. Account · Your Trading Capital</span>
-                  </div>
+                <div className="p-3 rounded-xl bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 space-y-1">
+                  <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400 text-xs block">
+                    2. Live Floating Equity
+                  </span>
                   <p className="text-zinc-600 dark:text-zinc-400 leading-relaxed">
-                    This is your actual <strong>account deposit balance</strong> inside your connected MetaTrader 5 broker terminal (e.g. <code>$10,300.00</code>). It represents your cash equity used to calculate position sizing and margin.
+                    Real-time account value: <code>Balance + Open Trades P&amp;L</code>. Reflects exact cash value if all trades were closed immediately.
+                  </p>
+                </div>
+
+                <div className="p-3 rounded-xl bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 space-y-1">
+                  <span className="font-mono font-bold text-blue-600 dark:text-blue-400 text-xs block">
+                    3. Free Margin
+                  </span>
+                  <p className="text-zinc-600 dark:text-zinc-400 leading-relaxed">
+                    Available collateral to open new positions after subtracting used margin required by your broker.
                   </p>
                 </div>
               </div>
             </div>
           )}
 
-          {/* TAB 4: COMPLETE SMC ABBREVIATIONS GLOSSARY */}
+          {/* TAB 4: SMC ABBREVIATIONS GLOSSARY */}
           {activeTab === 'abbreviations' && (
-            <div className="space-y-3">
-              <div className="p-3 rounded-xl bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800">
-                <span className="font-bold text-zinc-950 dark:text-white block text-xs font-mono">
-                  SMC Indicator Abbreviations Index
+            <div className="space-y-3.5">
+              <div className="p-3.5 rounded-xl bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-800 space-y-1">
+                <span className="font-bold text-zinc-950 dark:text-white font-mono text-xs block">
+                  Institutional Smart Money Concepts (SMC) Glossary
                 </span>
-                <p className="text-[11px] text-zinc-600 dark:text-zinc-400 font-sans mt-0.5">
-                  Clean reference of every abbreviation used on the chart and engine:
+                <p className="text-[11px] text-zinc-600 dark:text-zinc-400 leading-relaxed">
+                  Industry-standard abbreviations used across terminal alerts and signal readouts:
                 </p>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px]">
-                <div className="p-2.5 rounded-xl bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 space-y-0.5">
-                  <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400 block">
-                    +OB · Bullish Demand Order Block
-                  </span>
-                  <p className="text-zinc-600 dark:text-zinc-400 text-[10px]">
-                    The last bearish candle before violent upward displacement. Institutional buy zone.
-                  </p>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs">
+                <div className="p-2.5 rounded-xl bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 space-y-0.5">
+                  <strong className="font-mono text-emerald-600 dark:text-emerald-400 block">+OB (Bullish Order Block)</strong>
+                  <span className="text-zinc-500 text-[11px]">Last down candle before displacement. Demand zone for buying.</span>
                 </div>
 
-                <div className="p-2.5 rounded-xl bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 space-y-0.5">
-                  <span className="font-mono font-bold text-rose-600 dark:text-rose-400 block">
-                    -OB · Bearish Supply Order Block
-                  </span>
-                  <p className="text-zinc-600 dark:text-zinc-400 text-[10px]">
-                    The last bullish candle before violent downward displacement. Institutional sell zone.
-                  </p>
+                <div className="p-2.5 rounded-xl bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 space-y-0.5">
+                  <strong className="font-mono text-rose-600 dark:text-rose-400 block">-OB (Bearish Order Block)</strong>
+                  <span className="text-zinc-500 text-[11px]">Last up candle before displacement. Supply zone for selling.</span>
                 </div>
 
-                <div className="p-2.5 rounded-xl bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 space-y-0.5">
-                  <span className="font-mono font-bold text-amber-600 dark:text-amber-400 block">
-                    MT · Mean Threshold (50%)
-                  </span>
-                  <p className="text-zinc-600 dark:text-zinc-400 text-[10px]">
-                    The 50% midpoint of the Order Block. Candle bodies must not close beyond it.
-                  </p>
+                <div className="p-2.5 rounded-xl bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 space-y-0.5">
+                  <strong className="font-mono text-blue-600 dark:text-blue-400 block">BOS (Break of Structure)</strong>
+                  <span className="text-zinc-500 text-[11px]">Candle body closes beyond previous swing high/low in trend direction.</span>
                 </div>
 
-                <div className="p-2.5 rounded-xl bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 space-y-0.5">
-                  <span className="font-mono font-bold text-purple-600 dark:text-purple-400 block">
-                    BOS · Break of Structure
-                  </span>
-                  <p className="text-zinc-600 dark:text-zinc-400 text-[10px]">
-                    Price breaks and closes beyond previous swing pivot, confirming trend continuation.
-                  </p>
+                <div className="p-2.5 rounded-xl bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 space-y-0.5">
+                  <strong className="font-mono text-purple-600 dark:text-purple-400 block">CHoCH (Change of Character)</strong>
+                  <span className="text-zinc-500 text-[11px]">First break of structure signaling trend reversal.</span>
                 </div>
 
-                <div className="p-2.5 rounded-xl bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 space-y-0.5">
-                  <span className="font-mono font-bold text-sky-600 dark:text-sky-400 block">
-                    CHoCH · Change of Character
-                  </span>
-                  <p className="text-zinc-600 dark:text-zinc-400 text-[10px]">
-                    Price breaks a counter-trend swing pivot, warning of an early trend reversal.
-                  </p>
+                <div className="p-2.5 rounded-xl bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 space-y-0.5">
+                  <strong className="font-mono text-amber-600 dark:text-amber-400 block">FVG (Fair Value Gap)</strong>
+                  <span className="text-zinc-500 text-[11px]">3-candle price imbalance acting as magnetic liquidity pool.</span>
                 </div>
 
-                <div className="p-2.5 rounded-xl bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 space-y-0.5">
-                  <span className="font-mono font-bold text-yellow-600 dark:text-yellow-400 block">
-                    FVG · Fair Value Gap
-                  </span>
-                  <p className="text-zinc-600 dark:text-zinc-400 text-[10px]">
-                    3-candle price imbalance. Magnet for price retests before continuation.
-                  </p>
-                </div>
-
-                <div className="p-2.5 rounded-xl bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 space-y-0.5">
-                  <span className="font-mono font-bold text-zinc-800 dark:text-zinc-200 block">
-                    M1 / M5 · Execution Timeframes
-                  </span>
-                  <p className="text-zinc-600 dark:text-zinc-400 text-[10px]">
-                    <strong>M1</strong>: 1-minute precision scalps. <strong>M5</strong>: 5-minute momentum expansion.
-                  </p>
-                </div>
-
-                <div className="p-2.5 rounded-xl bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 space-y-0.5">
-                  <span className="font-mono font-bold text-zinc-800 dark:text-zinc-200 block">
-                    TP / SL / EQ / RR
-                  </span>
-                  <p className="text-zinc-600 dark:text-zinc-400 text-[10px]">
-                    Take Profit, Stop Loss, Equilibrium (50% Range), Risk-to-Reward Ratio (1:2.0).
-                  </p>
+                <div className="p-2.5 rounded-xl bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 space-y-0.5">
+                  <strong className="font-mono text-zinc-900 dark:text-zinc-100 block">BE (Break-Even Lock)</strong>
+                  <span className="text-zinc-500 text-[11px]">Stop loss moved to entry price + 0.3 to eliminate downside risk.</span>
                 </div>
               </div>
             </div>
@@ -371,35 +362,35 @@ export const HelpCenterModal: React.FC<HelpCenterModalProps> = ({
           {/* TAB 5: PHONE PWA INSTALLATION */}
           {activeTab === 'phone_pwa' && (
             <div className="space-y-3.5">
-              <div className="p-3.5 rounded-xl bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 space-y-1">
+              <div className="p-3.5 rounded-xl bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-800 space-y-1">
                 <span className="font-bold text-zinc-950 dark:text-white font-mono text-xs block">
                   Install as Standalone Mobile App (iOS &amp; Android)
                 </span>
                 <p className="text-[11px] text-zinc-600 dark:text-zinc-400 leading-relaxed">
-                  This terminal is a Progressive Web App (PWA) configured for edge-to-edge OLED mobile screens with zero browser address bar jumping:
+                  Progressive Web App (PWA) configured for edge-to-edge OLED mobile screens with zero browser address bar jumping:
                 </p>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-[11px]">
-                <div className="p-3.5 rounded-xl bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 space-y-2">
+                <div className="p-3.5 rounded-xl bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 space-y-2">
                   <div className="flex items-center gap-1.5 font-bold text-zinc-950 dark:text-white font-mono text-xs">
                     <span className="px-1.5 py-0.5 rounded bg-zinc-200 dark:bg-zinc-800">iOS</span>
                     <span>iPhone &amp; iPad (Safari)</span>
                   </div>
-                  <ol className="list-decimal list-inside space-y-1 text-zinc-600 dark:text-zinc-300">
+                  <ol className="list-decimal list-inside space-y-1 text-zinc-600 dark:text-zinc-400">
                     <li>Open this URL in <strong>Safari</strong> on your iPhone.</li>
-                    <li>Tap the <strong>Share</strong> button (square with arrow up).</li>
+                    <li>Tap the <strong>Share</strong> icon (square with arrow up).</li>
                     <li>Select <strong>&quot;Add to Home Screen&quot;</strong>.</li>
                     <li>Tap <strong>&quot;Add&quot;</strong> in top-right.</li>
                   </ol>
                 </div>
 
-                <div className="p-3.5 rounded-xl bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 space-y-2">
+                <div className="p-3.5 rounded-xl bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 space-y-2">
                   <div className="flex items-center gap-1.5 font-bold text-zinc-950 dark:text-white font-mono text-xs">
                     <span className="px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-500">Android</span>
                     <span>Google Chrome</span>
                   </div>
-                  <ol className="list-decimal list-inside space-y-1 text-zinc-600 dark:text-zinc-300">
+                  <ol className="list-decimal list-inside space-y-1 text-zinc-600 dark:text-zinc-400">
                     <li>Open this URL in <strong>Google Chrome</strong>.</li>
                     <li>Tap the <strong>3 dots menu (&vellip;)</strong>.</li>
                     <li>Select <strong>&quot;Install App&quot;</strong> or <strong>&quot;Add to Home Screen&quot;</strong>.</li>
@@ -413,19 +404,19 @@ export const HelpCenterModal: React.FC<HelpCenterModalProps> = ({
           {/* TAB 6: MT5 CONNECTOR */}
           {activeTab === 'mt5' && (
             <div className="space-y-3.5">
-              <div className="p-3.5 rounded-xl bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 space-y-2">
+              <div className="p-3.5 rounded-xl bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-800 space-y-2">
                 <span className="font-bold text-zinc-950 dark:text-white font-mono text-xs block">
                   Link with MetaTrader 5 (MT5) Broker
                 </span>
                 <p className="text-[11px] text-zinc-600 dark:text-zinc-400 leading-relaxed">
-                  Stream live broker ticks and execute signals directly into your real or demo broker terminal via the 1-click Windows batch script or the native MQL5 Expert Advisor.
+                  Stream live broker ticks and execute signals directly into your real or demo broker terminal via the 1-click Windows batch script or native MQL5 Expert Advisor.
                 </p>
                 <button
                   onClick={() => {
                     onClose();
                     onOpenBridge();
                   }}
-                  className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold font-mono transition-colors text-xs"
+                  className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold font-mono transition-colors text-xs cursor-pointer"
                 >
                   Open MT5 Bridge Setup Window
                 </button>
@@ -434,7 +425,7 @@ export const HelpCenterModal: React.FC<HelpCenterModalProps> = ({
           )}
         </div>
 
-        {/* Footer: Bottom Back to Terminal Button */}
+        {/* Footer */}
         <div className="p-3 sm:p-4 border-t border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950 flex items-center justify-between shrink-0 font-mono">
           <button
             onClick={onClose}

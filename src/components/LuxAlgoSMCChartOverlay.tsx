@@ -1,13 +1,11 @@
 /**
- * LuxAlgoSMCChartOverlay.tsx - Official Institutional SMC Indicator & Live Positions Overlay
- * Features:
- * - High-contrast text readability in both Light and Dark modes using adaptive badge pills
- * - Live entered trades rendered directly on the chart (Entry, SL, and TP lines with live PnL)
- * - Official Swing Low Order Block (+OB) when Bullish
- * - Official Swing High Order Block (-OB) when Bearish
- * - Official 50% Mean Threshold (MT) line
- * - BOS (Break of Structure) & CHoCH (Change of Character) structural markers
- * - Clean SVG line geometry matching official PineScript
+ * LuxAlgoSMCChartOverlay.tsx - Clean Institutional Dotted Lines SMC Overlay
+ * Zero blocking content:
+ * - NO filled rectangles covering the TradingView candlesticks
+ * - Pure dotted coloured lines with text embedded along the lines
+ * - TP (Emerald dotted), BOS (Purple dotted), Entry (Cyan dotted),
+ *   Order Blocks & 50% MT (Amber/Emerald dotted), CHoCH (Sky-blue dotted), SL (Rose dotted)
+ * - Highly legible without obstructing price action
  */
 
 import React, { useMemo } from 'react';
@@ -41,14 +39,14 @@ export const LuxAlgoSMCChartOverlay: React.FC<LuxAlgoSMCChartOverlayProps> = ({
   const activeSL = isBuy ? activeEntry - riskPts : activeEntry + riskPts;
   const activeTP = isBuy ? activeEntry + rewardPts : activeEntry - rewardPts;
 
-  // Dealing Range swing bounds
+  // Dealing Range bounds
   const dr = market.dealing_range || {
     low: activeEntry - 20.0,
     high: activeEntry + 20.0,
     equilibrium: activeEntry,
   };
 
-  // Official Order Block derived from Swing Low (+OB) or Swing High (-OB)
+  // Order Block derived from Swing Low (+OB) or Swing High (-OB)
   const obLevels = useMemo(() => {
     const obSpan = isM1 ? 2.0 : 4.0;
     if (isBuy) {
@@ -93,89 +91,46 @@ export const LuxAlgoSMCChartOverlay: React.FC<LuxAlgoSMCChartOverlayProps> = ({
       return {
         tp: '18%',
         bos: '32%',
-        entry: '50%',
+        entry: '48%',
         obHigh: '64%',
         obMT: '70%',
         obLow: '76%',
-        sl: '80%',
-        choch: '86%',
+        choch: '82%',
+        sl: '88%',
       };
     } else {
       return {
-        sl: '20%',
-        obHigh: '18%',
-        obMT: '24%',
-        obLow: '30%',
-        choch: '42%',
+        sl: '18%',
+        choch: '24%',
+        obHigh: '30%',
+        obMT: '36%',
+        obLow: '42%',
         entry: '52%',
         bos: '68%',
-        tp: '86%',
+        tp: '84%',
       };
     }
   }, [isBuy]);
 
-  // High-contrast color palette for Light & Dark mode text visibility
-  const palette = useMemo(() => {
-    if (isDark) {
-      return {
-        badgeBg: 'rgba(8, 10, 15, 0.90)',
-        badgeStroke: 'rgba(255, 255, 255, 0.18)',
-        tpStroke: '#10b981',
-        tpText: '#34d399',
-        slStroke: '#f43f5e',
-        slText: '#fb7185',
-        entryStroke: isBuy ? '#10b981' : '#f43f5e',
-        entryText: isBuy ? '#34d399' : '#fb7185',
-        bosStroke: '#c084fc',
-        bosText: '#d8b4fe',
-        chochStroke: '#38bdf8',
-        chochText: '#7dd3fc',
-        obStroke: isBuy ? '#10b981' : '#f43f5e',
-        obText: isBuy ? '#34d399' : '#fb7185',
-        obMTStroke: isBuy ? '#34d399' : '#fb7185',
-        posEntryStroke: '#06b6d4',
-        posEntryText: '#22d3ee',
-        posBadgeBg: 'rgba(6, 182, 212, 0.18)',
-        textColor: '#f8fafc',
-      };
-    } else {
-      return {
-        badgeBg: 'rgba(255, 255, 255, 0.96)',
-        badgeStroke: 'rgba(15, 23, 42, 0.25)',
-        tpStroke: '#059669',
-        tpText: '#047857',
-        slStroke: '#dc2626',
-        slText: '#b91c1c',
-        entryStroke: isBuy ? '#059669' : '#dc2626',
-        entryText: isBuy ? '#047857' : '#b91c1c',
-        bosStroke: '#7e22ce',
-        bosText: '#6b21a8',
-        chochStroke: '#0284c7',
-        chochText: '#0369a1',
-        obStroke: isBuy ? '#059669' : '#dc2626',
-        obText: isBuy ? '#047857' : '#b91c1c',
-        obMTStroke: isBuy ? '#059669' : '#dc2626',
-        posEntryStroke: '#0891b2',
-        posEntryText: '#0e7490',
-        posBadgeBg: 'rgba(255, 255, 255, 0.96)',
-        textColor: '#0f172a',
-      };
-    }
+  // Professional color palette
+  const colors = useMemo(() => {
+    return {
+      tp: isDark ? '#10b981' : '#059669', // Emerald
+      sl: isDark ? '#f43f5e' : '#e11d48', // Rose
+      entry: isBuy ? (isDark ? '#34d399' : '#10b981') : (isDark ? '#fb7185' : '#f43f5e'),
+      bos: isDark ? '#c084fc' : '#9333ea', // Purple
+      choch: isDark ? '#38bdf8' : '#0284c7', // Sky
+      ob: isBuy ? '#10b981' : '#f43f5e',
+      obMT: isDark ? '#fbbf24' : '#d97706', // Amber 50% MT
+      bgBadge: isDark ? 'rgba(12, 13, 16, 0.85)' : 'rgba(255, 255, 255, 0.90)',
+    };
   }, [isDark, isBuy]);
-
-  const strengthPct = Math.min(99, Math.max(82, Math.round((activeScore / 5.0) * 100)));
 
   return (
     <div className="absolute inset-0 pointer-events-none z-10 overflow-hidden font-mono select-none">
       <svg className="w-full h-full absolute inset-0">
-        <defs>
-          <filter id="badgeShadow" x="-10%" y="-20%" width="120%" height="140%">
-            <feDropShadow dx="0" dy="1.5" stdDeviation="1.5" floodColor="#000000" floodOpacity="0.45" />
-          </filter>
-        </defs>
-
         {/* ======================================================== */}
-        {/* 1. TAKE PROFIT (TP) TARGET LINE (DASHED GREEN)           */}
+        {/* 1. TAKE PROFIT (TP) TARGET - DOTTED EMERALD LINE         */}
         {/* ======================================================== */}
         <g opacity="0.95">
           <line
@@ -183,30 +138,28 @@ export const LuxAlgoSMCChartOverlay: React.FC<LuxAlgoSMCChartOverlayProps> = ({
             y1={lineY.tp}
             x2="99%"
             y2={lineY.tp}
-            stroke={palette.tpStroke}
-            strokeWidth="1.2"
-            strokeDasharray="4 3"
+            stroke={colors.tp}
+            strokeWidth="1.5"
+            strokeDasharray="4 4"
           />
-          <circle cx="1.5%" cy={lineY.tp} r="2.5" fill={palette.tpStroke} />
-          {/* High-visibility contrast text badge */}
+          {/* Text along the dotted line */}
           <rect
-            x="2.5%"
+            x="2%"
             y={lineY.tp}
-            width="240"
+            width="250"
             height="18"
             rx="4"
-            fill={palette.badgeBg}
-            stroke={palette.badgeStroke}
-            strokeWidth="1"
+            fill={colors.bgBadge}
+            stroke={colors.tp}
+            strokeWidth="0.8"
             transform="translate(0, -9)"
-            filter="url(#badgeShadow)"
           />
           <text
-            x="3.2%"
+            x="2.8%"
             y={lineY.tp}
             dy="3.5"
-            fill={palette.tpText}
-            fontSize="9"
+            fill={colors.tp}
+            fontSize="10"
             fontWeight="bold"
           >
             TP TARGET ${activeTP.toFixed(2)} (+{rewardPts.toFixed(1)} pts · 1:2.0 RR)
@@ -214,37 +167,35 @@ export const LuxAlgoSMCChartOverlay: React.FC<LuxAlgoSMCChartOverlayProps> = ({
         </g>
 
         {/* ======================================================== */}
-        {/* 2. BREAK OF STRUCTURE (BOS) LINE (DASHED PURPLE)         */}
+        {/* 2. BREAK OF STRUCTURE (BOS) - DOTTED PURPLE LINE         */}
         {/* ======================================================== */}
-        <g opacity="0.9">
+        <g opacity="0.85">
           <line
             x1="1%"
             y1={lineY.bos}
             x2="99%"
             y2={lineY.bos}
-            stroke={palette.bosStroke}
-            strokeWidth="1"
-            strokeDasharray="4 3"
+            stroke={colors.bos}
+            strokeWidth="1.2"
+            strokeDasharray="3 3"
           />
-          <circle cx="1.5%" cy={lineY.bos} r="2" fill={palette.bosStroke} />
           <rect
-            x="2.5%"
+            x="2%"
             y={lineY.bos}
             width="190"
             height="16"
-            rx="4"
-            fill={palette.badgeBg}
-            stroke={palette.badgeStroke}
-            strokeWidth="1"
+            rx="3"
+            fill={colors.bgBadge}
+            stroke={colors.bos}
+            strokeWidth="0.6"
             transform="translate(0, -8)"
-            filter="url(#badgeShadow)"
           />
           <text
-            x="3.2%"
+            x="2.8%"
             y={lineY.bos}
             dy="3.5"
-            fill={palette.bosText}
-            fontSize="8.5"
+            fill={colors.bos}
+            fontSize="9"
             fontWeight="bold"
           >
             BOS (Break of Structure) ${bosPrice.toFixed(1)}
@@ -252,133 +203,71 @@ export const LuxAlgoSMCChartOverlay: React.FC<LuxAlgoSMCChartOverlayProps> = ({
         </g>
 
         {/* ======================================================== */}
-        {/* VISUAL TRADE CORRIDORS (PROMINENT REWARD & RISK ZONES)   */}
-        {/* ======================================================== */}
-        <g opacity="0.12">
-          {/* Reward Zone (between Entry and TP) */}
-          <rect
-            x="1%"
-            y={isBuy ? '18%' : '52%'}
-            width="98%"
-            height={isBuy ? '32%' : '34%'}
-            fill={palette.tpStroke}
-          />
-          {/* Risk Zone (between Entry and SL) */}
-          <rect
-            x="1%"
-            y={isBuy ? '50%' : '20%'}
-            width="98%"
-            height="32%"
-            fill={palette.slStroke}
-          />
-        </g>
-
-        {/* ======================================================== */}
-        {/* 3. PROMINENT TRADE ENTRY LINE (HIGH-CONTRAST SOLID)      */}
+        {/* 3. TRADE ENTRY - DOTTED / SOLID HYBRID LINE              */}
         {/* ======================================================== */}
         <g opacity="1">
-          {/* Subtle Outer Glow Line for Crystal Clear Contrast */}
-          <line
-            x1="0.5%"
-            y1={lineY.entry}
-            x2="99.5%"
-            y2={lineY.entry}
-            stroke={palette.entryStroke}
-            strokeWidth="5"
-            strokeOpacity="0.3"
-          />
-          {/* Primary High-Contrast Solid Entry Line */}
           <line
             x1="1%"
             y1={lineY.entry}
             x2="99%"
             y2={lineY.entry}
-            stroke={palette.entryStroke}
-            strokeWidth="3"
+            stroke={colors.entry}
+            strokeWidth="2"
+            strokeDasharray="6 4"
           />
-          
-          {/* Central Left Prominent Entry Badge */}
           <rect
             x="2%"
             y={lineY.entry}
             width="220"
-            height="26"
-            rx="6"
-            fill={palette.badgeBg}
-            stroke={palette.entryStroke}
-            strokeWidth="2"
-            transform="translate(0, -13)"
-            filter="url(#badgeShadow)"
-          />
-          <text
-            x="3%"
-            y={lineY.entry}
-            dy="4.5"
-            fill={palette.entryText}
-            fontSize="12.5"
-            fontWeight="900"
-            letterSpacing="0.5"
-          >
-            {isBuy ? '▲ BUY ENTRY' : '▼ SELL ENTRY'} ${activeEntry.toFixed(2)}
-          </text>
-
-          {/* Right Axis Prominent Price Pin */}
-          <rect
-            x="84%"
-            y={lineY.entry}
-            width="125"
             height="22"
-            rx="5"
-            fill={palette.entryStroke}
-            stroke={palette.badgeBg}
-            strokeWidth="1.5"
+            rx="4"
+            fill={colors.bgBadge}
+            stroke={colors.entry}
+            strokeWidth="1.2"
             transform="translate(0, -11)"
-            filter="url(#badgeShadow)"
           />
           <text
-            x="96%"
+            x="2.8%"
             y={lineY.entry}
             dy="4"
-            fill="#ffffff"
+            fill={colors.entry}
             fontSize="11"
             fontWeight="900"
-            textAnchor="end"
           >
-            ENTRY ${activeEntry.toFixed(2)}
+            {isBuy ? '▲ BUY ENTRY' : '▼ SELL ENTRY'} ${activeEntry.toFixed(2)}
           </text>
         </g>
 
         {/* ======================================================== */}
-        {/* 4. OFFICIAL ORDER BLOCK AT SWING HIGH / SWING LOW        */}
-        {/* Crisp boundary lines & 50% Mean Threshold (MT)           */}
+        {/* 4. SWING ORDER BLOCK (+OB / -OB) BOUNDARIES & 50% MT     */}
         {/* ======================================================== */}
-        <g opacity="0.95">
-          {/* Order Block Upper Boundary Line */}
+        <g opacity="0.9">
+          {/* OB Upper Bound Line */}
           <line
             x1="1%"
             y1={lineY.obHigh}
             x2="99%"
             y2={lineY.obHigh}
-            stroke={palette.obStroke}
+            stroke={colors.ob}
             strokeWidth="1.2"
+            strokeDasharray="3 3"
           />
           <rect
-            x="2.5%"
+            x="2%"
             y={lineY.obHigh}
-            width="170"
+            width="180"
             height="16"
-            rx="4"
-            fill={palette.badgeBg}
-            stroke={palette.badgeStroke}
-            strokeWidth="1"
+            rx="3"
+            fill={colors.bgBadge}
+            stroke={colors.ob}
+            strokeWidth="0.6"
             transform="translate(0, -8)"
-            filter="url(#badgeShadow)"
           />
           <text
-            x="3.2%"
+            x="2.8%"
             y={lineY.obHigh}
             dy="3.5"
-            fill={palette.obText}
+            fill={colors.ob}
             fontSize="9"
             fontWeight="bold"
           >
@@ -391,60 +280,59 @@ export const LuxAlgoSMCChartOverlay: React.FC<LuxAlgoSMCChartOverlayProps> = ({
             y1={lineY.obMT}
             x2="99%"
             y2={lineY.obMT}
-            stroke={palette.obMTStroke}
-            strokeWidth="1"
-            strokeDasharray="3 3"
+            stroke={colors.obMT}
+            strokeWidth="1.2"
+            strokeDasharray="2 3"
           />
           <rect
-            x="2.5%"
+            x="2%"
             y={lineY.obMT}
-            width="175"
-            height="15"
-            rx="4"
-            fill={palette.badgeBg}
-            stroke={palette.badgeStroke}
-            strokeWidth="0.8"
-            transform="translate(0, -7.5)"
-            filter="url(#badgeShadow)"
+            width="190"
+            height="16"
+            rx="3"
+            fill={colors.bgBadge}
+            stroke={colors.obMT}
+            strokeWidth="0.6"
+            transform="translate(0, -8)"
           />
           <text
-            x="3.2%"
+            x="2.8%"
             y={lineY.obMT}
             dy="3.5"
-            fill={palette.obText}
-            fontSize="8"
+            fill={colors.obMT}
+            fontSize="9"
             fontWeight="bold"
           >
-            MT (50% Mean Threshold) ${obLevels.mt.toFixed(1)}
+            50% MT Retest Level ${obLevels.mt.toFixed(1)}
           </text>
 
-          {/* Order Block Lower Boundary Line */}
+          {/* OB Lower Bound Line */}
           <line
             x1="1%"
             y1={lineY.obLow}
             x2="99%"
             y2={lineY.obLow}
-            stroke={palette.obStroke}
+            stroke={colors.ob}
             strokeWidth="1.2"
+            strokeDasharray="3 3"
           />
           <rect
-            x="2.5%"
+            x="2%"
             y={lineY.obLow}
-            width="165"
+            width="170"
             height="16"
-            rx="4"
-            fill={palette.badgeBg}
-            stroke={palette.badgeStroke}
-            strokeWidth="1"
+            rx="3"
+            fill={colors.bgBadge}
+            stroke={colors.ob}
+            strokeWidth="0.6"
             transform="translate(0, -8)"
-            filter="url(#badgeShadow)"
           />
           <text
-            x="3.2%"
+            x="2.8%"
             y={lineY.obLow}
             dy="3.5"
-            fill={palette.obText}
-            fontSize="8.5"
+            fill={colors.ob}
+            fontSize="9"
             fontWeight="bold"
           >
             {obLevels.label} Low ${obLevels.bottom.toFixed(1)}
@@ -452,102 +340,119 @@ export const LuxAlgoSMCChartOverlay: React.FC<LuxAlgoSMCChartOverlayProps> = ({
         </g>
 
         {/* ======================================================== */}
-        {/* 5. CHANGE OF CHARACTER (CHoCH) LINE (SKY-BLUE DASHED)    */}
+        {/* 5. CHANGE OF CHARACTER (CHoCH) - DOTTED SKY LINE         */}
         {/* ======================================================== */}
-        <g opacity="0.9">
+        <g opacity="0.85">
           <line
             x1="1%"
             y1={lineY.choch}
             x2="99%"
             y2={lineY.choch}
-            stroke={palette.chochStroke}
-            strokeWidth="1"
-            strokeDasharray="4 3"
+            stroke={colors.choch}
+            strokeWidth="1.2"
+            strokeDasharray="3 3"
           />
-          <circle cx="1.5%" cy={lineY.choch} r="2" fill={palette.chochStroke} />
           <rect
-            x="2.5%"
+            x="2%"
             y={lineY.choch}
             width="200"
             height="16"
-            rx="4"
-            fill={palette.badgeBg}
-            stroke={palette.badgeStroke}
-            strokeWidth="1"
+            rx="3"
+            fill={colors.bgBadge}
+            stroke={colors.choch}
+            strokeWidth="0.6"
             transform="translate(0, -8)"
-            filter="url(#badgeShadow)"
           />
           <text
-            x="3.2%"
+            x="2.8%"
             y={lineY.choch}
             dy="3.5"
-            fill={palette.chochText}
-            fontSize="8.5"
+            fill={colors.choch}
+            fontSize="9"
             fontWeight="bold"
           >
-            CHoCH (Change of Character) ${chochPrice.toFixed(1)}
+            CHoCH (Reversal Bias) ${chochPrice.toFixed(1)}
           </text>
         </g>
 
         {/* ======================================================== */}
-        {/* 6. SELECTED ACTIVE TRADE ON THE CHART                    */}
-        {/* Only the single selected (or latest) position is drawn   */}
-        {/* Zero chart flooding, clean lines and no collisions       */}
+        {/* 6. STOP LOSS (SL) - DOTTED ROSE LINE                     */}
         {/* ======================================================== */}
-        {(() => {
-          if (openPositions.length === 0) return null;
-          const selectedTicket = positionsState.selectedTicket;
-          const pos =
-            openPositions.find((p) => p.ticket === selectedTicket) ||
-            openPositions[openPositions.length - 1];
-          if (!pos) return null;
+        <g opacity="0.95">
+          <line
+            x1="1%"
+            y1={lineY.sl}
+            x2="99%"
+            y2={lineY.sl}
+            stroke={colors.sl}
+            strokeWidth="1.5"
+            strokeDasharray="4 4"
+          />
+          <rect
+            x="2%"
+            y={lineY.sl}
+            width="220"
+            height="18"
+            rx="4"
+            fill={colors.bgBadge}
+            stroke={colors.sl}
+            strokeWidth="0.8"
+            transform="translate(0, -9)"
+          />
+          <text
+            x="2.8%"
+            y={lineY.sl}
+            dy="3.5"
+            fill={colors.sl}
+            fontSize="10"
+            fontWeight="bold"
+          >
+            STOP LOSS ${activeSL.toFixed(2)} (-{riskPts.toFixed(1)} pts risk)
+          </text>
+        </g>
 
-          const posEntryY = '48%';
-          const isProfit = pos.profit >= 0;
-
+        {/* ======================================================== */}
+        {/* 7. LIVE RUNNING POSITIONS - SUBTLE DOTTED PIN            */}
+        {/* ======================================================== */}
+        {openPositions.slice(0, 3).map((pos, idx) => {
+          const isPosBuy = pos.type === 'BUY';
+          const posColor = isPosBuy ? '#10b981' : '#f43f5e';
+          const pY = isBuy ? `${48 + idx * 4}%` : `${52 - idx * 4}%`;
           return (
-            <g key={pos.ticket} opacity="1">
-              {/* Selected Position Entry Line (Solid Cyan / Sky Blue) */}
+            <g key={pos.ticket} opacity="0.9">
               <line
-                x1="1%"
-                y1={posEntryY}
-                x2="90%"
-                y2={posEntryY}
-                stroke={palette.posEntryStroke}
-                strokeWidth="1.8"
+                x1="20%"
+                y1={pY}
+                x2="98%"
+                y2={pY}
+                stroke={posColor}
+                strokeWidth="1"
+                strokeDasharray="2 3"
               />
-              <circle cx="1.5%" cy={posEntryY} r="3" fill={palette.posEntryStroke} />
-
-              {/* Clean Single Badge - Placed carefully so it never overlaps other lines */}
               <rect
-                x="20%"
-                y={posEntryY}
-                width="280"
-                height="22"
-                rx="5"
-                fill={palette.badgeBg}
-                stroke={palette.posEntryStroke}
-                strokeWidth="1.4"
-                transform="translate(0, -11)"
-                filter="url(#badgeShadow)"
+                x="65%"
+                y={pY}
+                width="160"
+                height="16"
+                rx="3"
+                fill={colors.bgBadge}
+                stroke={posColor}
+                strokeWidth="0.8"
+                transform="translate(0, -8)"
               />
               <text
-                x="21%"
-                y={posEntryY}
-                dy="4"
-                fill={palette.posEntryText}
+                x="66%"
+                y={pY}
+                dy="3.5"
+                fill={posColor}
                 fontSize="9"
                 fontWeight="bold"
               >
-                SELECTED: #{pos.ticket} {pos.type} {pos.volume} @ ${pos.price_open.toFixed(2)} ·{' '}
-                <tspan fill={isProfit ? palette.tpText : palette.slText}>
-                  {isProfit ? '+' : ''}${pos.profit.toFixed(2)} ({isProfit ? '+' : ''}
-                  {pos.pips} pts)
-                </tspan>
+                #{pos.ticket} {pos.type} {pos.volume}L ({pos.profit >= 0 ? '+' : ''}${pos.profit.toFixed(1)})
               </text>
             </g>
           );
-        })()}
+        })}
       </svg>
     </div>
   );

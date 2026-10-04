@@ -17,12 +17,11 @@ import { ConfirmDialog } from './components/ConfirmDialog';
 
 import { SignalEngineCard } from './components/SignalEngineCard';
 import { DealingRangeZonesCard } from './components/DealingRangeZonesCard';
-import { PositionsEventLogCard } from './components/PositionsEventLogCard';
 import { CompoundingLadderCard } from './components/CompoundingLadderCard';
 import { LiveExecutionCard } from './components/LiveExecutionCard';
+import { OrderBlocksProgressionCard } from './components/OrderBlocksProgressionCard';
 import { WeekendMarketBanner } from './components/WeekendMarketBanner';
 import { TerminalUtilitiesBar } from './components/TerminalUtilitiesBar';
-import { MinimalEngineStatus } from './components/MinimalEngineStatus';
 
 import { Mt5BridgeModal } from './components/Mt5BridgeModal';
 import { RiskSettingsModal } from './components/RiskSettingsModal';
@@ -63,11 +62,6 @@ export default function App() {
     isDestructive?: boolean;
     onConfirm: () => void;
   } | null>(null);
-
-  // Close position handler with confirm
-  const handleClosePosition = useCallback((ticket: number) => {
-    tradingEngine.closePosition(ticket, 'Manual');
-  }, []);
 
   // Execute signal with multiple position support (up to 10)
   const handleExecuteSignal = useCallback(
@@ -167,7 +161,7 @@ export default function App() {
                   : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-950 dark:hover:text-white'
               }`}
             >
-              Chart
+              Chart & Trades
             </button>
             <button
               onClick={() => setMobileTab('trade')}
@@ -177,17 +171,7 @@ export default function App() {
                   : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-950 dark:hover:text-white'
               }`}
             >
-              Trade
-            </button>
-            <button
-              onClick={() => setMobileTab('positions')}
-              className={`flex-1 py-2 px-1 rounded-lg font-bold transition-colors text-center ${
-                mobileTab === 'positions'
-                  ? 'bg-zinc-950 text-white dark:bg-white dark:text-black shadow-xs'
-                  : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-950 dark:hover:text-white'
-              }`}
-            >
-              Trades ({positionsState.positions.length})
+              Signal Deck
             </button>
             <button
               onClick={() => setMobileTab('zones')}
@@ -197,42 +181,37 @@ export default function App() {
                   : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-950 dark:hover:text-white'
               }`}
             >
-              Zones
+              SMC Zones
             </button>
           </div>
 
           {/* ======================================================== */}
           {/* MOBILE VIEW CONTAINER (< lg displays)                    */}
           {/* ======================================================== */}
-          <div className="block lg:hidden space-y-3.5">
+          <div className="block lg:hidden space-y-4">
             {mobileTab === 'chart' && (
-              <div className="space-y-3.5">
-                {/* Independent Card 1: Live Interactive Chart */}
+              <div className="space-y-4">
                 <TradingViewWidget
                   isDark={isDark}
                   symbol="OANDA:XAUUSD"
                   interval="1"
-                  height={420}
+                  height={400}
                   onExpand={() => setActiveModal('tradingview')}
                   onOpenHelp={() => setActiveModal('help')}
                 />
-                {/* Independent Card 2: Live Trade Execution Monitor */}
-                <LiveExecutionCard />
+                <OrderBlocksProgressionCard />
+                <LiveExecutionCard
+                  onOpenClosedTradesModal={() => setActiveModal('closed_trades')}
+                  onOpenDailyReportModal={() => setActiveModal('daily_report')}
+                />
               </div>
             )}
 
             {mobileTab === 'trade' && (
-              <div className="space-y-3.5">
+              <div className="space-y-4">
                 <SignalEngineCard onExecuteSignal={handleExecuteSignal} />
-                <LiveExecutionCard />
-              </div>
-            )}
-
-            {mobileTab === 'positions' && (
-              <div className="space-y-3.5">
-                <LiveExecutionCard />
-                <PositionsEventLogCard
-                  onClosePosition={handleClosePosition}
+                <OrderBlocksProgressionCard />
+                <LiveExecutionCard
                   onOpenClosedTradesModal={() => setActiveModal('closed_trades')}
                   onOpenDailyReportModal={() => setActiveModal('daily_report')}
                 />
@@ -240,13 +219,9 @@ export default function App() {
             )}
 
             {mobileTab === 'zones' && (
-              <div className="space-y-3.5">
+              <div className="space-y-4">
                 <DealingRangeZonesCard />
-                <MinimalEngineStatus
-                  snapshot={tradingEngine.getSnapshot()}
-                  onOpenBridge={() => setActiveModal('bridge')}
-                  onOpenSettings={() => setActiveModal('settings')}
-                />
+                <OrderBlocksProgressionCard />
               </div>
             )}
           </div>
@@ -254,40 +229,39 @@ export default function App() {
           {/* ======================================================== */}
           {/* DESKTOP SPLIT PRO WORKSTATION (>= lg displays)           */}
           {/* ======================================================== */}
-          <div className="hidden lg:grid lg:grid-cols-12 gap-5 items-start">
-            {/* Left Column (7 cols): Independent Chart Card + Live Trade Execution Card */}
-            <div className="lg:col-span-7 space-y-4">
-              {/* Independent Card 1: Chart Card */}
+          <div className="hidden lg:flex lg:flex-col gap-5">
+            {/* Top Row: Streamlined Signal Deck & SMC Dealing Range Zones */}
+            <div className="grid grid-cols-12 gap-5 items-start">
+              <div className="col-span-7">
+                <SignalEngineCard onExecuteSignal={handleExecuteSignal} />
+              </div>
+              <div className="col-span-5">
+                <DealingRangeZonesCard />
+              </div>
+            </div>
+
+            {/* Separately Below Row 1: Interactive Real-Time Candlestick Chart */}
+            <div className="w-full">
               <TradingViewWidget
                 isDark={isDark}
                 symbol="OANDA:XAUUSD"
                 interval="1"
-                height={480}
+                height={500}
                 onExpand={() => setActiveModal('tradingview')}
                 onOpenHelp={() => setActiveModal('help')}
               />
-
-              {/* Independent Card 2: Live Trade Being Executed Card */}
-              <LiveExecutionCard />
-
-              {/* Trade Journal & Positions Log */}
-              <PositionsEventLogCard
-                onClosePosition={handleClosePosition}
-                onOpenClosedTradesModal={() => setActiveModal('closed_trades')}
-                onOpenDailyReportModal={() => setActiveModal('daily_report')}
-              />
             </div>
 
-            {/* Right Column (5 cols): Custom Execution Control Deck & POI Zones */}
-            <div className="lg:col-span-5 space-y-4">
-              <SignalEngineCard onExecuteSignal={handleExecuteSignal} />
+            {/* Separately Below Row 2: Formed Order Blocks & Trade Progression Tracker */}
+            <div className="w-full">
+              <OrderBlocksProgressionCard />
+            </div>
 
-              <DealingRangeZonesCard />
-
-              <MinimalEngineStatus
-                snapshot={tradingEngine.getSnapshot()}
-                onOpenBridge={() => setActiveModal('bridge')}
-                onOpenSettings={() => setActiveModal('settings')}
+            {/* Separately Below Row 3: Live Execution Monitor & Margin Hub */}
+            <div className="w-full">
+              <LiveExecutionCard
+                onOpenClosedTradesModal={() => setActiveModal('closed_trades')}
+                onOpenDailyReportModal={() => setActiveModal('daily_report')}
               />
             </div>
           </div>

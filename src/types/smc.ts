@@ -115,6 +115,7 @@ export interface Position {
   comment: string;
   beLocked?: boolean;
   trailLocked?: boolean;
+  strategyRationale?: string;
 }
 
 export interface ClosedTrade {
@@ -129,6 +130,7 @@ export interface ClosedTrade {
   pips: number;
   reason: 'TP' | 'SL' | 'Manual' | 'KillSwitch';
   comment: string;
+  strategyRationale?: string;
 }
 
 export interface EngineLog {

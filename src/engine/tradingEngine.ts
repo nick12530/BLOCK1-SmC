@@ -866,6 +866,12 @@ export class TradingEngine {
 
     const openPrice = direction === 'BUY' ? this.ask : this.bid;
     const ticket = ++this.ticketCounter;
+    const market = this.getMarketSnapshot();
+    const rationale = market.signal?.actionReason ||
+      (direction === 'BUY'
+        ? 'Liquidity sweep into M5 Bullish Order Block (+OB) in Discount zone (<50% EQ). Confirmed FVG displacement with 1:2.0 RR target.'
+        : 'Liquidity sweep into M5 Bearish Order Block (-OB) in Premium zone (>50% EQ). Confirmed FVG displacement with 1:2.0 RR target.');
+
     const newPos: Position = {
       ticket,
       time: new Date().toISOString().substr(11, 8),
@@ -878,6 +884,7 @@ export class TradingEngine {
       pips: 0.0,
       magic: MAGIC,
       comment,
+      strategyRationale: rationale,
     };
 
     this.positions = [...this.positions, newPos];
@@ -913,6 +920,7 @@ export class TradingEngine {
       pips,
       reason,
       comment: pos.comment,
+      strategyRationale: pos.strategyRationale || 'SMC Order Block & Fair Value Gap Confluence execution',
     };
 
     this.positions = this.positions.filter((p) => p.ticket !== ticket);

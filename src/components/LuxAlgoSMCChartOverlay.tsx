@@ -97,10 +97,12 @@ export const LuxAlgoSMCChartOverlay: React.FC<LuxAlgoSMCChartOverlayProps> = ({
         obHigh: '64%',
         obMT: '70%',
         obLow: '76%',
+        sl: '80%',
         choch: '86%',
       };
     } else {
       return {
+        sl: '20%',
         obHigh: '18%',
         obMT: '24%',
         obLow: '30%',
@@ -250,64 +252,99 @@ export const LuxAlgoSMCChartOverlay: React.FC<LuxAlgoSMCChartOverlayProps> = ({
         </g>
 
         {/* ======================================================== */}
-        {/* 3. ACTIVE SIGNAL ENTRY LINE (SOLID HIGH-CONTRAST)        */}
+        {/* VISUAL TRADE CORRIDORS (PROMINENT REWARD & RISK ZONES)   */}
+        {/* ======================================================== */}
+        <g opacity="0.12">
+          {/* Reward Zone (between Entry and TP) */}
+          <rect
+            x="1%"
+            y={isBuy ? '18%' : '52%'}
+            width="98%"
+            height={isBuy ? '32%' : '34%'}
+            fill={palette.tpStroke}
+          />
+          {/* Risk Zone (between Entry and SL) */}
+          <rect
+            x="1%"
+            y={isBuy ? '50%' : '20%'}
+            width="98%"
+            height="32%"
+            fill={palette.slStroke}
+          />
+        </g>
+
+        {/* ======================================================== */}
+        {/* 3. PROMINENT TRADE ENTRY LINE (HIGH-CONTRAST SOLID)      */}
         {/* ======================================================== */}
         <g opacity="1">
+          {/* Subtle Outer Glow Line for Crystal Clear Contrast */}
+          <line
+            x1="0.5%"
+            y1={lineY.entry}
+            x2="99.5%"
+            y2={lineY.entry}
+            stroke={palette.entryStroke}
+            strokeWidth="5"
+            strokeOpacity="0.3"
+          />
+          {/* Primary High-Contrast Solid Entry Line */}
           <line
             x1="1%"
             y1={lineY.entry}
             x2="99%"
             y2={lineY.entry}
             stroke={palette.entryStroke}
-            strokeWidth="2"
+            strokeWidth="3"
           />
-          {/* Left Entry Badge */}
+          
+          {/* Central Left Prominent Entry Badge */}
           <rect
-            x="2.2%"
+            x="2%"
             y={lineY.entry}
-            width="160"
-            height="20"
-            rx="4"
+            width="220"
+            height="26"
+            rx="6"
             fill={palette.badgeBg}
             stroke={palette.entryStroke}
-            strokeWidth="1.2"
-            transform="translate(0, -10)"
+            strokeWidth="2"
+            transform="translate(0, -13)"
             filter="url(#badgeShadow)"
           />
           <text
             x="3%"
             y={lineY.entry}
-            dy="3.5"
+            dy="4.5"
             fill={palette.entryText}
-            fontSize="10"
-            fontWeight="bold"
+            fontSize="12.5"
+            fontWeight="900"
+            letterSpacing="0.5"
           >
             {isBuy ? '▲ BUY ENTRY' : '▼ SELL ENTRY'} ${activeEntry.toFixed(2)}
           </text>
 
-          {/* Right Strength Badge */}
+          {/* Right Axis Prominent Price Pin */}
           <rect
             x="84%"
             y={lineY.entry}
-            width="110"
-            height="18"
-            rx="4"
-            fill={palette.badgeBg}
-            stroke={palette.badgeStroke}
-            strokeWidth="1"
-            transform="translate(0, -9)"
+            width="125"
+            height="22"
+            rx="5"
+            fill={palette.entryStroke}
+            stroke={palette.badgeBg}
+            strokeWidth="1.5"
+            transform="translate(0, -11)"
             filter="url(#badgeShadow)"
           />
           <text
             x="96%"
             y={lineY.entry}
-            dy="3.5"
-            fill={palette.entryText}
-            fontSize="9"
-            fontWeight="bold"
+            dy="4"
+            fill="#ffffff"
+            fontSize="11"
+            fontWeight="900"
             textAnchor="end"
           >
-            M{timeframe} · {strengthPct}% STRENGTH
+            ENTRY ${activeEntry.toFixed(2)}
           </text>
         </g>
 

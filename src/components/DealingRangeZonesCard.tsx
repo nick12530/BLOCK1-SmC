@@ -40,15 +40,15 @@ export const DealingRangeZonesCard: React.FC = React.memo(() => {
   }, [market.zones, spot]);
 
   return (
-    <div className="bg-white dark:bg-black border border-zinc-200/90 dark:border-zinc-800 rounded-2xl p-5 sm:p-6 flex flex-col justify-between font-mono text-xs shadow-xs space-y-4 transition-colors">
+    <div className="bg-white dark:bg-[#0c0d10] border border-zinc-200/90 dark:border-zinc-800/90 rounded-2xl p-4 sm:p-5 flex flex-col justify-between font-mono text-xs sm:text-sm shadow-[0_1px_3px_rgba(0,0,0,0.04)] dark:shadow-[0_1px_3px_rgba(0,0,0,0.4)] space-y-4 transition-colors">
       {/* Dealing Range Meter */}
       <div className="space-y-3">
         <div className="flex items-center justify-between">
-          <span className="text-[11px] font-bold uppercase tracking-wider text-zinc-400">
+          <span className="text-xs sm:text-sm font-bold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
             DEALING RANGE
           </span>
           <span
-            className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+            className={`text-xs font-bold px-2.5 py-1 rounded-full ${
               isDiscount
                 ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20'
                 : 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20'
@@ -59,17 +59,17 @@ export const DealingRangeZonesCard: React.FC = React.memo(() => {
         </div>
 
         {/* Minimal Gradient Slider */}
-        <div className="space-y-1.5 pt-1">
-          <div className="relative h-2 rounded-full bg-gradient-to-r from-emerald-500 via-amber-400 to-rose-500 overflow-hidden">
+        <div className="space-y-2 pt-1">
+          <div className="relative h-2.5 rounded-full bg-gradient-to-r from-emerald-500 via-amber-400 to-rose-500 overflow-hidden">
             <div
-              className="absolute top-0 bottom-0 w-1.5 bg-zinc-950 dark:bg-white shadow-md -translate-x-1/2 rounded-full border border-white dark:border-zinc-900"
+              className="absolute top-0 bottom-0 w-2 bg-zinc-950 dark:bg-white shadow-md -translate-x-1/2 rounded-full border border-white dark:border-zinc-900"
               style={{ left: `${posPercent}%` }}
             />
           </div>
 
-          <div className="flex justify-between items-center text-[10px] text-zinc-400 px-0.5">
+          <div className="flex justify-between items-center text-xs text-zinc-500 dark:text-zinc-400 px-0.5">
             <span>Low ${dr.low.toFixed(1)}</span>
-            <span className="font-semibold text-zinc-700 dark:text-zinc-300">
+            <span className="font-bold text-zinc-800 dark:text-zinc-200">
               EQ ${dr.equilibrium.toFixed(1)}
             </span>
             <span>High ${dr.high.toFixed(1)}</span>
@@ -78,20 +78,20 @@ export const DealingRangeZonesCard: React.FC = React.memo(() => {
       </div>
 
       {/* Live SMC Institutional Zones */}
-      <div className="space-y-2 pt-3 border-t border-zinc-100 dark:border-zinc-800">
-        <div className="text-[11px] font-bold uppercase tracking-wider text-zinc-400">
+      <div className="space-y-2.5 pt-3.5 border-t border-zinc-100 dark:border-zinc-800">
+        <div className="text-xs sm:text-sm font-bold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
           ACTIVE POI ZONES
         </div>
 
-        <div className="space-y-1.5">
+        <div className="space-y-2">
           {liveZones.map((z, idx) => (
             <div
               key={`${z.kind}-${z.bottom}-${idx}`}
-              className="flex items-center justify-between p-2.5 rounded-xl bg-zinc-50 dark:bg-zinc-950 border border-zinc-100 dark:border-zinc-800 text-[11px]"
+              className="flex items-center justify-between p-2.5 sm:p-3 rounded-xl bg-zinc-50 dark:bg-zinc-950 border border-zinc-100 dark:border-zinc-800 text-xs sm:text-sm"
             >
               <div className="flex items-center gap-2">
                 <span
-                  className={`font-black px-1.5 py-0.5 rounded text-[10px] ${
+                  className={`font-black px-2 py-0.5 rounded text-xs ${
                     z.kind === 'OB'
                       ? 'bg-zinc-200 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-200'
                       : 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20'
@@ -99,13 +99,13 @@ export const DealingRangeZonesCard: React.FC = React.memo(() => {
                 >
                   {z.kind}
                 </span>
-                <span className="text-zinc-800 dark:text-zinc-200 font-medium">
+                <span className="text-zinc-800 dark:text-zinc-200 font-semibold">
                   ${z.bottom.toFixed(1)} – ${z.top.toFixed(1)}
                 </span>
               </div>
 
               <span
-                className={`font-bold text-[10px] ${
+                className={`font-bold text-xs ${
                   z.bullish
                     ? 'text-emerald-600 dark:text-emerald-400'
                     : 'text-rose-600 dark:text-rose-400'

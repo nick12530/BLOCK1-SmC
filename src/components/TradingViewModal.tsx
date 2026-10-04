@@ -5,7 +5,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { X, ExternalLink, RefreshCw } from 'lucide-react';
+import { X, ExternalLink, RefreshCw, ArrowLeft } from 'lucide-react';
 import { TradingViewWidget } from './TradingViewWidget';
 
 interface TradingViewModalProps {
@@ -89,6 +89,28 @@ export const TradingViewModal: React.FC<TradingViewModalProps> = ({ isOpen, onCl
             interval={interval}
             height="100%"
           />
+        </div>
+
+        {/* Footer: Bottom Back to Terminal Button */}
+        <div className="p-3 sm:p-3.5 border-t border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950 flex items-center justify-between shrink-0 font-mono">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 rounded-xl text-xs font-bold text-zinc-700 dark:text-zinc-300 hover:text-zinc-950 dark:hover:text-white bg-zinc-200 hover:bg-zinc-300 dark:bg-zinc-800 dark:hover:bg-zinc-700 transition-colors cursor-pointer flex items-center gap-1.5"
+          >
+            <ArrowLeft className="w-3.5 h-3.5" />
+            <span>Back to Terminal</span>
+          </button>
+
+          <span className="text-[11px] text-zinc-400 hidden sm:inline">
+            Interactive Institutional SMC Candlestick Canvas
+          </span>
+
+          <button
+            onClick={onClose}
+            className="px-4 py-2 rounded-xl text-xs font-bold bg-zinc-900 text-white dark:bg-white dark:text-black transition-colors cursor-pointer"
+          >
+            Close Fullscreen
+          </button>
         </div>
       </div>
     </div>

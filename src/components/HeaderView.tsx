@@ -1,31 +1,20 @@
 /**
- * HeaderView.tsx - Flowing Minimalist Institutional Navbar
- * Requirements:
- * - Brand: "GOLD" (SMC text removed)
- * - Flowing with site (relative, not fixed/sticky)
- * - Linked MT5 Account Balance & Connection status at top
- * - Audio Chime toggle at top
- * - EAT (East Africa Time) clock
- * - Institutional Kill Zone indicator
- * - Pure Black, White, and Gray primary color palette in dark mode
+ * HeaderView.tsx - De-Cluttered Minimalist Institutional Navbar
+ * Clean, breathing, luxury top bar:
+ * - Brand & Asset Identity: "GOLD XAUUSD"
+ * - Live Market Schedule Pill (Weekend Closed / Live Interbank)
+ * - Large, prominent Gold Spot Price ($4,188.50)
+ * - MT5 Account status / Link trigger
+ * - Crisp Light/Dark Mode Switcher
+ * - All secondary buttons moved to page-level Terminal Utilities Bar
  */
 
-import React, { useState, useEffect } from 'react';
-import { useTicker, useEngine, useMarket } from '../hooks/useTradingStore';
-import { useAudioNotifications } from '../hooks/useAudioNotifications';
-import { signalAudioNotifier } from '../utils/audioNotification';
-import { tradingEngine } from '../engine/tradingEngine';
+import React from 'react';
+import { useTicker, useEngine } from '../hooks/useTradingStore';
 import {
   Sun,
   Moon,
-  Volume2,
-  VolumeX,
-  LineChart,
-  TrendingUp,
-  TrendingDown,
-  Clock,
   Server,
-  Zap,
 } from 'lucide-react';
 
 interface HeaderViewProps {
@@ -34,214 +23,96 @@ interface HeaderViewProps {
   onOpenModal: (
     modal: 'bridge' | 'settings' | 'scenarios' | 'daily_report' | 'tradingview' | 'help' | 'phone_pwa'
   ) => void;
-  onToggleKillSwitchPrompt: () => void;
+  onToggleKillSwitchPrompt?: () => void;
 }
 
 export const HeaderView: React.FC<HeaderViewProps> = React.memo(({
   isDark,
   onToggleTheme,
   onOpenModal,
-  onToggleKillSwitchPrompt,
 }) => {
   const ticker = useTicker();
   const engine = useEngine();
-  const market = useMarket();
-  const { isMuted, toggleMute } = useAudioNotifications();
 
-  // EAT Clock State (UTC+3)
-  const [eatTime, setEatTime] = useState<string>('');
-
-  useEffect(() => {
-    const updateTime = () => {
-      const now = new Date();
-      // Format to East Africa Time (Africa/Nairobi UTC+3)
-      const formatted = new Intl.DateTimeFormat('en-GB', {
-        timeZone: 'Africa/Nairobi',
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit',
-        hour12: false,
-      }).format(now);
-      setEatTime(`${formatted} EAT`);
-    };
-
-    updateTime();
-    const interval = setInterval(updateTime, 1000);
-    return () => clearInterval(interval);
-  }, []);
-
-  const isKill = engine.kill_switch;
-  const isAuto = engine.auto_trade;
-
-  const activeDirection = market.signal?.direction || (market.bias === 'bearish' ? 'SELL' : 'BUY');
-  const activeScore = market.signal?.score || 5.0;
-
-  // Active Kill Zone name
-  const activeKillZone = engine.session.activeSessionName || 'London Kill Zone';
+  const schedule = engine.marketSchedule;
+  const mt5 = engine.mt5Account;
 
   return (
-    <header className="relative w-full border-b border-zinc-200 dark:border-zinc-800 bg-white dark:bg-black px-3 sm:px-6 py-2.5 font-mono text-xs transition-colors">
-      <div className="max-w-7xl mx-auto flex flex-col lg:flex-row items-center justify-between gap-2.5 lg:gap-4">
-        {/* Left Row: Asset Tag ("GOLD"), Spot Price, Bold Signal Badge, and EAT Clock */}
-        <div className="flex items-center gap-2.5 sm:gap-3 flex-wrap justify-center lg:justify-start">
-          {/* Asset Tag - Just "GOLD" */}
-          <div className="flex items-center gap-1.5">
-            <span className="font-black text-sm tracking-tight text-zinc-950 dark:text-white uppercase">
+    <header className="relative w-full border-b border-slate-200/90 dark:border-[#1c212c] bg-white/90 dark:bg-[#11141a]/90 backdrop-blur-md px-4 sm:px-6 py-3 font-mono text-xs sm:text-sm transition-colors shadow-[0_1px_2px_rgba(0,0,0,0.03)] dark:shadow-none">
+      <div className="max-w-7xl mx-auto flex items-center justify-between gap-4">
+        {/* Left: Asset, Spot Price & Live Market Status */}
+        <div className="flex items-center gap-3 sm:gap-4 flex-wrap">
+          {/* Asset Badge */}
+          <div className="flex items-center gap-2">
+            <span className="font-black text-base sm:text-lg tracking-tight text-slate-900 dark:text-white uppercase font-sans">
               GOLD
             </span>
-            <span className="text-[10px] px-1.5 py-0.5 rounded bg-zinc-100 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300 font-bold border border-zinc-200 dark:border-zinc-800">
+            <span className="text-[11px] px-2 py-0.5 rounded-md bg-slate-100 dark:bg-[#161b23] text-slate-700 dark:text-slate-300 font-bold border border-slate-200 dark:border-[#222938]">
               XAUUSD
             </span>
           </div>
 
-          <div className="h-4 w-px bg-zinc-200 dark:bg-zinc-800 hidden sm:block" />
+          <div className="h-5 w-px bg-slate-200 dark:bg-[#222938] hidden sm:block" />
 
-          {/* Spot Price with explicit label */}
-          <div className="flex flex-col">
-            <span className="text-[9px] uppercase tracking-wider text-zinc-400 font-bold leading-none">
-              Gold Spot (oz)
+          {/* Real-Time Spot Price */}
+          <div className="flex items-baseline gap-2">
+            <span className="text-lg sm:text-xl font-black text-slate-900 dark:text-white tabular-nums tracking-tight">
+              ${ticker.bid.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </span>
-            <div className="flex items-baseline gap-1 mt-0.5">
-              <span className="text-xl sm:text-2xl font-black text-zinc-950 dark:text-white tabular-nums tracking-tight">
-                ${ticker.bid.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-              </span>
-              <span className="text-[10px] text-zinc-400 hidden md:inline">
-                ({ticker.spread} pts)
-              </span>
-            </div>
+            <span className="text-xs text-slate-400 tabular-nums hidden md:inline">
+              ({ticker.spread} pts)
+            </span>
           </div>
 
-          {/* FUNCTIONAL SIGNAL STRENGTH BADGE - NO STARS */}
-          <button
-            onClick={() => tradingEngine.cycleMarketWave()}
-            title="Click to cycle next market wave / signal setup"
-            className={`px-2.5 py-1 rounded-lg text-[11px] font-black tracking-wider uppercase flex items-center gap-1.5 transition-all cursor-pointer ${
-              activeDirection === 'BUY'
-                ? 'bg-emerald-600 hover:bg-emerald-500 text-white'
-                : 'bg-rose-600 hover:bg-rose-500 text-white'
-            }`}
-          >
-            {activeDirection === 'BUY' ? <TrendingUp className="w-3.5 h-3.5" /> : <TrendingDown className="w-3.5 h-3.5" />}
-            <span>{activeDirection} · {Math.min(99, Math.max(82, Math.round((activeScore / 5.0) * 100)))}% STRENGTH</span>
-          </button>
-
-          {/* Institutional Kill Zone Indicator */}
-          <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-[11px] text-zinc-700 dark:text-zinc-300">
-            <span className="w-2 h-2 rounded-full bg-emerald-500" />
-            <span className="font-bold">{activeKillZone}</span>
-          </div>
-
-          {/* EAT Timezone Clock */}
-          <div className="flex items-center gap-1 text-[11px] text-zinc-500 dark:text-zinc-400">
-            <Clock className="w-3.5 h-3.5 text-zinc-400" />
-            <span className="tabular-nums font-semibold">{eatTime || '11:24:00 EAT'}</span>
-          </div>
+          {/* Market Status Pill */}
+          {schedule && !schedule.isOpen ? (
+            <span className="flex items-center gap-1.5 text-[11px] font-bold px-2.5 py-1 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+              <span>Weekend Closed</span>
+            </span>
+          ) : (
+            <span className="flex items-center gap-1.5 text-[11px] font-bold px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+              <span>Live Interbank</span>
+            </span>
+          )}
         </div>
 
-        {/* Right Row: MT5 Linked Balance, Auto, Kill Switch, Sound, Chart, Theme */}
-        <div className="flex items-center gap-2 sm:gap-2.5 flex-wrap justify-center lg:justify-end">
-          {/* Linked MT5 Account Live Equity & Balance */}
+        {/* Right: Clean, Uncrowded Action Cluster */}
+        <div className="flex items-center gap-2 sm:gap-3">
+          {/* MT5 Account Linker Button */}
           <button
             onClick={() => onOpenModal('bridge')}
-            title="Linked MT5 Broker Account - Click to configure bridge"
-            className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-zinc-100 dark:bg-zinc-900 hover:bg-zinc-200 dark:hover:bg-zinc-800 border border-zinc-200 dark:border-zinc-800 text-[11px] text-zinc-700 dark:text-zinc-300 transition-colors cursor-pointer"
-          >
-            <Server className="w-3.5 h-3.5 text-emerald-500" />
-            <div className="flex items-center gap-1.5">
-              <span className="text-zinc-400">Equity:</span>
-              <strong
-                className={`font-black tabular-nums ${
-                  ticker.equity >= ticker.balance
-                    ? 'text-emerald-600 dark:text-emerald-400'
-                    : 'text-rose-600 dark:text-rose-400'
-                }`}
-              >
-                ${ticker.equity.toLocaleString('en-US', {
-                  minimumFractionDigits: 2,
-                  maximumFractionDigits: 2,
-                })}
-              </strong>
-              <span className="text-zinc-400 font-sans text-[10px] hidden sm:inline">
-                · Bal: ${ticker.balance.toLocaleString('en-US', {
-                  minimumFractionDigits: 2,
-                  maximumFractionDigits: 2,
-                })}
-              </span>
-            </div>
-          </button>
-
-          {/* Auto Trade Toggle with Full Functional Explanation */}
-          <button
-            onClick={() => tradingEngine.toggleAutoTrade()}
-            title={
-              isAuto
-                ? 'AUTO IS ON: Engine automatically executes verified >= 80% signals on MT5'
-                : 'AUTO IS OFF: Manual 1-click execution mode'
-            }
-            className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all border cursor-pointer ${
-              isAuto
-                ? 'bg-emerald-600 border-emerald-500 text-white shadow-xs'
-                : 'bg-zinc-100 dark:bg-zinc-900 border-zinc-300 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
+            title="MetaTrader 5 Bridge Status"
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-bold transition-all cursor-pointer ${
+              mt5?.connected
+                ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-600 dark:text-emerald-400'
+                : 'bg-slate-100 hover:bg-slate-200 dark:bg-[#161b23] dark:hover:bg-[#1f2633] border-slate-200 dark:border-[#222938] text-slate-800 dark:text-slate-200'
             }`}
           >
-            AUTO: {isAuto ? 'ON' : 'OFF'}
-          </button>
-
-          {/* Kill Switch Button */}
-          <button
-            onClick={onToggleKillSwitchPrompt}
-            title="Emergency halt & close all positions"
-            className={`px-2.5 py-1 rounded-lg text-[11px] font-bold tracking-wider uppercase border transition-all ${
-              isKill
-                ? 'bg-rose-600 text-white border-rose-500'
-                : 'bg-transparent border-rose-600/70 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30'
-            }`}
-          >
-            {isKill ? 'HALTED' : 'KILL SWITCH'}
-          </button>
-
-          <div className="h-4 w-px bg-zinc-200 dark:bg-zinc-800 hidden sm:block" />
-
-          {/* Audio Chime Mute / Unmute & Test Button */}
-          <div className="flex items-center gap-0.5">
-            <button
-              onClick={toggleMute}
-              title={isMuted ? 'Unmute Audio Chime Alerts' : 'Mute Audio Chime Alerts'}
-              className="p-1.5 rounded-lg text-zinc-600 dark:text-zinc-400 hover:text-zinc-950 dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-zinc-900 transition-colors cursor-pointer"
-            >
-              {isMuted ? (
-                <VolumeX className="w-4 h-4 text-zinc-400" />
-              ) : (
-                <Volume2 className="w-4 h-4 text-emerald-500" />
-              )}
-            </button>
-            {!isMuted && (
-              <button
-                onClick={() => signalAudioNotifier.playTestChime()}
-                title="Preview subtle signal notification sound"
-                className="text-[9px] font-mono px-1.5 py-0.5 rounded text-zinc-500 hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-200 dark:hover:bg-zinc-800 transition-colors hidden sm:inline cursor-pointer"
-              >
-                Test
-              </button>
+            <Server className="w-4 h-4 text-emerald-500" />
+            {mt5?.connected ? (
+              <span className="hidden sm:inline">MT5: #{mt5.login}</span>
+            ) : (
+              <span>Link MT5</span>
             )}
+          </button>
+
+          {/* Account Balance Badge */}
+          <div className="px-2.5 py-1.5 rounded-lg bg-slate-50 dark:bg-[#161b23] border border-slate-200 dark:border-[#222938] text-xs hidden sm:flex items-center gap-1.5">
+            <span className="text-slate-400">Equity:</span>
+            <strong className="text-slate-900 dark:text-white tabular-nums">
+              ${ticker.equity.toFixed(2)}
+            </strong>
           </div>
 
-          {/* Fullscreen Chart Modal */}
-          <button
-            onClick={() => onOpenModal('tradingview')}
-            title="Open Fullscreen Chart Workstation"
-            className="p-1.5 rounded-lg text-zinc-600 dark:text-zinc-400 hover:text-zinc-950 dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-zinc-900 transition-colors"
-          >
-            <LineChart className="w-4 h-4" />
-          </button>
-
-          {/* Theme Toggle */}
+          {/* Theme Toggle Button */}
           <button
             onClick={onToggleTheme}
-            title={isDark ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
-            className="p-1.5 rounded-lg text-zinc-600 dark:text-zinc-400 hover:text-zinc-950 dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-zinc-900 transition-colors"
+            aria-label="Toggle light or dark theme"
+            className="p-2 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-[#161b23] dark:hover:bg-[#1f2633] border border-slate-200 dark:border-[#222938] text-slate-700 dark:text-slate-300 transition-colors cursor-pointer"
           >
-            {isDark ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4 text-zinc-600" />}
+            {isDark ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4 text-slate-600" />}
           </button>
         </div>
       </div>

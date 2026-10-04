@@ -113,6 +113,8 @@ export interface Position {
   pips: number;
   magic: number;
   comment: string;
+  beLocked?: boolean;
+  trailLocked?: boolean;
 }
 
 export interface ClosedTrade {
@@ -204,15 +206,42 @@ export interface PositionsState {
   selectedTicket?: number | null;
 }
 
+export interface CompoundingStageInfo {
+  stage: number;
+  name: string;
+  minBal: number;
+  maxBal: number;
+  progressPct: number;
+  recommendedLot: number;
+  maxTrades: number;
+  targetPnlPerTrade: string;
+  nextMilestone: string;
+}
+
+import { MarketScheduleStatus } from '../engine/marketHours';
+
 export interface EngineState {
   kill_switch: boolean;
   auto_trade: boolean;
+  auto_be_enabled: boolean;
   news_blackout: boolean;
   session: SessionInfo;
   connected: boolean;
   max_spread_points: number;
   daily_loss_pct: number;
   daily_drawdown_pct: number;
+  compoundingStage: CompoundingStageInfo;
+  marketSchedule?: MarketScheduleStatus;
+  mt5Account?: {
+    connected: boolean;
+    login: string;
+    server: string;
+    broker: string;
+    balance: number;
+    equity: number;
+    freeMargin: number;
+  };
+  simulateWeekendMode?: boolean;
 }
 
 export interface EventsState {

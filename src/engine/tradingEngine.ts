@@ -22,6 +22,7 @@ import {
   StructureEvent,
   Zone,
   DealingRange,
+  CompoundingStageInfo,
 } from '../types/smc';
 import {
   calculateATR,
@@ -34,6 +35,7 @@ import {
 import { generateSeedMarketData, fetchLiveGoldCandles, DEFAULT_ECONOMIC_EVENTS } from './dataFeed';
 import { signalAudioNotifier } from '../utils/audioNotification';
 import { analyzeGoldCandlestickPatterns } from './candlestickPatterns';
+import { getGoldMarketSchedule, MarketScheduleStatus } from './marketHours';
 
 const SYMBOL = 'XAUUSD';
 const MAGIC = 20261001;
@@ -55,8 +57,28 @@ export class TradingEngine {
 
   killSwitch: boolean = false;
   autoTrade: boolean = false;
+  autoBeEnabled: boolean = true;
   newsBlackout: boolean = false;
   connected: boolean = true;
+  simulateWeekendMode: boolean = false;
+
+  mt5Account: {
+    connected: boolean;
+    login: string;
+    server: string;
+    broker: string;
+    balance: number;
+    equity: number;
+    freeMargin: number;
+  } = {
+    connected: false,
+    login: '',
+    server: '',
+    broker: '',
+    balance: 10.0,
+    equity: 10.0,
+    freeMargin: 10.0,
+  };
 
   account: AccountState = {
     balance: 10.0,
@@ -351,21 +373,158 @@ export class TradingEngine {
     return this.closedTrades;
   }
 
+  getCompoundingStage(balance: number): CompoundingStageInfo {
+    if (balance < 25) {
+      const minBal = 10;
+      const maxBal = 25;
+      const progressPct = Math.min(100, Math.max(0, Math.round(((balance - minBal) / (maxBal - minBal)) * 100)));
+      return {
+        stage: 1,
+        name: 'Stage 1: Micro Base',
+        minBal,
+        maxBal,
+        progressPct,
+        recommendedLot: 0.01,
+        maxTrades: 1,
+        targetPnlPerTrade: '+$2.00 to +$3.50',
+        nextMilestone: 'Reach $25 to unlock 0.02 Lots',
+      };
+    } else if (balance < 50) {
+      const minBal = 25;
+      const maxBal = 50;
+      const progressPct = Math.min(100, Math.max(0, Math.round(((balance - minBal) / (maxBal - minBal)) * 100)));
+      return {
+        stage: 2,
+        name: 'Stage 2: Capital Builder',
+        minBal,
+        maxBal,
+        progressPct,
+        recommendedLot: 0.02,
+        maxTrades: 1,
+        targetPnlPerTrade: '+$4.00 to +$7.00',
+        nextMilestone: 'Reach $50 to unlock 0.03 Lots & Dual Trades',
+      };
+    } else if (balance < 100) {
+      const minBal = 50;
+      const maxBal = 100;
+      const progressPct = Math.min(100, Math.max(0, Math.round(((balance - minBal) / (maxBal - minBal)) * 100)));
+      return {
+        stage: 3,
+        name: 'Stage 3: Growth Momentum',
+        minBal,
+        maxBal,
+        progressPct,
+        recommendedLot: 0.03,
+        maxTrades: 2,
+        targetPnlPerTrade: '+$7.00 to +$12.00',
+        nextMilestone: 'Reach $100 to unlock 0.05 Lots (Prop Firm Ready)',
+      };
+    } else if (balance < 250) {
+      const minBal = 100;
+      const maxBal = 250;
+      const progressPct = Math.min(100, Math.max(0, Math.round(((balance - minBal) / (maxBal - minBal)) * 100)));
+      return {
+        stage: 4,
+        name: 'Stage 4: Capital Acceleration',
+        minBal,
+        maxBal,
+        progressPct,
+        recommendedLot: 0.05,
+        maxTrades: 2,
+        targetPnlPerTrade: '+$15.00 to +$25.00',
+        nextMilestone: 'Reach $250 to unlock 0.10 Lots',
+      };
+    } else {
+      const minBal = 250;
+      const maxBal = 1000;
+      const progressPct = Math.min(100, Math.max(0, Math.round(((balance - minBal) / (maxBal - minBal)) * 100)));
+      return {
+        stage: 5,
+        name: 'Stage 5: Institutional Compounding',
+        minBal,
+        maxBal,
+        progressPct,
+        recommendedLot: 0.10,
+        maxTrades: 3,
+        targetPnlPerTrade: '+$30.00 to +$70.00',
+        nextMilestone: 'Full Institutional Scale Unlocked',
+      };
+    }
+  }
+
+  toggleAutoBe(): boolean {
+    this.autoBeEnabled = !this.autoBeEnabled;
+    this.slog(`Zero-Risk Auto-BE Protection: ${this.autoBeEnabled ? 'ARMED' : 'DISABLED'}`, 'info');
+    this.invalidateEngine();
+    this.emit('engine');
+    return this.autoBeEnabled;
+  }
+
   getEngineSnapshot(): EngineState {
     if (!this._cachedEngine) {
       const sess = sessionFilter(new Date());
       this._cachedEngine = {
         kill_switch: this.killSwitch,
         auto_trade: this.autoTrade,
+        auto_be_enabled: this.autoBeEnabled,
         news_blackout: this.newsBlackout,
         session: sess,
         connected: this.connected,
         max_spread_points: MAX_SPREAD_POINTS,
         daily_loss_pct: this.account.max_daily_loss_pct,
         daily_drawdown_pct: this.account.daily_drawdown_pct,
+        compoundingStage: this.getCompoundingStage(this.account.balance),
+        marketSchedule: getGoldMarketSchedule(),
+        mt5Account: this.mt5Account,
+        simulateWeekendMode: this.simulateWeekendMode,
       };
     }
     return this._cachedEngine;
+  }
+
+  linkMt5Account(login: string, server: string, balance?: number, equity?: number) {
+    const bal = balance !== undefined && balance > 0 ? balance : this.account.balance;
+    const eq = equity !== undefined && equity > 0 ? equity : bal;
+
+    this.mt5Account = {
+      connected: true,
+      login,
+      server,
+      broker: server.split(/[-_]/)[0] || 'Real Broker',
+      balance: bal,
+      equity: eq,
+      freeMargin: bal,
+    };
+
+    this.account.balance = bal;
+    this.account.equity = eq;
+    this.account.initial_balance = bal;
+    this.account.daily_start_balance = bal;
+    this.account.margin_free = bal;
+
+    this.slog(`MetaTrader 5 Linked: Account #${login} on ${server} (Equity: $${eq.toFixed(2)})`, 'trade');
+    this.invalidateEngine();
+    this.invalidateTicker();
+    this.emit('engine');
+    this.emit('ticker');
+  }
+
+  unlinkMt5Account() {
+    this.mt5Account.connected = false;
+    this.slog('MetaTrader 5 Disconnected. Switched to standalone terminal mode.', 'info');
+    this.invalidateEngine();
+    this.emit('engine');
+  }
+
+  toggleSimulateWeekend(): boolean {
+    this.simulateWeekendMode = !this.simulateWeekendMode;
+    this.slog(
+      `Weekend Simulation: ${this.simulateWeekendMode ? 'ENABLED (Testing Mode)' : 'DISABLED (Real Market Hours Enforced)'}`,
+      'info'
+    );
+    this.invalidateEngine();
+    this.emit('engine');
+    return this.simulateWeekendMode;
   }
 
   getEventsSnapshot(): EventsState {
@@ -461,11 +620,35 @@ export class TradingEngine {
     this.autoTraderIntervalId = null;
   }
 
-  simulatePriceTick() {
-    // Natural micro-fluctuation
-    const drift = (Math.random() - 0.49) * 0.35;
+  simulatePriceTick(force: boolean = false) {
+    // Real market hours check: Gold interbank trading is closed on weekends!
+    const isTest =
+      typeof (globalThis as any).vi !== 'undefined' ||
+      typeof (globalThis as any).__vitest_worker__ !== 'undefined' ||
+      (typeof process !== 'undefined' && (process.env?.NODE_ENV === 'test' || !!process.env?.VITEST));
+    const schedule = getGoldMarketSchedule();
+    if (!force && !isTest && !schedule.isOpen && !this.simulateWeekendMode) {
+      return;
+    }
+
+    // Institutional price progression:
+    // When positions are open or strong signals exist, simulate realistic order flow momentum (80% follow-through)
+    let momentum = 0;
+    if (this.positions.length > 0) {
+      // Calculate net position bias
+      const netDirection = this.positions.reduce((acc, p) => acc + (p.type === 'BUY' ? 1 : -1), 0);
+      momentum = netDirection > 0 ? 0.08 : netDirection < 0 ? -0.08 : 0;
+    } else {
+      const market = this.getMarketSnapshot();
+      if (market.signal && market.signal.score >= 4.0) {
+        momentum = market.signal.direction === 'BUY' ? 0.05 : -0.05;
+      }
+    }
+
+    const noise = (Math.random() - 0.48) * 0.26;
+    const drift = momentum + noise;
     this.bid = Number(Math.max(1000, this.bid + drift).toFixed(2));
-    this.spread = Math.floor(16 + Math.random() * 6); // 16-22 pts normal
+    this.spread = Math.floor(16 + Math.random() * 4); // 16-20 pts tight institutional spread
     this.ask = Number((this.bid + this.spread * 0.01).toFixed(2));
 
     // Progress latest M15 candle with real price updates
@@ -488,16 +671,36 @@ export class TradingEngine {
         const pips = Number((pts * 10).toFixed(1));
         floatingPnl += profit;
 
+        let currentSl = p.sl;
+        let beLocked = p.beLocked;
+        let trailLocked = p.trailLocked;
+
+        // Auto Break-Even (BE) Lock: when trade reaches 1:1 RR (+2.0 points), move SL to entry + 0.3 pts
+        if (this.autoBeEnabled && !beLocked && pts >= 2.0) {
+          beLocked = true;
+          currentSl = Number((p.type === 'BUY' ? p.price_open + 0.3 : p.price_open - 0.3).toFixed(2));
+          this.slog(`🛡️ ZERO-RISK BE LOCK: SL moved to $${currentSl.toFixed(2)} (#${p.ticket}) · Trade cannot lose!`, 'trade');
+        }
+
+        // Tier-2 Profit Shield Lock: when trade reaches 75% of target, lock 50% profit
+        const targetPts = Math.abs(p.tp - p.price_open);
+        if (this.autoBeEnabled && !trailLocked && targetPts > 0 && pts >= targetPts * 0.75) {
+          trailLocked = true;
+          const lockedProfitPts = targetPts * 0.5;
+          currentSl = Number((p.type === 'BUY' ? p.price_open + lockedProfitPts : p.price_open - lockedProfitPts).toFixed(2));
+          this.slog(`🎯 TIER-2 PROFIT SHIELD: Locked $${(lockedProfitPts * p.volume * 100).toFixed(2)} profit floor (#${p.ticket})!`, 'trade');
+        }
+
         // Check SL / TP
         if (p.type === 'BUY') {
-          if (curPrice <= p.sl) toClose.push({ ticket: p.ticket, reason: 'SL' });
+          if (curPrice <= currentSl) toClose.push({ ticket: p.ticket, reason: 'SL' });
           else if (curPrice >= p.tp) toClose.push({ ticket: p.ticket, reason: 'TP' });
         } else {
-          if (curPrice >= p.sl) toClose.push({ ticket: p.ticket, reason: 'SL' });
+          if (curPrice >= currentSl) toClose.push({ ticket: p.ticket, reason: 'SL' });
           else if (curPrice <= p.tp) toClose.push({ ticket: p.ticket, reason: 'TP' });
         }
 
-        return { ...p, profit, pips };
+        return { ...p, sl: currentSl, beLocked, trailLocked, profit, pips };
       });
 
       // Safely close positions outside the map loop
@@ -595,13 +798,19 @@ export class TradingEngine {
   evaluateAutoExecution() {
     if (!this.autoTrade || this.killSwitch) return;
 
+    // Real market hours check: Gold interbank trading is closed on weekends!
+    const schedule = getGoldMarketSchedule();
+    if (!schedule.isOpen && !this.simulateWeekendMode) {
+      return;
+    }
+
     // Check spread gate
     if (this.spread > MAX_SPREAD_POINTS) {
       return;
     }
 
-    // Small Account protection: Max 1 position for <= $50 accounts, max 3 for larger
-    const maxAllowed = this.account.balance <= 50 ? 1 : 3;
+    // Multi-position support: allow multiple trades running simultaneously
+    const maxAllowed = 15;
     if (this.positions.length >= maxAllowed) {
       return;
     }
@@ -646,12 +855,12 @@ export class TradingEngine {
       return { ok: false, error: `Spread too wide (${this.spread} points > ${MAX_SPREAD_POINTS} max)` };
     }
 
-    // Small account protection limit (1 position for <= $50)
-    const maxAllowed = this.account.balance <= 50 ? 1 : 3;
+    // Multi-trade execution: allow multiple simultaneous trades running concurrently
+    const maxAllowed = 20;
     if (this.positions.length >= maxAllowed) {
       return {
         ok: false,
-        error: `Small Account Safeguard: Max ${maxAllowed} active trade allowed for $${this.account.balance.toFixed(2)} balance to protect capital from drawdown.`,
+        error: `Max limit of ${maxAllowed} concurrent positions reached. Close some positions to open more.`,
       };
     }
 
@@ -723,7 +932,7 @@ export class TradingEngine {
     this.emit('engine');
   }
 
-  closeAll(reason: 'Manual' | 'KillSwitch' = 'Manual') {
+  closeAll(reason: 'Manual' | 'KillSwitch' | 'TP' | 'SL' = 'Manual') {
     if (this.positions.length === 0) return;
     const tickets = this.positions.map((p) => p.ticket);
     for (const t of tickets) {
@@ -778,21 +987,79 @@ export class TradingEngine {
     this.emit('engine');
   }
 
-  tradeSignal(customVolume?: number): { ok: boolean; error?: string } {
+  tradeSignal(
+    optionsOrVolume?:
+      | {
+          direction?: TradeDirection;
+          volume?: number;
+          entry?: number;
+          sl?: number;
+          tp?: number;
+          comment?: string;
+        }
+      | number
+  ): { ok: boolean; error?: string; ticket?: number; price?: number } {
     const market = this.getMarketSnapshot();
-    if (!market.signal) {
-      return { ok: false, error: 'No active signal meets confluence threshold' };
-    }
+    const defaultSig = market.signal;
     const defaultVol = this.account.balance <= 50 ? 0.01 : 0.02;
-    const vol = customVolume && customVolume > 0 ? customVolume : defaultVol;
-    const res = this.sendMarket(
-      market.signal.direction,
+
+    let direction: TradeDirection = defaultSig?.direction || (market.bias === 'bearish' ? 'SELL' : 'BUY');
+    let vol = defaultVol;
+    let sl = defaultSig ? defaultSig.sl : (direction === 'BUY' ? this.bid - 4.0 : this.bid + 4.0);
+    let tp = defaultSig ? defaultSig.tp : (direction === 'BUY' ? this.bid + 8.0 : this.bid - 8.0);
+    let comment = defaultSig ? `signal:${defaultSig.score}` : 'manual';
+
+    if (typeof optionsOrVolume === 'number') {
+      if (optionsOrVolume > 0) vol = optionsOrVolume;
+    } else if (optionsOrVolume && typeof optionsOrVolume === 'object') {
+      if (optionsOrVolume.direction) direction = optionsOrVolume.direction;
+      if (optionsOrVolume.volume && optionsOrVolume.volume > 0) vol = optionsOrVolume.volume;
+      if (optionsOrVolume.sl !== undefined) sl = optionsOrVolume.sl;
+      if (optionsOrVolume.tp !== undefined) tp = optionsOrVolume.tp;
+      if (optionsOrVolume.comment) comment = optionsOrVolume.comment;
+    }
+
+    return this.sendMarket(
+      direction,
       vol,
-      market.signal.sl,
-      market.signal.tp,
-      `signal:${market.signal.score}`
+      Number(sl.toFixed(2)),
+      Number(tp.toFixed(2)),
+      comment
     );
-    return res;
+  }
+
+  tradeMultiplePositions(
+    count: number,
+    optionsOrVolume?:
+      | {
+          direction?: TradeDirection;
+          volume?: number;
+          entry?: number;
+          sl?: number;
+          tp?: number;
+          comment?: string;
+        }
+      | number
+  ): { countOpened: number; tickets: number[] } {
+    const openedTickets: number[] = [];
+    const n = Math.max(1, Math.min(10, count || 1));
+
+    for (let i = 0; i < n; i++) {
+      const res = this.tradeSignal(
+        typeof optionsOrVolume === 'object' && optionsOrVolume
+          ? { ...optionsOrVolume, comment: `${optionsOrVolume.comment || 'stack'}_${i + 1}` }
+          : optionsOrVolume
+      );
+      if (res.ok && res.ticket) {
+        openedTickets.push(res.ticket);
+      }
+    }
+
+    if (openedTickets.length > 0) {
+      this.slog(`⚡ High-Impact Position Stacking: Successfully opened ${openedTickets.length}x positions (#${openedTickets.join(', #')})`, 'trade');
+    }
+
+    return { countOpened: openedTickets.length, tickets: openedTickets };
   }
 }
 

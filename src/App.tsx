@@ -18,6 +18,10 @@ import { ConfirmDialog } from './components/ConfirmDialog';
 import { SignalEngineCard } from './components/SignalEngineCard';
 import { DealingRangeZonesCard } from './components/DealingRangeZonesCard';
 import { PositionsEventLogCard } from './components/PositionsEventLogCard';
+import { CompoundingLadderCard } from './components/CompoundingLadderCard';
+import { LiveExecutionCard } from './components/LiveExecutionCard';
+import { WeekendMarketBanner } from './components/WeekendMarketBanner';
+import { TerminalUtilitiesBar } from './components/TerminalUtilitiesBar';
 import { MinimalEngineStatus } from './components/MinimalEngineStatus';
 
 import { Mt5BridgeModal } from './components/Mt5BridgeModal';
@@ -47,6 +51,9 @@ export default function App() {
   const [activeModal, setActiveModal] = useState<
     'bridge' | 'settings' | 'scenarios' | 'closed_trades' | 'daily_report' | 'tradingview' | 'help' | 'phone_pwa' | null
   >(null);
+
+  // Mobile View Navigation State
+  const [mobileTab, setMobileTab] = useState<'chart' | 'trade' | 'positions' | 'zones'>('chart');
 
   // Safety Confirmation Dialog state (Priority 3, Item 8)
   const [confirmDialog, setConfirmDialog] = useState<{
@@ -140,39 +147,155 @@ export default function App() {
       />
 
       {/* 3. Main Workspace wrapped in ErrorBoundary (Priority 3, Item 6) */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-3 py-3.5 sm:px-5 sm:py-5 lg:px-6 lg:py-6 space-y-4 sm:space-y-5">
+      <main className="flex-1 max-w-7xl w-full mx-auto px-3 py-3 sm:px-5 sm:py-4 lg:px-6 lg:py-5 space-y-3.5 sm:space-y-4">
         <WorkspaceErrorBoundary>
-          {/* Target 3-Column Cards Grid - Optimized for mobile & desktop */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-3.5 sm:gap-5 items-stretch">
-            {/* CARD 1: SIGNAL ENGINE */}
-            <SignalEngineCard onExecuteSignal={handleExecuteSignal} />
+          {/* REAL INTERBANK SCHEDULE & MT5 BRIDGE READINESS BANNER */}
+          <WeekendMarketBanner onOpenMt5Modal={() => setActiveModal('bridge')} />
 
-            {/* CARD 2: DEALING RANGE & LIVE ZONES */}
-            <DealingRangeZonesCard />
+          {/* BREAKTHROUGH ACCELERATOR: AUTOMATED COMPOUNDING GROWTH LADDER & AUTO-BE */}
+          <CompoundingLadderCard />
 
-            {/* CARD 3: POSITIONS & EVENT LOG */}
-            <PositionsEventLogCard
-              onClosePosition={handleClosePosition}
-              onOpenClosedTradesModal={() => setActiveModal('closed_trades')}
-              onOpenDailyReportModal={() => setActiveModal('daily_report')}
-            />
+          {/* ======================================================== */}
+          {/* MOBILE RESPONSIVE TAB SELECTOR (< lg displays)            */}
+          {/* ======================================================== */}
+          <div className="flex lg:hidden items-center justify-between p-1 bg-zinc-100 dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-800 text-xs font-mono">
+            <button
+              onClick={() => setMobileTab('chart')}
+              className={`flex-1 py-2 px-1 rounded-lg font-bold transition-colors text-center ${
+                mobileTab === 'chart'
+                  ? 'bg-zinc-950 text-white dark:bg-white dark:text-black shadow-xs'
+                  : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-950 dark:hover:text-white'
+              }`}
+            >
+              Chart
+            </button>
+            <button
+              onClick={() => setMobileTab('trade')}
+              className={`flex-1 py-2 px-1 rounded-lg font-bold transition-colors text-center ${
+                mobileTab === 'trade'
+                  ? 'bg-zinc-950 text-white dark:bg-white dark:text-black shadow-xs'
+                  : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-950 dark:hover:text-white'
+              }`}
+            >
+              Trade
+            </button>
+            <button
+              onClick={() => setMobileTab('positions')}
+              className={`flex-1 py-2 px-1 rounded-lg font-bold transition-colors text-center ${
+                mobileTab === 'positions'
+                  ? 'bg-zinc-950 text-white dark:bg-white dark:text-black shadow-xs'
+                  : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-950 dark:hover:text-white'
+              }`}
+            >
+              Trades ({positionsState.positions.length})
+            </button>
+            <button
+              onClick={() => setMobileTab('zones')}
+              className={`flex-1 py-2 px-1 rounded-lg font-bold transition-colors text-center ${
+                mobileTab === 'zones'
+                  ? 'bg-zinc-950 text-white dark:bg-white dark:text-black shadow-xs'
+                  : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-950 dark:hover:text-white'
+              }`}
+            >
+              Zones
+            </button>
           </div>
 
-          {/* Primary TradingView Workstation with Dynamic M1/M5 SMC Overlay */}
-          <TradingViewWidget
-            isDark={isDark}
-            symbol="OANDA:XAUUSD"
-            interval="1"
-            height={460}
-            onExpand={() => setActiveModal('tradingview')}
-            onOpenHelp={() => setActiveModal('help')}
-          />
+          {/* ======================================================== */}
+          {/* MOBILE VIEW CONTAINER (< lg displays)                    */}
+          {/* ======================================================== */}
+          <div className="block lg:hidden space-y-3.5">
+            {mobileTab === 'chart' && (
+              <div className="space-y-3.5">
+                {/* Independent Card 1: Live Interactive Chart */}
+                <TradingViewWidget
+                  isDark={isDark}
+                  symbol="OANDA:XAUUSD"
+                  interval="1"
+                  height={420}
+                  onExpand={() => setActiveModal('tradingview')}
+                  onOpenHelp={() => setActiveModal('help')}
+                />
+                {/* Independent Card 2: Live Trade Execution Monitor */}
+                <LiveExecutionCard />
+              </div>
+            )}
 
-          {/* Institutional SMC Strategy Execution Rules (No AI Glowing Lights) */}
-          <MinimalEngineStatus
-            snapshot={tradingEngine.getSnapshot()}
-            onOpenBridge={() => setActiveModal('bridge')}
-            onOpenSettings={() => setActiveModal('settings')}
+            {mobileTab === 'trade' && (
+              <div className="space-y-3.5">
+                <SignalEngineCard onExecuteSignal={handleExecuteSignal} />
+                <LiveExecutionCard />
+              </div>
+            )}
+
+            {mobileTab === 'positions' && (
+              <div className="space-y-3.5">
+                <LiveExecutionCard />
+                <PositionsEventLogCard
+                  onClosePosition={handleClosePosition}
+                  onOpenClosedTradesModal={() => setActiveModal('closed_trades')}
+                  onOpenDailyReportModal={() => setActiveModal('daily_report')}
+                />
+              </div>
+            )}
+
+            {mobileTab === 'zones' && (
+              <div className="space-y-3.5">
+                <DealingRangeZonesCard />
+                <MinimalEngineStatus
+                  snapshot={tradingEngine.getSnapshot()}
+                  onOpenBridge={() => setActiveModal('bridge')}
+                  onOpenSettings={() => setActiveModal('settings')}
+                />
+              </div>
+            )}
+          </div>
+
+          {/* ======================================================== */}
+          {/* DESKTOP SPLIT PRO WORKSTATION (>= lg displays)           */}
+          {/* ======================================================== */}
+          <div className="hidden lg:grid lg:grid-cols-12 gap-5 items-start">
+            {/* Left Column (7 cols): Independent Chart Card + Live Trade Execution Card */}
+            <div className="lg:col-span-7 space-y-4">
+              {/* Independent Card 1: Chart Card */}
+              <TradingViewWidget
+                isDark={isDark}
+                symbol="OANDA:XAUUSD"
+                interval="1"
+                height={480}
+                onExpand={() => setActiveModal('tradingview')}
+                onOpenHelp={() => setActiveModal('help')}
+              />
+
+              {/* Independent Card 2: Live Trade Being Executed Card */}
+              <LiveExecutionCard />
+
+              {/* Trade Journal & Positions Log */}
+              <PositionsEventLogCard
+                onClosePosition={handleClosePosition}
+                onOpenClosedTradesModal={() => setActiveModal('closed_trades')}
+                onOpenDailyReportModal={() => setActiveModal('daily_report')}
+              />
+            </div>
+
+            {/* Right Column (5 cols): Custom Execution Control Deck & POI Zones */}
+            <div className="lg:col-span-5 space-y-4">
+              <SignalEngineCard onExecuteSignal={handleExecuteSignal} />
+
+              <DealingRangeZonesCard />
+
+              <MinimalEngineStatus
+                snapshot={tradingEngine.getSnapshot()}
+                onOpenBridge={() => setActiveModal('bridge')}
+                onOpenSettings={() => setActiveModal('settings')}
+              />
+            </div>
+          </div>
+
+          {/* DISTRIBUTED TERMINAL UTILITIES & ENGINE CONTROLS BAR */}
+          <TerminalUtilitiesBar
+            onOpenModal={(modal) => setActiveModal(modal)}
+            onToggleKillSwitchPrompt={handleToggleKillSwitchPrompt}
           />
         </WorkspaceErrorBoundary>
       </main>
@@ -232,7 +355,7 @@ export default function App() {
       />
 
       {/* Institutional Footer Bar */}
-      <FooterView onOpenModal={(modal) => setActiveModal(modal)} />
+      <FooterView />
     </div>
   );
 }

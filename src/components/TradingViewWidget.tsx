@@ -55,16 +55,16 @@ export const TradingViewWidget: React.FC<TradingViewWidgetProps> = memo(({
   }%22%2C%22mainSeriesProperties.candleStyle.upColor%22%3A%22%2310b981%22%2C%22mainSeriesProperties.candleStyle.downColor%22%3A%22%23f43f5e%22%7D&locale=en&utm_source=tradingview.com`;
 
   return (
-    <div className="bg-white dark:bg-black border border-zinc-200 dark:border-zinc-800 rounded-2xl overflow-hidden shadow-xs flex flex-col font-mono text-xs transition-colors">
+    <div className="bg-white dark:bg-[#11141a] border border-slate-200/90 dark:border-[#1c212c] rounded-2xl overflow-hidden shadow-[0_1px_3px_rgba(0,0,0,0.05)] dark:shadow-[0_2px_8px_rgba(0,0,0,0.4)] flex flex-col font-mono text-xs transition-colors">
       {/* Clean, Minimalist Toolbar */}
-      <div className="px-3 sm:px-4 py-2 bg-zinc-50 dark:bg-zinc-950 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between flex-wrap gap-2">
+      <div className="px-3 sm:px-4 py-2.5 bg-slate-50/80 dark:bg-[#161b23]/80 border-b border-slate-200 dark:border-[#1c212c] flex items-center justify-between flex-wrap gap-2">
         {/* Left: Asset Tag & M1 / M5 Primary Timeframe Switcher */}
         <div className="flex items-center gap-2">
-          <span className="font-bold text-zinc-950 dark:text-white text-xs">
+          <span className="font-bold text-slate-900 dark:text-white text-xs">
             XAUUSD
           </span>
 
-          <div className="flex items-center bg-zinc-200 dark:bg-zinc-900 p-0.5 rounded-lg border border-zinc-300 dark:border-zinc-800 overflow-x-auto no-scrollbar">
+          <div className="flex items-center bg-slate-200/70 dark:bg-[#0c0e12] p-0.5 rounded-lg border border-slate-200 dark:border-[#222938] overflow-x-auto no-scrollbar">
             {[
               { id: '1', label: '1m' },
               { id: '5', label: '5m' },
@@ -77,10 +77,10 @@ export const TradingViewWidget: React.FC<TradingViewWidgetProps> = memo(({
               <button
                 key={id}
                 onClick={() => setSelectedTf(id as any)}
-                className={`px-2 py-0.5 rounded text-[10px] sm:text-[11px] font-bold transition-all whitespace-nowrap ${
+                className={`px-2 py-0.5 rounded text-[10px] sm:text-[11px] font-bold transition-all whitespace-nowrap cursor-pointer ${
                   selectedTf === id
-                    ? 'bg-zinc-950 text-white dark:bg-white dark:text-black shadow-xs'
-                    : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-950 dark:hover:text-white'
+                    ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-950 shadow-xs'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
                 }`}
                 title={`Switch chart and SMC Order Blocks to ${label} timeframe`}
               >

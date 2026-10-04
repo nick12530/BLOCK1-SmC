@@ -1,10 +1,9 @@
 /**
- * SignalToastNotification.tsx - Ultra-Compact Translucent Beacon & Mobile-Optimized Popover
- * Fixes:
- * - Beacon circle is small, sleek, and translucent with a well-proportioned micro icon (no oversized badges)
- * - Popover is fully responsive and auto-fits mobile screens without overflowing (inset-x-3 with safe margins)
- * - Backdrop click to close on mobile
- * - 1-Click trade execution with volume adjustment
+ * SignalToastNotification.tsx - High-Impact SMC Signal Alert Beacon & Stacking Popover
+ * Configured specifically for high-impact setups:
+ * - Macro news shifts, liquidity sweeps, and high-profit multiplier expansions (1:3+ RR)
+ * - Position Stacking: allows traders to open multiple identical positions (1x, 2x, 3x, 5x) simultaneously
+ * - Elite monochromatic grey, white, and black dark mode design
  */
 
 import React, { useState, useEffect, useRef } from 'react';
@@ -18,6 +17,10 @@ import {
   Zap,
   Minus,
   Plus,
+  Layers,
+  Sparkles,
+  ShieldCheck,
+  CheckCircle2,
 } from 'lucide-react';
 
 export const SignalToastNotification: React.FC = () => {
@@ -26,7 +29,9 @@ export const SignalToastNotification: React.FC = () => {
 
   const [isOpen, setIsOpen] = useState(false);
   const [hasNewAlert, setHasNewAlert] = useState(false);
-  const [lotSize, setLotSize] = useState(0.02);
+  const [lotSize, setLotSize] = useState(0.01);
+  const [stackCount, setStackCount] = useState<number>(1);
+  const [executedCount, setExecutedCount] = useState<number | null>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
 
   const signal = market.signal;
@@ -34,11 +39,12 @@ export const SignalToastNotification: React.FC = () => {
   const activeEntry = signal?.entry || ticker.bid;
   const isBuy = activeDirection === 'BUY';
 
-  const risk = 4.0;
-  const reward = 8.0;
-  const activeSL = isBuy ? activeEntry - risk : activeEntry + risk;
-  const activeTP = isBuy ? activeEntry + reward : activeEntry - reward;
-  const strengthPct = Math.min(99, Math.max(82, Math.round(((signal?.score || 4.8) / 5.0) * 100)));
+  // High-Impact SMC parameters: optimal 1:3.0 Risk/Reward expansion
+  const riskPts = 3.5;
+  const rewardPts = 10.5;
+  const activeSL = isBuy ? activeEntry - riskPts : activeEntry + riskPts;
+  const activeTP = isBuy ? activeEntry + rewardPts : activeEntry - rewardPts;
+  const strengthPct = Math.min(99, Math.max(88, Math.round(((signal?.score || 4.8) / 5.0) * 100)));
 
   // Listen to engine signal chime alerts
   useEffect(() => {
@@ -46,7 +52,7 @@ export const SignalToastNotification: React.FC = () => {
       setHasNewAlert(true);
       const timer = setTimeout(() => {
         setHasNewAlert(false);
-      }, 8000);
+      }, 9000);
       return () => clearTimeout(timer);
     });
 
@@ -55,7 +61,7 @@ export const SignalToastNotification: React.FC = () => {
     };
   }, []);
 
-  // Close when tapping outside
+  // Close when clicking outside
   useEffect(() => {
     const handleOutsideClick = (e: MouseEvent) => {
       if (popoverRef.current && !popoverRef.current.contains(e.target as Node)) {
@@ -71,50 +77,63 @@ export const SignalToastNotification: React.FC = () => {
   }, [isOpen]);
 
   const handleExecute = () => {
-    tradingEngine.tradeSignal(lotSize);
+    const res = tradingEngine.tradeMultiplePositions(stackCount, {
+      direction: activeDirection,
+      volume: lotSize,
+      entry: activeEntry,
+      sl: activeSL,
+      tp: activeTP,
+      comment: `high_impact_${stackCount}x`,
+    });
+
     signalAudioNotifier.playSignalAlert(activeDirection, activeEntry);
-    setIsOpen(false);
-    setHasNewAlert(false);
+    setExecutedCount(res.countOpened);
+
+    setTimeout(() => {
+      setExecutedCount(null);
+      setIsOpen(false);
+      setHasNewAlert(false);
+    }, 1800);
   };
 
   const handleAdjustLot = (delta: number) => {
     setLotSize((prev) => {
       const next = Math.round((prev + delta) * 100) / 100;
-      return Math.min(50.0, Math.max(0.01, next));
+      return Math.min(5.0, Math.max(0.01, next));
     });
   };
 
+  const totalExposureLots = Number((lotSize * stackCount).toFixed(2));
+  const potentialProfitDollars = (rewardPts * 100 * totalExposureLots).toFixed(2);
+  const potentialRiskDollars = (riskPts * 100 * totalExposureLots).toFixed(2);
+
   return (
     <>
-      {/* MOBILE POPUP MODAL / DESKTOP FLYOUT POPOVER */}
+      {/* HIGH-IMPACT SIGNAL FLYOUT CARD */}
       {isOpen && (
-        <div className="fixed inset-x-3 bottom-18 sm:inset-x-auto sm:bottom-20 sm:right-6 z-[160] font-mono select-none flex justify-center sm:justify-end animate-in fade-in zoom-in-95 duration-150">
+        <div className="fixed inset-0 sm:inset-auto sm:bottom-20 sm:right-6 z-[160] font-mono select-none flex items-end sm:items-center justify-center p-3 sm:p-0 bg-black/70 sm:bg-transparent backdrop-blur-xs sm:backdrop-blur-none animate-in fade-in duration-150">
           <div
             ref={popoverRef}
-            className="w-full max-w-[340px] sm:w-80 rounded-2xl bg-zinc-950/95 dark:bg-black/95 text-white border border-zinc-700/80 shadow-2xl backdrop-blur-xl p-3.5 space-y-3"
+            className="w-full max-w-sm sm:w-96 rounded-2xl bg-[#0c0d10] text-zinc-100 border border-zinc-700/90 shadow-[0_20px_60px_rgba(0,0,0,0.9)] p-4 sm:p-5 space-y-4 max-h-[90dvh] overflow-y-auto"
           >
-            {/* Header */}
-            <div className="flex items-center justify-between border-b border-zinc-800 pb-2">
+            {/* Header: High Impact Tag & Close */}
+            <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
               <div className="flex items-center gap-2">
-                <span
-                  className={`w-6 h-6 rounded-lg flex items-center justify-center text-white ${
-                    isBuy ? 'bg-emerald-600' : 'bg-rose-600'
-                  }`}
-                >
-                  {isBuy ? <TrendingUp className="w-3.5 h-3.5" /> : <TrendingDown className="w-3.5 h-3.5" />}
+                <span className="w-6 h-6 rounded-lg bg-zinc-800 border border-zinc-700 flex items-center justify-center text-white">
+                  <Zap className="w-3.5 h-3.5 text-zinc-200" />
                 </span>
                 <div>
                   <div className="flex items-center gap-1.5">
-                    <h3 className="font-extrabold text-xs text-white uppercase tracking-wider">
-                      {activeDirection} XAUUSD
-                    </h3>
-                    <span className="text-[9px] px-1 py-0.2 rounded font-bold bg-zinc-800 text-emerald-400">
-                      {strengthPct}%
+                    <span className="text-[10px] font-black uppercase tracking-wider text-zinc-400">
+                      HIGH-IMPACT SMC ALERT
+                    </span>
+                    <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-zinc-800 text-zinc-200 border border-zinc-700">
+                      {strengthPct}% Confluence
                     </span>
                   </div>
-                  <p className="text-[10px] text-zinc-400 font-sans">
-                    SMC Confluence Setup
-                  </p>
+                  <h3 className="font-extrabold text-sm text-white">
+                    {activeDirection} XAUUSD · Liquidity Sweep
+                  </h3>
                 </div>
               </div>
 
@@ -126,112 +145,169 @@ export const SignalToastNotification: React.FC = () => {
               </button>
             </div>
 
+            {/* High Impact Trade Rationale & Profit Multiplier */}
+            <div className="p-3 rounded-xl bg-zinc-900/90 border border-zinc-800 space-y-2 text-xs">
+              <div className="flex items-center justify-between text-[11px]">
+                <span className="text-zinc-400">Potential Target Gain:</span>
+                <strong className="text-white font-black tabular-nums">
+                  +${potentialProfitDollars} USD (1:3.0 RR)
+                </strong>
+              </div>
+              <div className="flex items-center justify-between text-[11px]">
+                <span className="text-zinc-400">Max Defined Risk:</span>
+                <span className="text-zinc-400 font-bold tabular-nums">
+                  -${potentialRiskDollars} USD
+                </span>
+              </div>
+              <p className="text-[11px] text-zinc-400 font-sans border-t border-zinc-800 pt-1.5 leading-relaxed">
+                High-volatility institutional displacement detected after session liquidity sweep. Prepared for rapid expansion into opposing imbalance pool.
+              </p>
+            </div>
+
             {/* Price Levels Grid */}
-            <div className="grid grid-cols-3 gap-1.5 text-center text-xs">
-              <div className="p-1.5 rounded-lg bg-zinc-900/80 border border-zinc-800">
-                <span className="text-[8.5px] uppercase tracking-wider text-zinc-500 block font-semibold">
+            <div className="grid grid-cols-3 gap-2 text-center text-xs">
+              <div className="p-2 rounded-xl bg-zinc-900 border border-zinc-800">
+                <span className="text-[10px] uppercase tracking-wider text-zinc-400 block font-bold">
                   Entry
                 </span>
-                <span className="font-bold text-white tabular-nums block text-[11px]">
+                <span className="font-black text-white tabular-nums block text-xs sm:text-sm mt-0.5">
                   ${activeEntry.toFixed(2)}
                 </span>
               </div>
 
-              <div className="p-1.5 rounded-lg bg-zinc-900/80 border border-zinc-800">
-                <span className="text-[8.5px] uppercase tracking-wider text-rose-400 block font-semibold">
+              <div className="p-2 rounded-xl bg-zinc-900 border border-zinc-800">
+                <span className="text-[10px] uppercase tracking-wider text-zinc-400 block font-bold">
                   Stop Loss
                 </span>
-                <span className="font-bold text-rose-300 tabular-nums block text-[11px]">
+                <span className="font-black text-zinc-300 tabular-nums block text-xs sm:text-sm mt-0.5">
                   ${activeSL.toFixed(2)}
                 </span>
               </div>
 
-              <div className="p-1.5 rounded-lg bg-zinc-900/80 border border-zinc-800">
-                <span className="text-[8.5px] uppercase tracking-wider text-emerald-400 block font-semibold">
-                  Target TP
+              <div className="p-2 rounded-xl bg-zinc-900 border border-zinc-800">
+                <span className="text-[10px] uppercase tracking-wider text-zinc-400 block font-bold">
+                  Take Profit
                 </span>
-                <span className="font-bold text-emerald-300 tabular-nums block text-[11px]">
+                <span className="font-black text-zinc-100 tabular-nums block text-xs sm:text-sm mt-0.5">
                   ${activeTP.toFixed(2)}
                 </span>
               </div>
             </div>
 
-            {/* Volume Lots Selector */}
-            <div className="flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-zinc-900/80 border border-zinc-800">
-              <span className="text-[10px] uppercase tracking-wider text-zinc-400 font-bold">
-                Volume:
+            {/* Position Stacking Selector (Open Multiple Identical Trades) */}
+            <div className="space-y-2 p-3 rounded-xl bg-zinc-900 border border-zinc-800">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-zinc-300 flex items-center gap-1.5">
+                  <Layers className="w-3.5 h-3.5 text-zinc-400" />
+                  <span>Stack Multiple Positions:</span>
+                </span>
+                <span className="text-[11px] font-mono text-zinc-400 font-bold">
+                  {stackCount}x ({totalExposureLots} Lots Total)
+                </span>
+              </div>
+
+              {/* Stack Presets: 1x, 2x, 3x, 5x */}
+              <div className="grid grid-cols-4 gap-1.5 font-mono text-xs">
+                {[
+                  { label: '1x Single', val: 1 },
+                  { label: '2x Split', val: 2 },
+                  { label: '3x Stack', val: 3 },
+                  { label: '5x Heavy', val: 5 },
+                ].map((item) => (
+                  <button
+                    key={item.val}
+                    type="button"
+                    onClick={() => setStackCount(item.val)}
+                    className={`py-1.5 px-1 rounded-lg font-bold text-[11px] border transition-colors cursor-pointer text-center ${
+                      stackCount === item.val
+                        ? 'bg-white text-black border-white shadow-xs'
+                        : 'bg-zinc-800 text-zinc-300 border-zinc-700 hover:text-white hover:border-zinc-500'
+                    }`}
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Lot Size Steppers per position */}
+            <div className="flex items-center justify-between px-3 py-2 rounded-xl bg-zinc-900 border border-zinc-800 text-xs">
+              <span className="text-zinc-400 font-bold">
+                Lot Size per Trade:
               </span>
-              <div className="flex items-center gap-1.5">
+              <div className="flex items-center gap-2">
                 <button
                   type="button"
                   onClick={() => handleAdjustLot(-0.01)}
-                  className="w-5 h-5 rounded bg-zinc-800 hover:bg-zinc-700 flex items-center justify-center text-zinc-300 hover:text-white transition-colors cursor-pointer"
+                  className="w-6 h-6 rounded bg-zinc-800 hover:bg-zinc-700 flex items-center justify-center text-zinc-300 hover:text-white transition-colors cursor-pointer"
                 >
-                  <Minus className="w-2.5 h-2.5" />
+                  <Minus className="w-3 h-3" />
                 </button>
-                <span className="font-bold text-xs text-white tabular-nums w-12 text-center">
+                <span className="font-black text-xs text-white tabular-nums w-12 text-center">
                   {lotSize.toFixed(2)}
                 </span>
                 <button
                   type="button"
                   onClick={() => handleAdjustLot(0.01)}
-                  className="w-5 h-5 rounded bg-zinc-800 hover:bg-zinc-700 flex items-center justify-center text-zinc-300 hover:text-white transition-colors cursor-pointer"
+                  className="w-6 h-6 rounded bg-zinc-800 hover:bg-zinc-700 flex items-center justify-center text-zinc-300 hover:text-white transition-colors cursor-pointer"
                 >
-                  <Plus className="w-2.5 h-2.5" />
+                  <Plus className="w-3 h-3" />
                 </button>
               </div>
             </div>
 
-            {/* 1-Click Execution Button */}
-            <button
-              onClick={handleExecute}
-              className={`w-full py-2.5 rounded-xl font-black text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-lg active:scale-[0.99] text-white ${
-                isBuy
-                  ? 'bg-emerald-600 hover:bg-emerald-500 shadow-emerald-950/50'
-                  : 'bg-rose-600 hover:bg-rose-500 shadow-rose-950/50'
-              }`}
-            >
-              <Zap className="w-3.5 h-3.5 fill-current" />
-              <span>EXECUTE {activeDirection} ({lotSize.toFixed(2)} LOTS)</span>
-            </button>
+            {/* Execution & Dismiss Action Row */}
+            {executedCount !== null ? (
+              <div className="w-full py-3 rounded-xl bg-white text-black font-black text-xs uppercase tracking-wider flex items-center justify-center gap-2">
+                <CheckCircle2 className="w-4 h-4" />
+                <span>SUCCESSFULLY STACKED {executedCount}X POSITIONS!</span>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setIsOpen(false)}
+                  className="px-3.5 py-3 rounded-xl border border-zinc-700 bg-zinc-900 hover:bg-zinc-800 text-zinc-400 hover:text-white text-xs font-bold transition-colors cursor-pointer"
+                  title="Close alert"
+                >
+                  Dismiss
+                </button>
+                <button
+                  onClick={handleExecute}
+                  className="flex-1 py-3 sm:py-3.5 rounded-xl font-black text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-2 cursor-pointer bg-white text-black hover:bg-zinc-200 active:scale-[0.99] shadow-xs"
+                >
+                  <Zap className="w-4 h-4 fill-black" />
+                  <span>
+                    {stackCount > 1
+                      ? `STACK ${stackCount}X ${activeDirection} (${totalExposureLots}L)`
+                      : `EXECUTE ${activeDirection} (${lotSize.toFixed(2)}L)`}
+                  </span>
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}
 
-      {/* ROUND SMALL TRANSLUCENT CIRCLE BEACON */}
-      {/* Sized proportionally (w-10 h-10), translucent glass, no oversized badges */}
+      {/* FLOATING HIGH-IMPACT SIGNAL TRIGGER BUTTON */}
       <div className="fixed bottom-5 right-4 sm:bottom-6 sm:right-6 z-[150] select-none font-mono">
         <button
           onClick={() => setIsOpen((prev) => !prev)}
-          title={`Tap to view and execute ${activeDirection} trade`}
-          className={`relative w-10 h-10 rounded-full backdrop-blur-md flex items-center justify-center shadow-lg transition-all cursor-pointer ${
-            isBuy
-              ? 'bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-400/60 text-emerald-400'
-              : 'bg-rose-500/20 hover:bg-rose-500/30 border border-rose-400/60 text-rose-400'
-          } hover:scale-105 active:scale-95`}
+          title={`High-Impact ${activeDirection} SMC Setup · Tap to inspect & stack`}
+          className="relative flex items-center gap-2 px-3 py-2 rounded-full bg-[#0c0d10] border border-zinc-700 text-white shadow-xl hover:border-zinc-500 hover:scale-105 active:scale-95 transition-all cursor-pointer"
         >
-          {/* Subtle breathing radar ring when new signal alerted */}
-          {hasNewAlert && (
-            <span
-              className={`absolute -inset-1 rounded-full animate-ping opacity-60 pointer-events-none ${
-                isBuy ? 'bg-emerald-400' : 'bg-rose-400'
-              }`}
-            />
-          )}
+          <span className="relative flex h-2 w-2">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+            <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
+          </span>
 
-          {/* Clean, well-proportioned icon inside the circle */}
-          {isBuy ? (
-            <TrendingUp className="w-4 h-4" />
-          ) : (
-            <TrendingDown className="w-4 h-4" />
-          )}
+          <span className="font-extrabold text-[11px] uppercase tracking-wider text-zinc-200">
+            {activeDirection} Setup
+          </span>
 
-          {/* Micro Status Dot (Clean & Proportional, no huge text pill) */}
-          <span
-            className={`absolute top-0.5 right-0.5 w-2 h-2 rounded-full ring-2 ring-black/80 ${
-              isBuy ? 'bg-emerald-400 animate-pulse' : 'bg-rose-400 animate-pulse'
-            }`}
-          />
+          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-300 border border-zinc-700">
+            {strengthPct}%
+          </span>
         </button>
       </div>
     </>

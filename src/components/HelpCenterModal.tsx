@@ -86,7 +86,7 @@ export const HelpCenterModal: React.FC<HelpCenterModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-[170] flex items-center justify-center p-2.5 sm:p-4 bg-black/80 backdrop-blur-xs animate-in fade-in duration-150">
-      <div className="bg-white dark:bg-[#0c0d10] border border-zinc-200 dark:border-zinc-800 rounded-2xl w-full max-w-3xl max-h-[92vh] flex flex-col shadow-2xl overflow-hidden font-mono text-xs transition-colors">
+      <div className="bg-white dark:bg-[#0d1823] border border-slate-200 dark:border-[#1a3040] rounded-2xl w-full max-w-3xl max-h-[92dvh] flex flex-col shadow-xl overflow-hidden font-mono text-xs transition-colors">
         {/* Header */}
         <div className="flex items-center justify-between px-4 sm:px-6 py-3.5 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-950/50 shrink-0">
           <div className="flex items-center gap-2.5">

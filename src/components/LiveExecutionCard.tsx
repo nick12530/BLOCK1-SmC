@@ -19,18 +19,21 @@ import {
   History,
   FileText,
   Activity,
+  Crosshair,
 } from 'lucide-react';
 
 interface LiveExecutionCardProps {
   onOpenClosedTradesModal?: () => void;
   onOpenDailyReportModal?: () => void;
+  onFocusChart?: () => void;
 }
 
 export const LiveExecutionCard: React.FC<LiveExecutionCardProps> = React.memo(({
   onOpenClosedTradesModal,
   onOpenDailyReportModal,
+  onFocusChart,
 }) => {
-  const { positions } = usePositions();
+  const { positions, selectedTicket } = usePositions();
   const ticker = useTicker();
 
   const totalPositions = positions.length;
@@ -59,10 +62,7 @@ export const LiveExecutionCard: React.FC<LiveExecutionCardProps> = React.memo(({
     const bePrice = Number(
       (pos.type === 'BUY' ? pos.price_open + 0.3 : pos.price_open - 0.3).toFixed(2)
     );
-    pos.sl = bePrice;
-    pos.beLocked = true;
-    tradingEngine.slog(`Manual Zero-Risk BE Lock: SL moved to $${bePrice.toFixed(2)} (#${pos.ticket})`, 'trade');
-    tradingEngine.notify();
+    tradingEngine.modifyPositionStops(ticket, bePrice, pos.tp);
   };
 
   const handleLockAllBE = () => {
@@ -70,11 +70,8 @@ export const LiveExecutionCard: React.FC<LiveExecutionCardProps> = React.memo(({
       const bePrice = Number(
         (pos.type === 'BUY' ? pos.price_open + 0.3 : pos.price_open - 0.3).toFixed(2)
       );
-      pos.sl = bePrice;
-      pos.beLocked = true;
+      tradingEngine.modifyPositionStops(pos.ticket, bePrice, pos.tp);
     });
-    tradingEngine.slog(`Locked Break-Even for all ${positions.length} active positions`, 'trade');
-    tradingEngine.notify();
   };
 
   const handleClose = (ticket: number) => {
@@ -86,12 +83,12 @@ export const LiveExecutionCard: React.FC<LiveExecutionCardProps> = React.memo(({
   };
 
   return (
-    <div className="bg-white dark:bg-[#0c0d10] border border-slate-200/90 dark:border-zinc-800 rounded-2xl p-4 sm:p-5 flex flex-col justify-between shadow-xs space-y-4 font-mono text-xs transition-colors">
+    <div className="bg-white dark:bg-[#0d1823] border border-slate-200/90 dark:border-[#1a3040] rounded-2xl p-4 sm:p-5 flex flex-col justify-between shadow-xs space-y-4 font-mono text-xs transition-colors">
       {/* Top Header: Title, Active Orders Counter & Bulk Actions */}
       <div className="flex items-center justify-between border-b border-slate-100 dark:border-zinc-800/80 pb-3 flex-wrap gap-2">
         <div className="flex items-center gap-2">
           <Layers className="w-4 h-4 text-zinc-600 dark:text-zinc-400" />
-          <h3 className="font-extrabold text-xs sm:text-sm text-slate-900 dark:text-zinc-100 uppercase tracking-wider">
+          <h3 className="font-extrabold text-sm text-slate-900 dark:text-zinc-100 uppercase tracking-wider">
             Live Execution Monitor
           </h3>
           <span className="text-[11px] px-2 py-0.5 rounded-full bg-slate-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 font-bold border border-slate-200 dark:border-zinc-700">
@@ -102,7 +99,7 @@ export const LiveExecutionCard: React.FC<LiveExecutionCardProps> = React.memo(({
         {totalPositions > 0 && (
           <div className="flex items-center gap-2">
             <span
-              className={`text-xs font-black px-2.5 py-1 rounded-lg tabular-nums border ${
+              className={`text-sm font-black px-2.5 py-1.5 rounded-lg tabular-nums border ${
                 totalFloatingPnl >= 0
                   ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30'
                   : 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/30'
@@ -115,14 +112,14 @@ export const LiveExecutionCard: React.FC<LiveExecutionCardProps> = React.memo(({
               <div className="flex items-center gap-1.5">
                 <button
                   onClick={handleLockAllBE}
-                  className="px-2 py-1 rounded-md text-[10px] font-bold bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 border border-slate-200 dark:border-zinc-700 transition-colors cursor-pointer"
+                  className="min-h-10 px-3 rounded-md text-xs font-bold bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 border border-slate-200 dark:border-zinc-700 transition-colors cursor-pointer"
                   title="Lock Break-Even for all positions"
                 >
                   Lock BE
                 </button>
                 <button
                   onClick={handleCloseAll}
-                  className="px-2 py-1 rounded-md text-[10px] font-bold bg-rose-600 hover:bg-rose-500 text-white transition-colors cursor-pointer"
+                  className="min-h-10 px-3 rounded-md text-xs font-bold bg-rose-600 hover:bg-rose-500 text-white transition-colors cursor-pointer"
                   title="Close all positions"
                 >
                   Close All
@@ -146,13 +143,26 @@ export const LiveExecutionCard: React.FC<LiveExecutionCardProps> = React.memo(({
             return (
               <div
                 key={pos.ticket}
-                className="p-3 rounded-xl border border-slate-200 dark:border-zinc-800/90 bg-slate-50/60 dark:bg-zinc-900/60 space-y-2 transition-colors"
+                className={`p-3.5 sm:p-4 rounded-xl border bg-slate-50/60 dark:bg-zinc-900/60 space-y-3 transition-colors ${
+                  selectedTicket === pos.ticket
+                    ? 'border-sky-500 dark:border-sky-700'
+                    : 'border-slate-200 dark:border-zinc-800/90'
+                }`}
               >
                 {/* Row 1: Direction, Ticket, Lots & Floating P&L */}
                 <div className="flex items-center justify-between flex-wrap gap-2">
-                  <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      tradingEngine.setSelectedTicket(pos.ticket);
+                      onFocusChart?.();
+                    }}
+                    aria-pressed={selectedTicket === pos.ticket}
+                    aria-label={`Show ${pos.type} position ${pos.ticket} and its order block on the chart`}
+                    className="flex min-h-11 min-w-0 flex-1 flex-wrap items-center gap-2 text-left"
+                  >
                     <span
-                      className={`px-2 py-0.5 rounded text-[11px] font-black uppercase flex items-center gap-1 border ${
+                      className={`px-2.5 py-1 rounded text-xs font-black uppercase flex items-center gap-1 border ${
                         isBuy
                           ? 'bg-zinc-900 text-white dark:bg-white dark:text-black border-zinc-700'
                           : 'bg-zinc-200 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100 border-zinc-300 dark:border-zinc-700'
@@ -162,18 +172,22 @@ export const LiveExecutionCard: React.FC<LiveExecutionCardProps> = React.memo(({
                       <span>{pos.type}</span>
                     </span>
 
-                    <span className="font-bold text-slate-900 dark:text-white text-xs">
+                    <span className="font-bold text-slate-900 dark:text-white text-sm">
                       {pos.volume} Lots
                     </span>
 
-                    <span className="text-slate-400 text-[11px]">
+                    <span className="text-slate-500 text-xs">
                       #{pos.ticket}
                     </span>
-                  </div>
+                    <span className="ml-auto inline-flex items-center gap-1 text-xs font-semibold text-sky-700 dark:text-sky-300">
+                      <Crosshair className="h-4 w-4" />
+                      {selectedTicket === pos.ticket ? 'Focused' : 'Chart'}
+                    </span>
+                  </button>
 
                   <div className="flex items-center gap-2">
                     <span
-                      className={`font-black text-xs tabular-nums ${
+                      className={`font-black text-sm tabular-nums ${
                         pos.profit >= 0
                           ? 'text-emerald-600 dark:text-emerald-400'
                           : 'text-rose-600 dark:text-rose-400'
@@ -185,7 +199,8 @@ export const LiveExecutionCard: React.FC<LiveExecutionCardProps> = React.memo(({
                     <button
                       onClick={() => handleLockBE(pos.ticket)}
                       disabled={pos.beLocked}
-                      className={`p-1 rounded border text-[10px] font-bold transition-colors cursor-pointer ${
+                      aria-label={`Move ${pos.type} position ${pos.ticket} stop to break-even`}
+                      className={`min-h-10 min-w-10 rounded border text-[10px] font-bold transition-colors cursor-pointer flex items-center justify-center ${
                         pos.beLocked
                           ? 'border-zinc-300 dark:border-zinc-800 text-zinc-400 dark:text-zinc-600 cursor-default'
                           : 'border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 hover:bg-slate-100 text-zinc-700 dark:text-zinc-200'
@@ -197,7 +212,8 @@ export const LiveExecutionCard: React.FC<LiveExecutionCardProps> = React.memo(({
 
                     <button
                       onClick={() => handleClose(pos.ticket)}
-                      className="p-1 rounded bg-slate-200 hover:bg-rose-600 hover:text-white dark:bg-zinc-800 dark:hover:bg-rose-600 text-zinc-600 dark:text-zinc-300 transition-colors cursor-pointer"
+                      aria-label={`Close ${pos.type} position ${pos.ticket}`}
+                      className="min-h-10 min-w-10 rounded bg-slate-200 hover:bg-rose-600 hover:text-white dark:bg-zinc-800 dark:hover:bg-rose-600 text-zinc-600 dark:text-zinc-300 transition-colors cursor-pointer flex items-center justify-center"
                       title="Close order"
                     >
                       <X className="w-3.5 h-3.5" />
@@ -206,21 +222,21 @@ export const LiveExecutionCard: React.FC<LiveExecutionCardProps> = React.memo(({
                 </div>
 
                 {/* Row 2: Price Progression & TP / SL */}
-                <div className="grid grid-cols-4 gap-1.5 text-[10px] text-center pt-1 border-t border-slate-200/50 dark:border-zinc-800/50">
+                <div className="grid grid-cols-2 gap-2 text-xs text-center pt-2 border-t border-slate-200/50 dark:border-zinc-800/50 sm:grid-cols-4">
                   <div>
-                    <span className="text-zinc-400 block uppercase">Entry</span>
+                    <span className="text-zinc-500 block uppercase">Entry</span>
                     <strong className="text-slate-800 dark:text-zinc-200">${pos.price_open.toFixed(2)}</strong>
                   </div>
                   <div>
-                    <span className="text-zinc-400 block uppercase">Spot</span>
+                    <span className="text-zinc-500 block uppercase">Spot</span>
                     <strong className="text-slate-900 dark:text-white">${curPrice.toFixed(2)}</strong>
                   </div>
                   <div>
-                    <span className="text-zinc-400 block uppercase">SL</span>
+                    <span className="text-zinc-500 block uppercase">SL</span>
                     <strong className="text-rose-500">${pos.sl.toFixed(2)}</strong>
                   </div>
                   <div>
-                    <span className="text-zinc-400 block uppercase">TP</span>
+                    <span className="text-zinc-500 block uppercase">TP</span>
                     <strong className="text-emerald-500">${pos.tp.toFixed(2)}</strong>
                   </div>
                 </div>
@@ -228,10 +244,16 @@ export const LiveExecutionCard: React.FC<LiveExecutionCardProps> = React.memo(({
                 {/* Row 3: Progress Bar */}
                 <div className="w-full h-1 bg-slate-200 dark:bg-zinc-800 rounded-full overflow-hidden">
                   <div
-                    className="h-full bg-zinc-700 dark:bg-zinc-300 rounded-full transition-all duration-300"
+                    className="h-full bg-sky-500 rounded-full transition-all duration-300"
                     style={{ width: `${Math.max(2, progressPct)}%` }}
                   />
                 </div>
+                {pos.strategyRationale && (
+                  <p className="text-xs leading-relaxed text-slate-600 dark:text-zinc-300">
+                    <span className="font-bold text-sky-700 dark:text-sky-300">Trade rationale: </span>
+                    {pos.strategyRationale}
+                  </p>
+                )}
               </div>
             );
           })}

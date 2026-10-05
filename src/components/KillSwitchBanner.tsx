@@ -21,7 +21,7 @@ export const KillSwitchBanner: React.FC = () => {
       className="w-full bg-red-600 text-white font-mono text-xs px-4 py-2.5 flex items-center justify-between shadow-md transition-all z-50 sticky top-0"
     >
       <div className="flex items-center gap-2.5 max-w-7xl mx-auto w-full">
-        <ShieldAlert className="w-4 h-4 shrink-0 animate-pulse text-white" />
+        <ShieldAlert className="w-4 h-4 shrink-0 text-white" />
         <span className="font-bold tracking-tight">
           KILL SWITCH ARMED: Automated execution and manual trades are BLOCKED. All open positions were closed.
         </span>

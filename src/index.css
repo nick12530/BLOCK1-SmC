@@ -4,26 +4,28 @@
 
 @layer base {
   :root {
-    --bg-main: #f4f6f9;
+    --bg-main: #f2f7fb;
     --card-bg: #ffffff;
-    --card-border: #e2e8f0;
-    --surface-subtle: #f8fafc;
+    --card-border: #dce8f0;
+    --surface-subtle: #f4f9fc;
     --text-primary: #0f172a;
     --text-secondary: #475569;
     --text-muted: #94a3b8;
+    --accent-sky: #0284c7;
     --accent-emerald: #059669;
     --accent-rose: #e11d48;
     --accent-amber: #d97706;
   }
 
   .dark {
-    --bg-main: #090b0e;
-    --card-bg: #11141a;
-    --card-border: #1c212c;
-    --surface-subtle: #161b23;
+    --bg-main: #08111a;
+    --card-bg: #0d1823;
+    --card-border: #1a3040;
+    --surface-subtle: #10202d;
     --text-primary: #f8fafc;
     --text-secondary: #94a3b8;
     --text-muted: #64748b;
+    --accent-sky: #38bdf8;
     --accent-emerald: #10b981;
     --accent-rose: #f43f5e;
     --accent-amber: #f59e0b;

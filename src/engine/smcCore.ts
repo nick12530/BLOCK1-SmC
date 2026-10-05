@@ -364,6 +364,14 @@ export function evaluateConfluence(
   const atrNow = aExec[aExec.length - 1];
 
   if (isNaN(atrNow) || atrNow <= 0) return null;
+  const now = Date.now();
+  const toMilliseconds = (time: number) => (time < 1_000_000_000_000 ? time * 1000 : time);
+  if (
+    now - toMilliseconds(lastCandle.time) > 30 * 60 * 1000 ||
+    now - toMilliseconds(dfHtf[dfHtf.length - 1].time) > 90 * 60 * 1000
+  ) {
+    return null;
+  }
 
   const ms = new MarketStructureEngine(3);
   ms.update(dfHtf);
@@ -378,10 +386,10 @@ export function evaluateConfluence(
   let score = 0.0;
   const reasons: string[] = [];
 
-  if (ms.trend !== 'ranging') {
-    score += 2.0;
-    reasons.push(`HTF ${ms.trend.toUpperCase()} structure aligned (+2.0)`);
-  }
+  if (ms.trend === 'ranging') return null;
+
+  score += 2.0;
+  reasons.push(`HTF ${ms.trend.toUpperCase()} structure aligned (+2.0)`);
 
   const dr = ms.dealingRange();
   let inDiscount = false;
@@ -445,13 +453,7 @@ export function evaluateConfluence(
     }
     tp = direction === 'BUY' ? price + rr * risk : price - rr * risk;
   } else {
-    // Structural continuation setup: Ensures active high-confluence signal is always live
-    direction = ms.trend === 'bearish' ? 'SELL' : 'BUY';
-    score += 1.2;
-    reasons.push(`HTF ${direction === 'BUY' ? 'BULLISH' : 'BEARISH'} order flow continuation (+1.2)`);
-    const risk = 1.0 * atrNow;
-    sl = direction === 'BUY' ? price - risk : price + risk;
-    tp = direction === 'BUY' ? price + rr * risk : price - rr * risk;
+    return null;
   }
 
   if (ms.events.length > 0) {
@@ -462,28 +464,17 @@ export function evaluateConfluence(
     }
   }
 
-  if (sess.tradable) {
-    score += 0.5;
-    reasons.push(`Inside active ${sess.activeSessionName} (+0.5)`);
-  } else {
-    score -= 0.5;
-    reasons.push('Secondary session liquidity buffer (-0.5)');
-  }
+  if (!sess.tradable) return null;
+  score += 0.5;
+  reasons.push(`Inside active ${sess.activeSessionName} (+0.5)`);
 
   // Mastered Gold Candlestick Pattern Engine
   const csAnalysis = analyzeGoldCandlestickPatterns(dfExec);
   const activePattern = csAnalysis.activePattern;
   const targetBias = direction === 'BUY' ? 'BULLISH' : 'BEARISH';
-  if (activePattern.bias === targetBias) {
-    score += (activePattern.reliability / 100) * 0.75;
-    reasons.push(`${activePattern.name} (${activePattern.wickRatio}, ${activePattern.reliability}% reliability) (+${((activePattern.reliability / 100) * 0.75).toFixed(2)})`);
-  }
-
-  // Ensure high-confluence minimum threshold (4.0 - 5.0)
-  if (score < 4.0) {
-    score = 4.5;
-    reasons.push('Institutional order flow confluence (+1.0)');
-  }
+  if (activePattern.bias !== targetBias || activePattern.reliability < 80) return null;
+  score += (activePattern.reliability / 100) * 0.75;
+  reasons.push(`${activePattern.name} (${activePattern.wickRatio}, ${activePattern.reliability}% reliability) (+${((activePattern.reliability / 100) * 0.75).toFixed(2)})`);
 
   // Determine the triggering candle pattern and mechanics
   const isBear = direction === 'SELL';
@@ -491,6 +482,10 @@ export function evaluateConfluence(
   const upperWick = lastCandle.high - Math.max(lastCandle.open, lastCandle.close);
   const lowerWick = Math.min(lastCandle.open, lastCandle.close) - lastCandle.low;
   const body = Math.abs(lastCandle.close - lastCandle.open);
+  const rejectionConfirmed = direction === 'BUY'
+    ? lastCandle.close > lastCandle.open && lowerWick > body
+    : lastCandle.close < lastCandle.open && upperWick > body;
+  if (!rejectionConfirmed || score < Math.max(minScoreThreshold, 5.0)) return null;
   const wickRatio = isBear
     ? `${((upperWick / range) * 100).toFixed(0)}% Upper Wick`
     : `${((lowerWick / range) * 100).toFixed(0)}% Lower Wick`;
@@ -512,6 +507,7 @@ export function evaluateConfluence(
 
   const riskPts = Math.abs(price - sl);
   const rewardPts = Math.abs(tp - price);
+  if (riskPts <= 0 || rewardPts / riskPts < 2) return null;
   const rrRatio = (rewardPts / Math.max(0.1, riskPts)).toFixed(1);
 
   const humanExplanation = {

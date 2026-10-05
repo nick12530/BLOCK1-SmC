@@ -9,10 +9,10 @@
  * - Live Trade Entry, Stop Loss (SL), and Take Profit (TP) marker lines
  */
 
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useMarket, usePositions, useTicker } from '../hooks/useTradingStore';
-import { tradingEngine } from '../engine/tradingEngine';
 import { Activity } from 'lucide-react';
+import { findCorrespondingOrderBlock } from '../engine/tradeJournal';
 
 interface SMCInteractiveChartProps {
   height?: number;
@@ -22,20 +22,72 @@ export const SMCInteractiveChart: React.FC<SMCInteractiveChartProps> = ({ height
   const market = useMarket();
   const positionsState = usePositions();
   const ticker = useTicker();
+  const chartContainerRef = useRef<HTMLDivElement>(null);
+  const [chartWidth, setChartWidth] = useState(900);
+  const [chartHeight, setChartHeight] = useState(height - 44);
+  const selectedPosition = useMemo(
+    () =>
+      positionsState.positions.find((position) => position.ticket === positionsState.selectedTicket) ||
+      positionsState.positions[0],
+    [positionsState.positions, positionsState.selectedTicket]
+  );
+  const selectedOrderBlock = useMemo(() => {
+    if (!selectedPosition) return undefined;
+    return (
+      selectedPosition.strategyOrderBlock ||
+      findCorrespondingOrderBlock(selectedPosition.type, selectedPosition.price_open, market.zones)
+    );
+  }, [market.zones, selectedPosition]);
+
+  useEffect(() => {
+    const container = chartContainerRef.current;
+    if (!container || typeof ResizeObserver === 'undefined') return;
+
+    const observer = new ResizeObserver(([entry]) => {
+      if (!entry) return;
+      if (entry.contentRect.width > 0) setChartWidth(entry.contentRect.width);
+      if (entry.contentRect.height > 0) setChartHeight(entry.contentRect.height);
+    });
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, []);
 
   // 36 candles for clean, uncluttered visual spacing
   const candles = useMemo(() => {
-    const all = tradingEngine.candlesM15 || [];
+    const all = market.candlesM15 || [];
     return all.slice(-36);
-  }, [ticker.bid]);
+  }, [market.candlesM15]);
+
+  const nearestZones = useMemo(() => {
+    const categories = new Set<string>();
+    return market.zones
+      .filter((zone) => !zone.filled)
+      .slice()
+      .sort((a, b) =>
+        Math.abs((a.top + a.bottom) / 2 - ticker.bid) -
+        Math.abs((b.top + b.bottom) / 2 - ticker.bid)
+      )
+      .filter((zone) => {
+        const category = `${zone.kind}-${zone.bullish ? 'demand' : 'supply'}`;
+        if (categories.has(category)) return false;
+        categories.add(category);
+        return true;
+      });
+  }, [market.zones, ticker.bid]);
 
   // Compute precise price bounds with safety padding
   const { minPrice, maxPrice, priceRange } = useMemo(() => {
     if (candles.length === 0) {
-      return { minPrice: 3820, maxPrice: 3865, priceRange: 45 };
+      const range = market.dealing_range;
+      const low = range?.low ?? ticker.bid - 20;
+      const high = range?.high ?? ticker.bid + 20;
+      const pad = Math.max(1.8, (high - low) * 0.08);
+      return { minPrice: low - pad, maxPrice: high + pad, priceRange: high - low + pad * 2 };
     }
     let min = Math.min(...candles.map((c) => c.low));
     let max = Math.max(...candles.map((c) => c.high));
+    min = Math.min(min, ticker.bid, market.bos?.price ?? ticker.bid, market.choch?.price ?? ticker.bid);
+    max = Math.max(max, ticker.bid, market.bos?.price ?? ticker.bid, market.choch?.price ?? ticker.bid);
 
     // Ensure zones fit cleanly in bounds
     market.zones?.forEach((z) => {
@@ -45,9 +97,13 @@ export const SMCInteractiveChart: React.FC<SMCInteractiveChartProps> = ({ height
 
     // Ensure active trade levels fit cleanly
     positionsState.positions.forEach((p) => {
-      min = Math.min(min, p.sl, p.price_open);
-      max = Math.max(max, p.tp, p.price_open);
+      min = Math.min(min, p.sl, p.tp, p.price_open);
+      max = Math.max(max, p.sl, p.tp, p.price_open);
     });
+    if (selectedOrderBlock) {
+      min = Math.min(min, selectedOrderBlock.bottom);
+      max = Math.max(max, selectedOrderBlock.top);
+    }
 
     const pad = Math.max(1.8, (max - min) * 0.08);
     return {
@@ -55,11 +111,10 @@ export const SMCInteractiveChart: React.FC<SMCInteractiveChartProps> = ({ height
       maxPrice: max + pad,
       priceRange: Math.max(3, max - min + pad * 2),
     };
-  }, [candles, market.zones, positionsState.positions]);
+  }, [candles, market.bos, market.choch, market.dealing_range, market.zones, positionsState.positions, selectedOrderBlock, ticker.bid]);
 
-  // ViewBox dimensions: 900 x 320
-  const vbWidth = 900;
-  const vbHeight = 320;
+  const vbWidth = chartWidth;
+  const vbHeight = chartHeight;
   const rightAxisWidth = 85;
   const plotWidth = vbWidth - rightAxisWidth;
 
@@ -70,16 +125,35 @@ export const SMCInteractiveChart: React.FC<SMCInteractiveChartProps> = ({ height
 
   const candleSpacing = plotWidth / Math.max(1, candles.length);
   const candleBodyWidth = Math.max(5, Math.min(14, candleSpacing * 0.65));
+  const zoneLabelPositions: number[] = [];
+  const structureLabelPositions: number[] = [];
+  const spotY = getY(ticker.bid);
+  const zoneYPositions = nearestZones.map((zone) => Math.min(getY(zone.top), getY(zone.bottom)) + 11);
+  const canShowStructureLabel = (price: number) => {
+    const y = getY(price);
+    if (
+      Math.abs(y - spotY) < 20
+      || nearestZones.some((zone) => price >= zone.bottom && price <= zone.top)
+      || zoneYPositions.some((position) => Math.abs(position - y) < 16)
+      || structureLabelPositions.some((position) => Math.abs(position - y) < 18)
+    ) {
+      return false;
+    }
+    structureLabelPositions.push(y);
+    return true;
+  };
+  const showBosLabel = market.bos ? canShowStructureLabel(market.bos.price) : false;
+  const showChochLabel = market.choch ? canShowStructureLabel(market.choch.price) : false;
 
   return (
-    <div className="w-full bg-black border border-zinc-800 rounded-2xl overflow-hidden font-mono text-xs shadow-md select-none transition-colors">
+    <div className="flex h-full min-h-0 w-full flex-col overflow-hidden rounded-2xl border border-zinc-800 bg-black font-mono text-xs shadow-sm">
       {/* Clean, Clutter-Free Status & Legend Bar (Buttons Removed) */}
       <div className="px-4 py-2.5 bg-zinc-950 border-b border-zinc-800 flex items-center justify-between flex-wrap gap-2 text-[11px]">
         {/* Left: Indicator Legend */}
         <div className="flex items-center gap-3 text-zinc-400">
           <span className="font-bold text-white flex items-center gap-1.5">
             <Activity className="w-3.5 h-3.5 text-amber-400" />
-            <span>XAUUSD Structure</span>
+            <span>XAUUSD M15 Structure</span>
           </span>
 
           <span className="hidden sm:inline text-zinc-700">|</span>
@@ -109,7 +183,9 @@ export const SMCInteractiveChart: React.FC<SMCInteractiveChartProps> = ({ height
             {positionsState.positions.length > 0 && (
               <span className="flex items-center gap-1 text-cyan-300 font-semibold">
                 <span className="w-3 h-0.5 bg-cyan-400 inline-block" />
-                <span>Active Trades</span>
+                <span>
+                  {selectedPosition ? `Trade #${selectedPosition.ticket} focused` : 'Active Trades'}
+                </span>
               </span>
             )}
           </div>
@@ -117,7 +193,7 @@ export const SMCInteractiveChart: React.FC<SMCInteractiveChartProps> = ({ height
 
         {/* Right: Live Bid Price */}
         <div className="flex items-center gap-1.5 text-xs">
-          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+          <span className="w-2 h-2 rounded-full bg-sky-400" />
           <span className="text-zinc-400">Spot:</span>
           <strong className="text-white font-bold tabular-nums">
             ${ticker.bid.toFixed(2)}
@@ -126,11 +202,11 @@ export const SMCInteractiveChart: React.FC<SMCInteractiveChartProps> = ({ height
       </div>
 
       {/* SVG Candlestick & Structure Canvas */}
-      <div className="w-full bg-black p-1 sm:p-2 overflow-hidden">
+      <div ref={chartContainerRef} className="flex-1 min-h-0 w-full bg-black p-1 sm:p-2 overflow-hidden">
         <svg
           viewBox={`0 0 ${vbWidth} ${vbHeight}`}
-          className="w-full h-auto block overflow-visible"
-          style={{ maxHeight: `${height - 44}px` }}
+          className="block w-full"
+          style={{ height: '100%' }}
         >
           {/* Subtle Horizontal Price Grid Lines */}
           {[0.15, 0.35, 0.55, 0.75, 0.95].map((pct, idx) => {
@@ -139,7 +215,7 @@ export const SMCInteractiveChart: React.FC<SMCInteractiveChartProps> = ({ height
             return (
               <g key={`grid-${idx}`}>
                 <line x1={0} y1={y} x2={plotWidth} y2={y} stroke="#27272a" strokeWidth="1" strokeDasharray="3 3" />
-                <text x={plotWidth + 10} y={y + 3.5} fill="#71717a" fontSize="10" fontFamily="monospace">
+                <text x={plotWidth + 10} y={y + 3.5} fill="#a1a1aa" fontSize={chartWidth < 500 ? 11 : 10} fontFamily="monospace">
                   ${priceVal.toFixed(1)}
                 </text>
               </g>
@@ -150,14 +226,17 @@ export const SMCInteractiveChart: React.FC<SMCInteractiveChartProps> = ({ height
           <line x1={plotWidth} y1={0} x2={plotWidth} y2={vbHeight} stroke="#27272a" strokeWidth="1" />
 
           {/* 1. ORDER BLOCKS (OB) SHADED ZONES */}
-          {market.zones
-            ?.filter((z) => z.kind === 'OB')
+          {nearestZones
+            .filter((zone) => zone.kind === 'OB')
             .map((ob, idx) => {
               const yTop = getY(ob.top);
               const yBottom = getY(ob.bottom);
               const h = Math.max(5, Math.abs(yBottom - yTop));
               const y = Math.min(yTop, yBottom);
               const isBull = ob.bullish;
+              const labelY = y + 11;
+              const showLabel = !zoneLabelPositions.some((position) => Math.abs(position - labelY) < 14);
+              if (showLabel) zoneLabelPositions.push(labelY);
 
               return (
                 <g key={`ob-${idx}`}>
@@ -173,28 +252,33 @@ export const SMCInteractiveChart: React.FC<SMCInteractiveChartProps> = ({ height
                     strokeDasharray="4 2"
                     rx="3"
                   />
-                  <text
-                    x={26}
-                    y={y + 11}
-                    fill={isBull ? '#34d399' : '#fb7185'}
-                    fontSize="9"
-                    fontWeight="bold"
-                    fontFamily="monospace"
-                  >
-                    {isBull ? 'DEMAND OB' : 'SUPPLY OB'} (${ob.bottom.toFixed(1)} – ${ob.top.toFixed(1)})
-                  </text>
+                  {showLabel && (
+                    <text
+                      x={26}
+                      y={labelY}
+                      fill={isBull ? '#34d399' : '#fb7185'}
+                      fontSize={chartWidth < 500 ? 11 : 9}
+                      fontWeight="bold"
+                      fontFamily="monospace"
+                    >
+                      {chartWidth < 500 ? (isBull ? 'D-OB' : 'S-OB') : (isBull ? 'DEMAND OB' : 'SUPPLY OB')} (${ob.bottom.toFixed(1)} – ${ob.top.toFixed(1)})
+                    </text>
+                  )}
                 </g>
               );
             })}
 
           {/* 2. FAIR VALUE GAPS (FVG) */}
-          {market.zones
-            ?.filter((z) => z.kind === 'FVG')
+          {nearestZones
+            .filter((zone) => zone.kind === 'FVG')
             .map((fvg, idx) => {
               const yTop = getY(fvg.top);
               const yBottom = getY(fvg.bottom);
               const h = Math.max(4, Math.abs(yBottom - yTop));
               const y = Math.min(yTop, yBottom);
+              const labelY = y + 10;
+              const showLabel = !zoneLabelPositions.some((position) => Math.abs(position - labelY) < 14);
+              if (showLabel) zoneLabelPositions.push(labelY);
 
               return (
                 <g key={`fvg-${idx}`}>
@@ -210,12 +294,59 @@ export const SMCInteractiveChart: React.FC<SMCInteractiveChartProps> = ({ height
                     strokeDasharray="2 2"
                     rx="2"
                   />
-                  <text x={40} y={y + 10} fill="#fde047" fontSize="8.5" fontWeight="bold" fontFamily="monospace">
-                    FVG (${fvg.bottom.toFixed(1)} – ${fvg.top.toFixed(1)})
-                  </text>
+                  {showLabel && (
+                    <text x={40} y={labelY} fill="#fde047" fontSize={chartWidth < 500 ? 10 : 8.5} fontWeight="bold" fontFamily="monospace">
+                      FVG (${fvg.bottom.toFixed(1)} – ${fvg.top.toFixed(1)})
+                    </text>
+                  )}
                 </g>
               );
             })}
+
+          {selectedPosition && selectedOrderBlock && (() => {
+            const top = Math.min(getY(selectedOrderBlock.top), getY(selectedOrderBlock.bottom));
+            const bottom = Math.max(getY(selectedOrderBlock.top), getY(selectedOrderBlock.bottom));
+            const zoneHeight = Math.max(5, bottom - top);
+            const labelY = Math.min(vbHeight - 8, Math.max(20, top + 15));
+            const side = selectedOrderBlock.bullish ? 'DEMAND' : 'SUPPLY';
+            return (
+              <g key={`focused-ob-${selectedPosition.ticket}`}>
+                <title>
+                  Position #{selectedPosition.ticket} linked {side.toLowerCase()} order block, $
+                  {selectedOrderBlock.bottom.toFixed(2)}–${selectedOrderBlock.top.toFixed(2)}
+                </title>
+                <rect
+                  x={17}
+                  y={top}
+                  width={plotWidth - 22}
+                  height={zoneHeight}
+                  fill="#0ea5e9"
+                  fillOpacity="0.16"
+                  stroke="#38bdf8"
+                  strokeWidth="2.5"
+                  rx="3"
+                />
+                <rect
+                  x={23}
+                  y={labelY - 12}
+                  width={chartWidth < 500 ? 112 : 145}
+                  height={18}
+                  rx="3"
+                  fill="#075985"
+                />
+                <text
+                  x={28}
+                  y={labelY}
+                  fill="#e0f2fe"
+                  fontSize={chartWidth < 500 ? 10 : 9}
+                  fontWeight="bold"
+                  fontFamily="monospace"
+                >
+                  #{selectedPosition.ticket} LINKED {side} OB
+                </text>
+              </g>
+            );
+          })()}
 
           {/* 3. BOS & CHOCH STRUCTURAL BREAK LINES */}
           {market.bos && (
@@ -229,24 +360,28 @@ export const SMCInteractiveChart: React.FC<SMCInteractiveChartProps> = ({ height
                 strokeWidth="1.5"
                 strokeDasharray="4 3"
               />
-              <rect
-                x={plotWidth - 110}
-                y={getY(market.bos.price) - 8}
-                width={100}
-                height={16}
-                rx="3"
-                fill="#581c87"
-              />
-              <text
-                x={plotWidth - 105}
-                y={getY(market.bos.price) + 3.5}
-                fill="#faf5ff"
-                fontSize="9"
-                fontWeight="bold"
-                fontFamily="monospace"
-              >
-                BOS ${market.bos.price.toFixed(1)}
-              </text>
+              {showBosLabel && (
+                <>
+                  <rect
+                    x={plotWidth - 110}
+                    y={getY(market.bos.price) - 8}
+                    width={100}
+                    height={16}
+                    rx="3"
+                    fill="#581c87"
+                  />
+                  <text
+                    x={plotWidth - 105}
+                    y={getY(market.bos.price) + 3.5}
+                    fill="#faf5ff"
+                    fontSize={chartWidth < 500 ? 10 : 9}
+                    fontWeight="bold"
+                    fontFamily="monospace"
+                  >
+                    BOS ${market.bos.price.toFixed(1)}
+                  </text>
+                </>
+              )}
             </g>
           )}
 
@@ -261,24 +396,28 @@ export const SMCInteractiveChart: React.FC<SMCInteractiveChartProps> = ({ height
                 strokeWidth="1.5"
                 strokeDasharray="3 3"
               />
-              <rect
-                x={plotWidth - 120}
-                y={getY(market.choch.price) - 8}
-                width={110}
-                height={16}
-                rx="3"
-                fill="#0369a1"
-              />
-              <text
-                x={plotWidth - 115}
-                y={getY(market.choch.price) + 3.5}
-                fill="#f0f9ff"
-                fontSize="9"
-                fontWeight="bold"
-                fontFamily="monospace"
-              >
-                CHoCH ${market.choch.price.toFixed(1)}
-              </text>
+              {showChochLabel && (
+                <>
+                  <rect
+                    x={plotWidth - 120}
+                    y={getY(market.choch.price) - 8}
+                    width={110}
+                    height={16}
+                    rx="3"
+                    fill="#0369a1"
+                  />
+                  <text
+                    x={plotWidth - 115}
+                    y={getY(market.choch.price) + 3.5}
+                    fill="#f0f9ff"
+                    fontSize={chartWidth < 500 ? 10 : 9}
+                    fontWeight="bold"
+                    fontFamily="monospace"
+                  >
+                    CHoCH ${market.choch.price.toFixed(1)}
+                  </text>
+                </>
+              )}
             </g>
           )}
 
@@ -325,27 +464,28 @@ export const SMCInteractiveChart: React.FC<SMCInteractiveChartProps> = ({ height
             const yEntry = getY(pos.price_open);
             const ySL = getY(pos.sl);
             const yTP = getY(pos.tp);
+            const isFocused = selectedPosition?.ticket === pos.ticket;
 
             return (
-              <g key={`pos-${pos.ticket}`}>
+              <g key={`pos-${pos.ticket}`} opacity={isFocused ? 1 : 0.3}>
                 {/* Entry Dotted Line */}
-                <line x1={0} y1={yEntry} x2={plotWidth} y2={yEntry} stroke="#38bdf8" strokeWidth="1.5" strokeDasharray="3 3" />
-                <rect x={plotWidth - 170} y={yEntry - 8} width={160} height={16} rx="3" fill="#075985" />
-                <text x={plotWidth - 165} y={yEntry + 3.5} fill="#e0f2fe" fontSize="9" fontWeight="bold" fontFamily="monospace">
+                <line x1={0} y1={yEntry} x2={plotWidth} y2={yEntry} stroke="#38bdf8" strokeWidth={isFocused ? 2.5 : 1.5} strokeDasharray="3 3" />
+                <rect x={plotWidth - 170} y={yEntry - 8} width={160} height={16} rx="3" fill={isFocused ? '#075985' : '#164e63'} />
+                <text x={plotWidth - 165} y={yEntry + 3.5} fill="#e0f2fe" fontSize={chartWidth < 500 ? 10 : 9} fontWeight="bold" fontFamily="monospace">
                   #{pos.ticket} {pos.type} @ ${pos.price_open.toFixed(1)}
                 </text>
 
                 {/* Stop Loss Line */}
                 <line x1={0} y1={ySL} x2={plotWidth} y2={ySL} stroke="#f43f5e" strokeWidth="1.5" strokeDasharray="4 2" />
                 <rect x={plotWidth - 100} y={ySL - 8} width={90} height={16} rx="3" fill="#881337" />
-                <text x={plotWidth - 95} y={ySL + 3.5} fill="#ffe4e6" fontSize="9" fontWeight="bold" fontFamily="monospace">
+                <text x={plotWidth - 95} y={ySL + 3.5} fill="#ffe4e6" fontSize={chartWidth < 500 ? 10 : 9} fontWeight="bold" fontFamily="monospace">
                   SL ${pos.sl.toFixed(1)}
                 </text>
 
                 {/* Take Profit Line */}
                 <line x1={0} y1={yTP} x2={plotWidth} y2={yTP} stroke="#10b981" strokeWidth="1.5" strokeDasharray="4 2" />
                 <rect x={plotWidth - 100} y={yTP - 8} width={90} height={16} rx="3" fill="#064e3b" />
-                <text x={plotWidth - 95} y={yTP + 3.5} fill="#d1fae5" fontSize="9" fontWeight="bold" fontFamily="monospace">
+                <text x={plotWidth - 95} y={yTP + 3.5} fill="#d1fae5" fontSize={chartWidth < 500 ? 10 : 9} fontWeight="bold" fontFamily="monospace">
                   TP ${pos.tp.toFixed(1)}
                 </text>
               </g>

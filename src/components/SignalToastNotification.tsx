@@ -8,8 +8,13 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { signalAudioNotifier } from '../utils/audioNotification';
-import { useMarket, useTicker } from '../hooks/useTradingStore';
-import { tradingEngine } from '../engine/tradingEngine';
+import { useMarket, useTicker, usePositions } from '../hooks/useTradingStore';
+import { tradingEngine, MAX_SPREAD_POINTS } from '../engine/tradingEngine';
+import { mt5Bridge } from '../engine/mt5Bridge';
+import {
+  buildSignalRationale,
+  findCorrespondingOrderBlock,
+} from '../engine/tradeJournal';
 import {
   TrendingUp,
   TrendingDown,
@@ -26,6 +31,7 @@ import {
 export const SignalToastNotification: React.FC = () => {
   const market = useMarket();
   const ticker = useTicker();
+  const positionsState = usePositions();
 
   const [isOpen, setIsOpen] = useState(false);
   const [hasNewAlert, setHasNewAlert] = useState(false);
@@ -36,15 +42,14 @@ export const SignalToastNotification: React.FC = () => {
 
   const signal = market.signal;
   const activeDirection = signal?.direction || (market.bias === 'bearish' ? 'SELL' : 'BUY');
-  const activeEntry = signal?.entry || ticker.bid;
+  const activeEntry = signal?.entry ?? ticker.bid;
   const isBuy = activeDirection === 'BUY';
 
-  // High-Impact SMC parameters: optimal 1:3.0 Risk/Reward expansion
-  const riskPts = 3.5;
-  const rewardPts = 10.5;
-  const activeSL = isBuy ? activeEntry - riskPts : activeEntry + riskPts;
-  const activeTP = isBuy ? activeEntry + rewardPts : activeEntry - rewardPts;
-  const strengthPct = Math.min(99, Math.max(88, Math.round(((signal?.score || 4.8) / 5.0) * 100)));
+  const activeSL = signal?.sl ?? activeEntry;
+  const activeTP = signal?.tp ?? activeEntry;
+  const riskPts = Math.abs(activeEntry - activeSL);
+  const rewardPts = Math.abs(activeTP - activeEntry);
+  const strengthScore = signal?.score ?? 0;
 
   // Listen to engine signal chime alerts
   useEffect(() => {
@@ -61,6 +66,10 @@ export const SignalToastNotification: React.FC = () => {
     };
   }, []);
 
+  useEffect(() => {
+    if (!signal) setIsOpen(false);
+  }, [signal]);
+
   // Close when clicking outside
   useEffect(() => {
     const handleOutsideClick = (e: MouseEvent) => {
@@ -76,24 +85,72 @@ export const SignalToastNotification: React.FC = () => {
     };
   }, [isOpen]);
 
-  const handleExecute = () => {
-    const res = tradingEngine.tradeMultiplePositions(stackCount, {
-      direction: activeDirection,
-      volume: lotSize,
-      entry: activeEntry,
-      sl: activeSL,
-      tp: activeTP,
-      comment: `high_impact_${stackCount}x`,
-    });
+  const handleExecute = async () => {
+    if (!signal || positionsState.positions.length + stackCount > 10) return;
+    if (tradingEngine.killSwitch) {
+      tradingEngine.slog('Signal alert order blocked: Kill Switch is armed.', 'error');
+      return;
+    }
+    if (ticker.spread > MAX_SPREAD_POINTS) {
+      tradingEngine.slog(`Signal alert order blocked: spread ${ticker.spread} exceeds ${MAX_SPREAD_POINTS} points.`, 'error');
+      return;
+    }
+    if (tradingEngine.mt5Account.connected && !mt5Bridge.getStatus().connected) {
+      tradingEngine.slog('Signal alert order blocked: MT5 bridge is offline.', 'error');
+      return;
+    }
 
-    signalAudioNotifier.playSignalAlert(activeDirection, activeEntry);
-    setExecutedCount(res.countOpened);
+    if (mt5Bridge.getStatus().connected) {
+      let opened = 0;
+      const rationale = buildSignalRationale(signal);
+      const strategyOrderBlock = findCorrespondingOrderBlock(
+        signal.direction,
+        signal.entry,
+        tradingEngine.getMarketSnapshot().zones
+      );
+      for (let index = 0; index < stackCount; index += 1) {
+        try {
+          const result = await mt5Bridge.sendTrade({
+            direction: signal.direction,
+            volume: lotSize,
+            symbol: mt5Bridge.getSymbol(),
+            sl: signal.sl,
+            tp: signal.tp,
+            rationale,
+          });
+          tradingEngine.recordMt5Rationale(
+            result.ticket,
+            result.positionTicket,
+            rationale,
+            strategyOrderBlock
+          );
+          opened += 1;
+        } catch (error) {
+          tradingEngine.slog(
+            `Signal alert order ${index + 1} rejected: ${error instanceof Error ? error.message : 'Unknown bridge error'}`,
+            'error'
+          );
+          break;
+        }
+      }
+      setExecutedCount(opened);
+    } else {
+      const result = tradingEngine.tradeMultiplePositions(stackCount, {
+        direction: signal.direction,
+        volume: lotSize,
+        entry: signal.entry,
+        sl: signal.sl,
+        tp: signal.tp,
+        comment: `signal_alert_${stackCount}x`,
+      });
+      setExecutedCount(result.countOpened);
+    }
 
     setTimeout(() => {
       setExecutedCount(null);
       setIsOpen(false);
       setHasNewAlert(false);
-    }, 1800);
+    }, 2500);
   };
 
   const handleAdjustLot = (delta: number) => {
@@ -106,6 +163,8 @@ export const SignalToastNotification: React.FC = () => {
   const totalExposureLots = Number((lotSize * stackCount).toFixed(2));
   const potentialProfitDollars = (rewardPts * 100 * totalExposureLots).toFixed(2);
   const potentialRiskDollars = (riskPts * 100 * totalExposureLots).toFixed(2);
+
+  if (!signal) return null;
 
   return (
     <>
@@ -125,14 +184,14 @@ export const SignalToastNotification: React.FC = () => {
                 <div>
                   <div className="flex items-center gap-1.5">
                     <span className="text-[10px] font-black uppercase tracking-wider text-zinc-400">
-                      HIGH-IMPACT SMC ALERT
+                      SMC SETUP ALERT
                     </span>
                     <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-zinc-800 text-zinc-200 border border-zinc-700">
-                      {strengthPct}% Confluence
+                      Score {strengthScore}
                     </span>
                   </div>
                   <h3 className="font-extrabold text-sm text-white">
-                    {activeDirection} XAUUSD · Liquidity Sweep
+                    {activeDirection} {mt5Bridge.getSymbol()} · {signal.timeframe} setup
                   </h3>
                 </div>
               </div>
@@ -148,9 +207,9 @@ export const SignalToastNotification: React.FC = () => {
             {/* High Impact Trade Rationale & Profit Multiplier */}
             <div className="p-3 rounded-xl bg-zinc-900/90 border border-zinc-800 space-y-2 text-xs">
               <div className="flex items-center justify-between text-[11px]">
-                <span className="text-zinc-400">Potential Target Gain:</span>
+                <span className="text-zinc-400">Target if reached:</span>
                 <strong className="text-white font-black tabular-nums">
-                  +${potentialProfitDollars} USD (1:3.0 RR)
+                  +${potentialProfitDollars} USD ({(rewardPts / Math.max(riskPts, 0.01)).toFixed(1)}R)
                 </strong>
               </div>
               <div className="flex items-center justify-between text-[11px]">
@@ -160,7 +219,7 @@ export const SignalToastNotification: React.FC = () => {
                 </span>
               </div>
               <p className="text-[11px] text-zinc-400 font-sans border-t border-zinc-800 pt-1.5 leading-relaxed">
-                High-volatility institutional displacement detected after session liquidity sweep. Prepared for rapid expansion into opposing imbalance pool.
+                Filtered setup only. Price can move against this trade; the target and stop are not a profit guarantee.
               </p>
             </div>
 
@@ -260,7 +319,7 @@ export const SignalToastNotification: React.FC = () => {
             {executedCount !== null ? (
               <div className="w-full py-3 rounded-xl bg-white text-black font-black text-xs uppercase tracking-wider flex items-center justify-center gap-2">
                 <CheckCircle2 className="w-4 h-4" />
-                <span>SUCCESSFULLY STACKED {executedCount}X POSITIONS!</span>
+                <span>{executedCount > 0 ? `MT5 / SIMULATION ACCEPTED ${executedCount}X` : 'NO ORDERS ACCEPTED'}</span>
               </div>
             ) : (
               <div className="flex items-center gap-2 pt-1">
@@ -293,7 +352,7 @@ export const SignalToastNotification: React.FC = () => {
       <div className="fixed bottom-5 right-4 sm:bottom-6 sm:right-6 z-[150] select-none font-mono">
         <button
           onClick={() => setIsOpen((prev) => !prev)}
-          title={`High-Impact ${activeDirection} SMC Setup · Tap to inspect & stack`}
+          title={`${activeDirection} SMC setup · Inspect signal levels`}
           className="relative flex items-center gap-2 px-3 py-2 rounded-full bg-[#0c0d10] border border-zinc-700 text-white shadow-xl hover:border-zinc-500 hover:scale-105 active:scale-95 transition-all cursor-pointer"
         >
           <span className="relative flex h-2 w-2">
@@ -306,7 +365,7 @@ export const SignalToastNotification: React.FC = () => {
           </span>
 
           <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-300 border border-zinc-700">
-            {strengthPct}%
+            {strengthScore}
           </span>
         </button>
       </div>

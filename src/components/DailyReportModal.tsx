@@ -11,6 +11,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useClosedTrades, useTicker } from '../hooks/useTradingStore';
 import { tradingEngine } from '../engine/tradingEngine';
+import { closedTradeDayKey, localDayKey } from '../engine/tradeJournal';
 import {
   FileText,
   X,
@@ -32,9 +33,14 @@ import {
 interface DailyReportModalProps {
   isOpen: boolean;
   onClose: () => void;
+  selectedDate?: string;
 }
 
-export const DailyReportModal: React.FC<DailyReportModalProps> = ({ isOpen, onClose }) => {
+export const DailyReportModal: React.FC<DailyReportModalProps> = ({
+  isOpen,
+  onClose,
+  selectedDate = localDayKey(new Date()),
+}) => {
   const closedTrades = useClosedTrades();
   const ticker = useTicker();
   const [copied, setCopied] = useState(false);
@@ -55,7 +61,7 @@ export const DailyReportModal: React.FC<DailyReportModalProps> = ({ isOpen, onCl
 
   // Overall session statistics
   const stats = useMemo(() => {
-    const todayTrades = closedTrades;
+    const todayTrades = closedTrades.filter((trade) => closedTradeDayKey(trade) === selectedDate);
     const totalCount = todayTrades.length;
     const winningTrades = todayTrades.filter((t) => t.profit > 0);
     const losingTrades = todayTrades.filter((t) => t.profit < 0);
@@ -104,11 +110,11 @@ export const DailyReportModal: React.FC<DailyReportModalProps> = ({ isOpen, onCl
       shortWinRate,
       returnPct,
     };
-  }, [closedTrades]);
+  }, [closedTrades, selectedDate]);
 
   // Filtered trades based on user selectors
   const filteredTrades = useMemo(() => {
-    return closedTrades.filter((t) => {
+    return stats.todayTrades.filter((t) => {
       // Outcome filter
       if (outcomeFilter === 'WIN' && t.profit <= 0) return false;
       if (outcomeFilter === 'LOSS' && t.profit >= 0) return false;
@@ -123,17 +129,18 @@ export const DailyReportModal: React.FC<DailyReportModalProps> = ({ isOpen, onCl
         const matchTicket = t.ticket.toString().includes(q);
         const matchReason = t.reason.toLowerCase().includes(q);
         const matchComment = t.comment ? t.comment.toLowerCase().includes(q) : false;
-        if (!matchTicket && !matchReason && !matchComment) return false;
+        const matchRationale = t.strategyRationale ? t.strategyRationale.toLowerCase().includes(q) : false;
+        if (!matchTicket && !matchReason && !matchComment && !matchRationale) return false;
       }
 
       return true;
     });
-  }, [closedTrades, outcomeFilter, directionFilter, searchQuery]);
+  }, [stats.todayTrades, outcomeFilter, directionFilter, searchQuery]);
 
   const handleCopyReport = () => {
     const reportText = `===========================================
 SMC GOLD BOT (XAUUSD) - DAILY PERFORMANCE REPORT
-Session Date:    ${new Date().toISOString().slice(0, 10)} (UTC)
+Session Date:    ${selectedDate} (Local)
 -------------------------------------------
 Net Realized PnL:   ${stats.netPnl >= 0 ? '+' : ''}$${stats.netPnl} USD (${stats.returnPct}%)
 Total Trades:       ${stats.totalCount} (${stats.winCount}W / ${stats.lossCount}L)
@@ -155,11 +162,11 @@ Daily Drawdown:     ${tradingEngine.account.daily_drawdown_pct}% (Max: 3.0%)
   };
 
   const handleDownloadCSV = () => {
-    if (closedTrades.length === 0) return;
-    const headers = ['Ticket', 'CloseTime', 'Type', 'Volume', 'OpenPrice', 'ClosePrice', 'Pips', 'Profit', 'Reason'];
-    const rows = closedTrades.map((t) => [
+    if (stats.todayTrades.length === 0) return;
+    const headers = ['Ticket', 'CloseAt', 'Type', 'Volume', 'OpenPrice', 'ClosePrice', 'Pips', 'Profit', 'Reason', 'StrategyRationale'];
+    const rows = stats.todayTrades.map((t) => [
       t.ticket,
-      t.closeTime,
+      t.closedAt || t.closeTime,
       t.type,
       t.volume,
       t.openPrice.toFixed(2),
@@ -167,13 +174,14 @@ Daily Drawdown:     ${tradingEngine.account.daily_drawdown_pct}% (Max: 3.0%)
       t.pips.toFixed(1),
       t.profit.toFixed(2),
       t.reason,
-    ]);
+      t.strategyRationale || '',
+    ].map((value) => `"${String(value).replaceAll('"', '""')}"`));
 
     const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map((e) => e.join(','))].join('\n');
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement('a');
     link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `smc_trading_journal_${new Date().toISOString().slice(0, 10)}.csv`);
+    link.setAttribute('download', `smc_trading_journal_${selectedDate}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -187,7 +195,7 @@ Daily Drawdown:     ${tradingEngine.account.daily_drawdown_pct}% (Max: 3.0%)
       aria-modal="true"
       className="fixed inset-0 z-[170] flex items-center justify-center p-2.5 sm:p-4 bg-black/75 backdrop-blur-xs font-mono text-xs select-none animate-in fade-in duration-150"
     >
-      <div className="w-full max-w-3xl max-h-[92vh] sm:max-h-[88vh] rounded-2xl bg-white dark:bg-[#0c0d10] border border-slate-200 dark:border-zinc-800 shadow-2xl flex flex-col overflow-hidden transition-colors">
+      <div className="w-full max-w-3xl max-h-[92dvh] sm:max-h-[88dvh] rounded-2xl bg-white dark:bg-[#0d1823] border border-slate-200 dark:border-[#1a3040] shadow-xl flex flex-col overflow-hidden transition-colors">
         {/* Top Header */}
         <div className="px-4 sm:px-6 py-3 border-b border-slate-200 dark:border-zinc-800 flex items-center justify-between bg-slate-50/50 dark:bg-zinc-950/50 shrink-0">
           <div className="flex items-center gap-2.5">
@@ -200,7 +208,7 @@ Daily Drawdown:     ${tradingEngine.account.daily_drawdown_pct}% (Max: 3.0%)
               </h2>
               <div className="flex items-center gap-2 text-[11px] text-slate-400">
                 <Calendar className="w-3 h-3 text-slate-400" />
-                <span>{new Date().toISOString().slice(0, 10)} (UTC)</span>
+                <span>{new Date(`${selectedDate}T12:00:00`).toLocaleDateString()} (Local)</span>
                 <span>·</span>
                 <span className="text-emerald-500 font-bold">XAUUSD Institutional Ledger</span>
               </div>
@@ -485,7 +493,7 @@ Daily Drawdown:     ${tradingEngine.account.daily_drawdown_pct}% (Max: 3.0%)
                           ${t.openPrice.toFixed(2)} → ${t.closePrice.toFixed(2)}
                         </td>
                         <td className="py-2.5 px-2">
-                          <span className="text-[11px] text-zinc-600 dark:text-zinc-300 block max-w-xs truncate" title={t.strategyRationale || 'SMC Confluence execution'}>
+                          <span className="block max-w-sm whitespace-normal break-words text-xs leading-relaxed text-zinc-600 dark:text-zinc-300" title={t.strategyRationale || 'SMC Confluence execution'}>
                             {t.strategyRationale || 'SMC Confluence execution'}
                           </span>
                         </td>

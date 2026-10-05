@@ -6,11 +6,12 @@
 
 import React from 'react';
 import { useEngine, useTicker } from '../hooks/useTradingStore';
-import { ShieldCheck, Activity } from 'lucide-react';
+import { ShieldCheck } from 'lucide-react';
 
 export const FooterView: React.FC = React.memo(() => {
   const engine = useEngine();
   const ticker = useTicker();
+  const mt5 = engine.mt5Account;
 
   return (
     <footer className="border-t border-slate-200 dark:border-[#1c212c] bg-white dark:bg-[#11141a] px-4 sm:px-6 py-3 font-mono text-xs transition-colors mt-auto">
@@ -35,8 +36,12 @@ export const FooterView: React.FC = React.memo(() => {
 
         {/* Right: Security & Terminal Readiness */}
         <div className="flex items-center gap-2 text-[11px] text-slate-400 dark:text-slate-500">
-          <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />
-          <span>SMC Institutional Execution Engine · Multi-Broker Bridge Ready</span>
+          <ShieldCheck className={`w-3.5 h-3.5 ${mt5?.connected ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400'}`} />
+          <span>
+            {mt5?.connected
+              ? `MT5 account ${mt5.login} connected · Broker orders enabled`
+              : 'MT5 not linked · Orders are not routed to a broker'}
+          </span>
         </div>
       </div>
     </footer>

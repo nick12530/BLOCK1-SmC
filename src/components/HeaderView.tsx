@@ -36,7 +36,6 @@ export const HeaderView: React.FC<HeaderViewProps> = React.memo(({
   const engine = useEngine();
   const { positions } = usePositions();
 
-  const schedule = engine.marketSchedule;
   const mt5 = engine.mt5Account;
 
   // Margin telemetry calculation
@@ -59,7 +58,7 @@ export const HeaderView: React.FC<HeaderViewProps> = React.memo(({
   const isProfit = ticker.equity >= ticker.balance;
 
   return (
-    <header className="relative w-full border-b border-slate-200/90 dark:border-zinc-800 bg-white/95 dark:bg-[#0c0d10]/95 backdrop-blur-md px-3 sm:px-6 py-2.5 font-mono text-xs transition-colors shadow-xs">
+    <header className="relative w-full border-b border-slate-200/90 dark:border-[#1a3040] bg-white/95 dark:bg-[#0d1823]/95 backdrop-blur-md px-3 sm:px-6 py-2.5 font-mono text-xs transition-colors shadow-xs">
       <div className="max-w-7xl mx-auto flex items-center justify-between gap-3 flex-wrap sm:flex-nowrap">
         {/* Left: Brand Identity & Session Schedule */}
         <div className="flex items-center gap-2.5 sm:gap-3 shrink-0">
@@ -74,17 +73,14 @@ export const HeaderView: React.FC<HeaderViewProps> = React.memo(({
 
           <div className="h-4 w-px bg-slate-200 dark:bg-zinc-800" />
 
-          {schedule && !schedule.isOpen ? (
-            <span className="flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-zinc-100 dark:bg-zinc-900 text-zinc-500 border border-zinc-200 dark:border-zinc-800">
-              <span className="w-1.5 h-1.5 rounded-full bg-zinc-400" />
-              <span>Weekend Closed</span>
-            </span>
-          ) : (
-            <span className="flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-              <span>Live Interbank</span>
-            </span>
-          )}
+          <span className={`flex items-center gap-1.5 text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+            mt5?.connected
+              ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/20'
+              : 'bg-slate-100 text-slate-600 dark:bg-zinc-900 dark:text-zinc-400 border-slate-200 dark:border-zinc-800'
+          }`}>
+            <span className={`w-1.5 h-1.5 rounded-full ${mt5?.connected ? 'bg-emerald-500' : 'bg-slate-400'}`} />
+            <span>{mt5?.connected ? 'MT5 connected' : 'MT5 not linked'}</span>
+          </span>
         </div>
 
         {/* Center: Linked MT5 Account Telemetry (Balance, Equity, Free Margin, Margin Level) */}

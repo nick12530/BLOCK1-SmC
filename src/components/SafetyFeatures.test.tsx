@@ -1,7 +1,7 @@
 /**
  * SafetyFeatures.test.tsx - Component tests proving:
  * (a) Kill-switch banner appears when engine state arms
- * (b) Spread gate disables the EXECUTE / BUY button when spread exceeds MAX_SPREAD_POINTS
+ * (b) Execution remains disabled until a validated broker-backed signal exists.
  */
 
 import React from 'react';
@@ -39,12 +39,11 @@ describe('Trading Safety UX Components', () => {
     expect(alert.textContent).toContain('KILL SWITCH ARMED');
   });
 
-  it('proves spread gate disables button when spread exceeds MAX_SPREAD_POINTS', () => {
+  it('blocks orders without a validated signal and reports wide spreads', () => {
     const { rerender } = render(<SignalEngineCard onExecuteSignal={() => {}} />);
 
-    // Normal spread (18 <= 40)
-    let button = screen.getByRole('button', { name: /EXECUTE SIGNAL/i });
-    expect((button as HTMLButtonElement).disabled).toBe(false);
+    let button = screen.getByRole('button', { name: /WAITING FOR CONFIRMED SETUP/i });
+    expect((button as HTMLButtonElement).disabled).toBe(true);
 
     // Widen spread above MAX_SPREAD_POINTS
     act(() => {
@@ -55,8 +54,9 @@ describe('Trading Safety UX Components', () => {
 
     rerender(<SignalEngineCard onExecuteSignal={() => {}} />);
 
-    // Button must now be disabled by the spread gate
-    button = screen.getByRole('button', { name: /SPREAD TOO WIDE/i });
+    button = screen.getByRole('button', { name: /WAITING FOR CONFIRMED SETUP/i });
     expect((button as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByText(/45 PTS/)).toBeDefined();
+    expect(MAX_SPREAD_POINTS).toBe(40);
   });
 });

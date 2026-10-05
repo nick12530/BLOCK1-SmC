@@ -72,15 +72,20 @@ class SignalAudioNotifier {
    * Plays a subtle, warm, harmonic institutional chime (E5 -> B5 with soft E4 depth).
    * Volume is gentle and decay is natural, preventing audio fatigue.
    */
-  public playSignalAlert(direction: 'BUY' | 'SELL' = 'BUY', price: number = 4188.5) {
-    // Notify visual listeners regardless of mute so visual toast still shows
-    this.listeners.forEach((cb) => {
-      try {
-        cb(direction, price);
-      } catch (err) {
-        console.error(err);
-      }
-    });
+  public playSignalAlert(
+    direction: 'BUY' | 'SELL' = 'BUY',
+    price: number = 4188.5,
+    notifyListeners: boolean = true
+  ) {
+    if (notifyListeners) {
+      this.listeners.forEach((cb) => {
+        try {
+          cb(direction, price);
+        } catch (err) {
+          console.error('[Signal Alerts] Visual alert listener failed:', err);
+        }
+      });
+    }
 
     if (this.isMuted) return;
 
@@ -154,7 +159,7 @@ class SignalAudioNotifier {
   public playTestChime() {
     const wasMuted = this.isMuted;
     this.isMuted = false;
-    this.playSignalAlert('BUY', 4188.5);
+    this.playSignalAlert('BUY', 4188.5, false);
     this.isMuted = wasMuted;
   }
 }

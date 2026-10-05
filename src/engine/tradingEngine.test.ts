@@ -61,12 +61,27 @@ describe('TradingEngine Store Architecture', () => {
     // Open position 1
     engine.sendMarket('BUY', 0.05, 3830, 3850, 'test1');
     const pos1 = engine.positions[engine.positions.length - 1];
+    const orderBlock = {
+      kind: 'OB' as const,
+      top: 3832,
+      bottom: 3828,
+      bullish: true,
+      born: 12,
+      filled: false,
+      tests: 0,
+    };
+    engine.recordMt5Rationale(pos1.ticket, pos1.ticket, 'Confirmed bullish order-block retest.', orderBlock);
+    engine.setSelectedTicket(pos1.ticket);
+    expect(engine.getPositionsSnapshot().selectedTicket).toBe(pos1.ticket);
+    expect(engine.positions.find((position) => position.ticket === pos1.ticket)?.strategyOrderBlock).toEqual(orderBlock);
 
     // Close position 1
     engine.closePosition(pos1.ticket, 'Manual');
     expect(engine.closedTrades.length).toBeGreaterThanOrEqual(1);
     const firstClosed = engine.closedTrades[0];
     expect(firstClosed.ticket).toBe(pos1.ticket);
+    expect(firstClosed.strategyRationale).toBe('Confirmed bullish order-block retest.');
+    expect(firstClosed.strategyOrderBlock).toEqual(orderBlock);
 
     // Open position 2
     engine.sendMarket('SELL', 0.1, 3850, 3830, 'test2');

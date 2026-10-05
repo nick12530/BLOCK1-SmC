@@ -95,7 +95,7 @@ export const OrderBlocksProgressionCard: React.FC = React.memo(() => {
   }, [positions, currentSpot, entryPrice, isBuy]);
 
   return (
-    <div className="bg-white dark:bg-[#0c0d10] border border-slate-200/90 dark:border-zinc-800 rounded-2xl p-4 sm:p-5 flex flex-col justify-between shadow-xs space-y-4 font-mono text-xs transition-colors">
+    <div className="w-full min-w-0 bg-white dark:bg-[#0d1823] border border-slate-200/90 dark:border-[#1a3040] rounded-2xl p-4 sm:p-5 flex flex-col justify-between shadow-xs dark:shadow-none space-y-4 font-mono text-xs transition-colors">
       {/* Top Header: Title, Order Block Type, and Status */}
       <div className="flex items-center justify-between border-b border-slate-100 dark:border-zinc-800/80 pb-3 flex-wrap gap-2">
         <div className="flex items-center gap-2">

@@ -116,12 +116,16 @@ export interface Position {
   beLocked?: boolean;
   trailLocked?: boolean;
   strategyRationale?: string;
+  strategyOrderBlock?: Zone;
 }
 
 export interface ClosedTrade {
   ticket: number;
+  orderTicket?: number;
+  positionTicket?: number;
   openTime: string;
   closeTime: string;
+  closedAt?: string;
   type: TradeDirection;
   volume: number;
   openPrice: number;
@@ -131,6 +135,7 @@ export interface ClosedTrade {
   reason: 'TP' | 'SL' | 'Manual' | 'KillSwitch';
   comment: string;
   strategyRationale?: string;
+  strategyOrderBlock?: Zone;
 }
 
 export interface EngineLog {

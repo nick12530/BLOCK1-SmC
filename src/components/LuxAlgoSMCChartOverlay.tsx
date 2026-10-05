@@ -26,9 +26,10 @@ export const LuxAlgoSMCChartOverlay: React.FC<LuxAlgoSMCChartOverlayProps> = ({
   const positionsState = usePositions();
   const openPositions = positionsState.positions;
 
-  const activeDirection = market.signal?.direction || (market.bias === 'bearish' ? 'SELL' : 'BUY');
-  const activeScore = market.signal?.score || 4.8;
-  const activeEntry = market.signal?.entry || ticker.bid;
+  const signal = market.signal;
+  const activeDirection = signal?.direction || (market.bias === 'bearish' ? 'SELL' : 'BUY');
+  const activeScore = signal?.score ?? 0;
+  const activeEntry = signal?.entry ?? ticker.bid;
 
   const isM1 = timeframe === '1';
   const riskPts = isM1 ? 4.0 : 7.5;
@@ -125,6 +126,8 @@ export const LuxAlgoSMCChartOverlay: React.FC<LuxAlgoSMCChartOverlayProps> = ({
       bgBadge: isDark ? 'rgba(12, 13, 16, 0.85)' : 'rgba(255, 255, 255, 0.90)',
     };
   }, [isDark, isBuy]);
+
+  if (!signal) return null;
 
   return (
     <div className="absolute inset-0 pointer-events-none z-10 overflow-hidden font-mono select-none">

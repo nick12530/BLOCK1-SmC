@@ -12,8 +12,6 @@ import React, { useState, useMemo } from 'react';
 import { useMarket, useTicker } from '../hooks/useTradingStore';
 import { tradingEngine, MAX_SPREAD_POINTS } from '../engine/tradingEngine';
 import {
-  TrendingUp,
-  TrendingDown,
   ArrowRight,
   Shield,
   Zap,
@@ -25,9 +23,10 @@ import {
   Compass,
 } from 'lucide-react';
 import { TradeDirection } from '../types/smc';
+import { buildSignalRationale } from '../engine/tradeJournal';
 
 interface SignalEngineCardProps {
-  onExecuteSignal?: (customVolume?: number) => void;
+  onExecuteSignal?: (customVolume?: number, positionCount?: number) => void | Promise<void>;
 }
 
 export const SignalEngineCard: React.FC<SignalEngineCardProps> = React.memo(({ onExecuteSignal }) => {
@@ -35,10 +34,7 @@ export const SignalEngineCard: React.FC<SignalEngineCardProps> = React.memo(({ o
   const ticker = useTicker();
 
   // Execution parameters
-  const [directionMode, setDirectionMode] = useState<'AUTO' | 'BUY' | 'SELL'>('AUTO');
   const [lotSize, setLotSize] = useState<number>(0.01);
-  const [riskPts, setRiskPts] = useState<number>(4.0);
-  const [rewardPts, setRewardPts] = useState<number>(8.0);
   const [positionCount, setPositionCount] = useState<number>(1);
   const [copied, setCopied] = useState(false);
   const [executedFeedback, setExecutedFeedback] = useState<string | null>(null);
@@ -46,29 +42,22 @@ export const SignalEngineCard: React.FC<SignalEngineCardProps> = React.memo(({ o
   const rawSig = market.signal;
   const isWideSpread = ticker.spread > MAX_SPREAD_POINTS;
 
-  // Active direction based on user choice or algorithmic SMC bias
-  const activeDirection: TradeDirection = useMemo(() => {
-    if (directionMode === 'BUY') return 'BUY';
-    if (directionMode === 'SELL') return 'SELL';
-    return rawSig?.direction || (market.bias === 'bearish' ? 'SELL' : 'BUY');
-  }, [directionMode, rawSig, market.bias]);
+  const activeDirection: TradeDirection = rawSig?.direction || (market.bias === 'bearish' ? 'SELL' : 'BUY');
 
   const currentSpot = activeDirection === 'BUY' ? ticker.ask : ticker.bid;
   const entryPrice = currentSpot;
-
-  const slPrice = Number(
-    (activeDirection === 'BUY' ? entryPrice - riskPts : entryPrice + riskPts).toFixed(2)
-  );
-  const tpPrice = Number(
-    (activeDirection === 'BUY' ? entryPrice + rewardPts : entryPrice - rewardPts).toFixed(2)
-  );
+  const signalEntry = rawSig?.entry ?? null;
+  const slPrice = rawSig?.sl ?? null;
+  const tpPrice = rawSig?.tp ?? null;
+  const riskPts = rawSig ? Math.abs(rawSig.entry - rawSig.sl) : 0;
+  const rewardPts = rawSig ? Math.abs(rawSig.tp - rawSig.entry) : 0;
 
   const tradeMetrics = useMemo(() => {
     const totalLots = Number((lotSize * positionCount).toFixed(2));
     const dollarPerPoint = totalLots * 100;
     const riskDollar = Number((riskPts * dollarPerPoint).toFixed(2));
     const rewardDollar = Number((rewardPts * dollarPerPoint).toFixed(2));
-    const rrRatio = (rewardPts / Math.max(0.1, riskPts)).toFixed(1);
+    const rrRatio = riskPts > 0 ? (rewardPts / riskPts).toFixed(1) : '—';
 
     return {
       totalLots,
@@ -86,104 +75,97 @@ export const SignalEngineCard: React.FC<SignalEngineCardProps> = React.memo(({ o
   };
 
   const handleCopy = () => {
-    const text = `XAUUSD ${activeDirection} | Entry: $${entryPrice.toFixed(2)} | SL: $${slPrice.toFixed(2)} | TP: $${tpPrice.toFixed(2)} | Vol: ${tradeMetrics.totalLots}L`;
+    if (!rawSig) return;
+    const text = `XAUUSD ${activeDirection} | Entry: $${rawSig.entry.toFixed(2)} | SL: $${rawSig.sl.toFixed(2)} | TP: $${rawSig.tp.toFixed(2)} | Vol: ${tradeMetrics.totalLots}L`;
     navigator.clipboard.writeText(text).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     });
   };
 
-  const handleExecute = () => {
-    if (isWideSpread) return;
+  const handleExecute = async () => {
+    if (isWideSpread || !rawSig) return;
 
-    if (positionCount > 1) {
-      const res = tradingEngine.tradeMultiplePositions(positionCount, {
-        direction: activeDirection,
-        volume: lotSize,
-        entry: entryPrice,
-        sl: slPrice,
-        tp: tpPrice,
-        comment: `stack_${activeDirection.toLowerCase()}`,
-      });
-      setExecutedFeedback(`Stacked ${res.countOpened}x ${activeDirection} Orders (${tradeMetrics.totalLots}L Total)`);
+    if (onExecuteSignal) {
+      await onExecuteSignal(lotSize, positionCount);
     } else {
-      if (onExecuteSignal) {
-        onExecuteSignal(lotSize);
+      const order = {
+        direction: rawSig.direction,
+        volume: lotSize,
+        entry: rawSig.entry,
+        sl: rawSig.sl,
+        tp: rawSig.tp,
+        comment: `user_${rawSig.direction.toLowerCase()}`,
+      };
+      if (positionCount > 1) {
+        const result = tradingEngine.tradeMultiplePositions(positionCount, order);
+        setExecutedFeedback(`Opened ${result.countOpened} ${rawSig.direction} orders`);
       } else {
-        tradingEngine.tradeSignal({
-          direction: activeDirection,
-          volume: lotSize,
-          entry: entryPrice,
-          sl: slPrice,
-          tp: tpPrice,
-          comment: `user_${activeDirection.toLowerCase()}`,
-        });
+        const result = tradingEngine.tradeSignal(order);
+        setExecutedFeedback(result.ok ? `Order sent: ${rawSig.direction} ${lotSize.toFixed(2)} lots` : result.error || 'Order rejected');
       }
-      setExecutedFeedback(`Order Sent: ${activeDirection} ${lotSize.toFixed(2)} @ $${entryPrice.toFixed(2)}`);
+      setTimeout(() => setExecutedFeedback(null), 3500);
     }
-
-    setTimeout(() => setExecutedFeedback(null), 3500);
   };
 
   return (
-    <div className="bg-white dark:bg-[#0c0d10] border border-slate-200/90 dark:border-zinc-800 rounded-2xl p-4 sm:p-5 flex flex-col justify-between shadow-xs space-y-4 font-mono text-xs transition-colors">
+    <div className="bg-white dark:bg-[#0d1823] border border-slate-200/90 dark:border-[#1a3040] rounded-2xl p-4 sm:p-5 flex flex-col justify-between shadow-xs space-y-4 font-mono text-xs transition-colors">
       {/* Header: Title, Direction Switcher & Copy */}
       <div className="flex items-center justify-between border-b border-slate-100 dark:border-zinc-800/80 pb-3 flex-wrap gap-2">
         <div className="flex items-center gap-2">
           <Zap className="w-4 h-4 text-emerald-500" />
-          <h2 className="font-extrabold text-xs sm:text-sm text-slate-900 dark:text-zinc-100 uppercase tracking-wider">
+          <h2 className="font-extrabold text-sm text-slate-900 dark:text-zinc-100 uppercase tracking-wider">
             SMC Signal Deck
           </h2>
-          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 border border-slate-200 dark:border-zinc-700">
-            Spread: {ticker.spread} pts
+          <span className={`text-xs font-bold px-2.5 py-1 rounded-full border ${
+            rawSig
+              ? 'bg-sky-500/10 text-sky-700 dark:text-sky-300 border-sky-500/30'
+              : 'bg-slate-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 border-slate-200 dark:border-zinc-700'
+          }`}>
+            {rawSig ? `${rawSig.direction} · SCORE ${rawSig.score} · ${ticker.spread} PTS` : `NO VALID SETUP · ${ticker.spread} PTS`}
           </span>
         </div>
 
-        {/* 3-Way Direction Controller */}
-        <div className="flex items-center gap-1 p-1 bg-slate-100 dark:bg-zinc-900 rounded-xl border border-slate-200 dark:border-zinc-800">
-          <button
-            onClick={() => setDirectionMode('BUY')}
-            className={`px-3 py-1.5 rounded-lg font-black text-xs transition-colors cursor-pointer flex items-center gap-1 ${
-              activeDirection === 'BUY'
-                ? 'bg-emerald-600 text-white shadow-xs'
-                : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-white'
-            }`}
-          >
-            <TrendingUp className="w-3.5 h-3.5" />
-            <span>BUY</span>
-          </button>
-
-          <button
-            onClick={() => setDirectionMode('SELL')}
-            className={`px-3 py-1.5 rounded-lg font-black text-xs transition-colors cursor-pointer flex items-center gap-1 ${
-              activeDirection === 'SELL'
-                ? 'bg-rose-600 text-white shadow-xs'
-                : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-white'
-            }`}
-          >
-            <TrendingDown className="w-3.5 h-3.5" />
-            <span>SELL</span>
-          </button>
-
-          <button
-            onClick={() => setDirectionMode('AUTO')}
-            className={`px-2.5 py-1.5 rounded-lg font-bold text-[11px] transition-colors cursor-pointer ${
-              directionMode === 'AUTO'
-                ? 'bg-zinc-800 text-white dark:bg-zinc-700'
-                : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-white'
-            }`}
-            title="Follow Smart Money institutional bias"
-          >
-            AUTO
-          </button>
-
+        <div className="flex items-center gap-2">
           <button
             onClick={handleCopy}
             title="Copy signal parameters"
-            className="p-1.5 rounded-lg text-zinc-400 hover:text-zinc-900 dark:hover:text-white hover:bg-slate-200 dark:hover:bg-zinc-800 transition-colors cursor-pointer ml-0.5"
+            disabled={!rawSig}
+            className="p-1.5 rounded-lg text-zinc-400 hover:text-zinc-900 dark:hover:text-white hover:bg-slate-200 dark:hover:bg-zinc-800 transition-colors cursor-pointer ml-0.5 disabled:opacity-40"
           >
             {copied ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
           </button>
+        </div>
+      </div>
+
+      <div
+        role="status"
+        aria-live="polite"
+        className="rounded-xl border border-sky-200 bg-sky-50/70 p-3 dark:border-sky-900/70 dark:bg-sky-950/20"
+      >
+        <div className="flex items-start gap-2.5">
+          <span
+            className={`mt-1 h-2.5 w-2.5 shrink-0 rounded-full ${
+              rawSig ? 'bg-sky-500' : 'bg-slate-400 dark:bg-zinc-600'
+            }`}
+          />
+          <div className="min-w-0">
+            <p className="text-sm font-bold leading-relaxed text-slate-800 dark:text-zinc-100">
+              {rawSig
+                ? rawSig.humanExplanation?.simpleSummary || buildSignalRationale(rawSig)
+                : 'No setup currently meets the SMC confluence filters. Execution remains disabled until a valid signal forms.'}
+            </p>
+            {rawSig?.reasons.length ? (
+              <ul className="mt-2 grid gap-1 text-xs leading-relaxed text-slate-600 dark:text-zinc-300 sm:grid-cols-2">
+                {rawSig.reasons.map((reason, index) => (
+                  <li key={`${reason}-${index}`} className="flex gap-2">
+                    <span className="text-sky-600 dark:text-sky-400">•</span>
+                    <span>{reason}</span>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+          </div>
         </div>
       </div>
 
@@ -191,32 +173,32 @@ export const SignalEngineCard: React.FC<SignalEngineCardProps> = React.memo(({ o
       <div className="grid grid-cols-3 gap-2.5 text-center text-xs">
         {/* Entry Price */}
         <div className="p-3 rounded-xl bg-slate-50 dark:bg-zinc-900/80 border border-slate-200 dark:border-zinc-800">
-          <span className="text-[10px] text-zinc-400 block uppercase font-bold">Execution Spot</span>
+          <span className="text-xs text-zinc-500 block uppercase font-bold">Signal Entry</span>
           <span className="text-sm sm:text-base font-black text-slate-900 dark:text-white tabular-nums block mt-0.5">
-            ${entryPrice.toFixed(2)}
+            {signalEntry === null ? '—' : `$${signalEntry.toFixed(2)}`}
           </span>
-          <span className="text-[10px] text-zinc-500 block">Live Market Entry</span>
+          <span className="text-xs text-zinc-500 block">{rawSig ? `Confirmed ${rawSig.timeframe} setup` : 'No confirmed entry'}</span>
         </div>
 
         {/* Stop Loss */}
         <div className="p-3 rounded-xl bg-slate-50 dark:bg-zinc-900/80 border border-slate-200 dark:border-zinc-800">
-          <span className="text-[10px] text-rose-500 block uppercase font-bold">Stop Loss (SL)</span>
+          <span className="text-xs text-rose-500 block uppercase font-bold">Stop Loss (SL)</span>
           <span className="text-sm sm:text-base font-black text-rose-600 dark:text-rose-400 tabular-nums block mt-0.5">
-            ${slPrice.toFixed(2)}
+            {slPrice === null ? '—' : `$${slPrice.toFixed(2)}`}
           </span>
           <span className="text-[10px] text-zinc-500 block">
-            -{riskPts} pts (-${tradeMetrics.riskDollar})
+            {rawSig ? `-${riskPts.toFixed(2)} pts (-$${tradeMetrics.riskDollar})` : 'Waiting for validated setup'}
           </span>
         </div>
 
         {/* Take Profit */}
         <div className="p-3 rounded-xl bg-slate-50 dark:bg-zinc-900/80 border border-slate-200 dark:border-zinc-800">
-          <span className="text-[10px] text-emerald-500 block uppercase font-bold">Take Profit (TP)</span>
+          <span className="text-xs text-emerald-500 block uppercase font-bold">Take Profit (TP)</span>
           <span className="text-sm sm:text-base font-black text-emerald-600 dark:text-emerald-400 tabular-nums block mt-0.5">
-            ${tpPrice.toFixed(2)}
+            {tpPrice === null ? '—' : `$${tpPrice.toFixed(2)}`}
           </span>
           <span className="text-[10px] text-zinc-500 block">
-            +{rewardPts} pts (+${tradeMetrics.rewardDollar})
+            {rawSig ? `+${rewardPts.toFixed(2)} pts (+$${tradeMetrics.rewardDollar})` : 'Waiting for validated setup'}
           </span>
         </div>
       </div>
@@ -295,17 +277,19 @@ export const SignalEngineCard: React.FC<SignalEngineCardProps> = React.memo(({ o
       {/* 1-Click Execution Button */}
       <button
         onClick={handleExecute}
-        disabled={isWideSpread}
+        disabled={isWideSpread || !rawSig}
         className={`w-full py-3.5 rounded-xl font-black text-xs sm:text-sm tracking-wider uppercase transition-all flex items-center justify-center gap-2 active:scale-[0.99] cursor-pointer ${
-          isWideSpread
+          isWideSpread || !rawSig
             ? 'bg-zinc-200 text-zinc-400 dark:bg-zinc-900 dark:text-zinc-500 cursor-not-allowed border border-zinc-300 dark:border-zinc-800'
             : activeDirection === 'SELL'
-            ? 'bg-rose-600 hover:bg-rose-500 text-white shadow-xs'
-            : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-xs'
+            ? 'bg-rose-700 hover:bg-rose-600 text-white'
+            : 'bg-emerald-700 hover:bg-emerald-600 text-white'
         }`}
       >
         <span>
-          {isWideSpread
+          {!rawSig
+            ? 'WAITING FOR CONFIRMED SETUP'
+            : isWideSpread
             ? `SPREAD TOO WIDE (${ticker.spread} PTS)`
             : positionCount > 1
             ? `EXECUTE SIGNAL · STACK ${positionCount}X ${activeDirection} ORDERS (${tradeMetrics.totalLots} LOTS TOTAL)`

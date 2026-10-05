@@ -33,9 +33,21 @@ import {
   evaluateConfluence,
 } from './smcCore';
 import { generateSeedMarketData, fetchLiveGoldCandles, DEFAULT_ECONOMIC_EVENTS } from './dataFeed';
-import { signalAudioNotifier } from '../utils/audioNotification';
 import { analyzeGoldCandlestickPatterns } from './candlestickPatterns';
 import { getGoldMarketSchedule, MarketScheduleStatus } from './marketHours';
+import { mt5Bridge } from './mt5Bridge';
+import {
+  buildSignalRationale,
+  persistClosedTrades,
+  persistTradeOrderBlocks,
+  persistTradeRationales,
+  readTradeOrderBlocks,
+  readStoredClosedTrades,
+  readTradeRationales,
+  findCorrespondingOrderBlock,
+  TradeRationales,
+  TradeOrderBlocks,
+} from './tradeJournal';
 
 const SYMBOL = 'XAUUSD';
 const MAGIC = 20261001;
@@ -61,6 +73,7 @@ export class TradingEngine {
   newsBlackout: boolean = false;
   connected: boolean = true;
   simulateWeekendMode: boolean = false;
+  private hasBrokerMarketData = false;
 
   mt5Account: {
     connected: boolean;
@@ -98,8 +111,9 @@ export class TradingEngine {
   currentScenario: string = 'london_bullish_fvg';
   ticketCounter: number = 8820410;
   tickCount: number = 0;
-  lastAlertedSignalKey: string = '';
   private hasInitializedInitialPosition: boolean = false;
+  private tradeRationales: TradeRationales = {};
+  private tradeOrderBlocks: TradeOrderBlocks = {};
 
   // Channel-specific listener registry (Priority 1)
   private channelListeners: Map<StoreChannel, Set<() => void>> = new Map([
@@ -124,9 +138,143 @@ export class TradingEngine {
   private _cachedClosedTrades: ClosedTrade[] = [];
 
   constructor() {
+    this.closedTrades = readStoredClosedTrades();
+    this.tradeRationales = readTradeRationales();
+    this.tradeOrderBlocks = readTradeOrderBlocks();
     this.resetWithScenario('london_bullish_fvg');
     this.startEngineLoops();
     this.syncLiveMarketData();
+  }
+
+  syncMt5Snapshot(snapshot: {
+    account: {
+      login: number;
+      server: string;
+      balance: number;
+      equity: number;
+      margin_free: number;
+    };
+    positions: Array<{
+      ticket: number;
+      type: TradeDirection;
+      volume: number;
+      price_open: number;
+      sl: number;
+      tp: number;
+      profit: number;
+      magic: number;
+      comment: string;
+      time: string;
+    }>;
+    symbol: string;
+    bid: number;
+    ask: number;
+    spread: number;
+    candlesM15: Candle[];
+    candlesH1: Candle[];
+  }) {
+    const { account, positions } = snapshot;
+    this.mt5Account = {
+      connected: true,
+      login: String(account.login),
+      server: account.server,
+      broker: account.server.split(/[-_]/)[0] || 'MT5 Broker',
+      balance: account.balance,
+      equity: account.equity,
+      freeMargin: account.margin_free,
+    };
+    this.account.balance = account.balance;
+    this.account.equity = account.equity;
+    this.account.margin_free = account.margin_free;
+    this.bid = snapshot.bid;
+    this.ask = snapshot.ask;
+    this.lastPrice = (snapshot.bid + snapshot.ask) / 2;
+    this.spread = snapshot.spread;
+    if (snapshot.candlesM15.length >= 25 && snapshot.candlesH1.length >= 20) {
+      this.candlesM15 = snapshot.candlesM15;
+      this.candlesH1 = snapshot.candlesH1;
+      this.hasBrokerMarketData = true;
+    } else {
+      this.hasBrokerMarketData = false;
+    }
+    this.positions = positions.map((position) => ({
+      ...position,
+      pips: 0,
+      time: position.time,
+      strategyRationale:
+        this.tradeRationales[String(position.ticket)] || undefined,
+      strategyOrderBlock: this.tradeOrderBlocks[String(position.ticket)],
+      beLocked: position.sl > 0 && (position.type === 'BUY' ? position.sl > position.price_open : position.sl < position.price_open),
+    }));
+    if (!this.positions.some((position) => position.ticket === this.selectedTicket)) {
+      this.selectedTicket = this.positions[0]?.ticket ?? null;
+    }
+    this.invalidateMarket();
+    this.invalidatePositions();
+    this.invalidateTicker();
+    this.invalidateEngine();
+    this.emit('positions');
+    this.emit('market');
+    this.emit('ticker');
+    this.emit('engine');
+  }
+
+  recordMt5Rationale(
+    orderTicket: number,
+    positionTicket: number | undefined,
+    rationale: string,
+    strategyOrderBlock?: Zone
+  ) {
+    this.tradeRationales[String(orderTicket)] = rationale;
+    if (positionTicket !== undefined) this.tradeRationales[String(positionTicket)] = rationale;
+    persistTradeRationales(this.tradeRationales);
+    if (strategyOrderBlock) {
+      this.tradeOrderBlocks[String(orderTicket)] = strategyOrderBlock;
+      if (positionTicket !== undefined) this.tradeOrderBlocks[String(positionTicket)] = strategyOrderBlock;
+      persistTradeOrderBlocks(this.tradeOrderBlocks);
+    }
+    const position = this.positions.find(
+      (item) => item.ticket === positionTicket || item.ticket === orderTicket
+    );
+    if (position) {
+      position.strategyRationale = rationale;
+      position.strategyOrderBlock = strategyOrderBlock || this.tradeOrderBlocks[String(position.ticket)];
+      this.invalidatePositions();
+      this.emit('positions');
+    }
+  }
+
+  syncMt5ClosedTrades(trades: ClosedTrade[]) {
+    const merged = trades.map((trade) => ({
+      ...trade,
+      strategyRationale:
+        this.tradeRationales[String(trade.orderTicket)] ||
+        this.tradeRationales[String(trade.positionTicket)] ||
+        this.tradeRationales[String(trade.ticket)] ||
+        trade.strategyRationale,
+      strategyOrderBlock:
+        this.tradeOrderBlocks[String(trade.orderTicket)] ||
+        this.tradeOrderBlocks[String(trade.positionTicket)] ||
+        this.tradeOrderBlocks[String(trade.ticket)] ||
+        trade.strategyOrderBlock,
+    }));
+    const nextByTicket = new Map(this.closedTrades.map((trade) => [trade.ticket, trade]));
+    for (const trade of merged) nextByTicket.set(trade.ticket, trade);
+    const nextTrades = [...nextByTicket.values()].sort((left, right) =>
+      (right.closedAt || '').localeCompare(left.closedAt || '')
+    );
+    const changed =
+      nextTrades.length !== this.closedTrades.length ||
+      nextTrades.some((trade, index) => {
+        const previous = this.closedTrades[index];
+        return !previous || JSON.stringify(previous) !== JSON.stringify(trade);
+      });
+    if (!changed) return;
+
+    this.closedTrades = nextTrades;
+    persistClosedTrades(this.closedTrades);
+    this.invalidatePositions();
+    this.emit('positions');
   }
 
   async syncLiveMarketData() {
@@ -267,20 +415,9 @@ export class TradingEngine {
       const zones = [...fvgs, ...obs];
 
       const dr = ms.dealingRange();
-      let sig = evaluateConfluence(this.candlesM15, this.candlesH1, this.account.auto_rr, SCORE_THRESHOLD);
-      if (!sig) {
-        // Seamlessly advance to next market wave when signal is null
-        this.cycleMarketWave();
-        sig = evaluateConfluence(this.candlesM15, this.candlesH1, this.account.auto_rr, SCORE_THRESHOLD);
-      }
-
-      if (sig && sig.score >= SCORE_THRESHOLD) {
-        const sigKey = `${sig.direction}_${sig.entry}_${sig.score}`;
-        if (sigKey !== this.lastAlertedSignalKey) {
-          this.lastAlertedSignalKey = sigKey;
-          signalAudioNotifier.playSignalAlert(sig.direction, sig.entry);
-        }
-      }
+      const sig = this.hasBrokerMarketData
+        ? evaluateConfluence(this.candlesM15, this.candlesH1, this.account.auto_rr, SCORE_THRESHOLD)
+        : null;
 
       let pricePos: number | null = null;
       if (dr && dr.high > dr.low) {
@@ -609,7 +746,7 @@ export class TradingEngine {
 
     // Auto-trader cycle (~5s)
     this.autoTraderIntervalId = setInterval(() => {
-      this.evaluateAutoExecution();
+      void this.evaluateAutoExecution();
     }, 5000);
   }
 
@@ -621,6 +758,8 @@ export class TradingEngine {
   }
 
   simulatePriceTick(force: boolean = false) {
+    if (this.mt5Account.connected) return;
+
     // Real market hours check: Gold interbank trading is closed on weekends!
     const isTest =
       typeof (globalThis as any).vi !== 'undefined' ||
@@ -783,19 +922,13 @@ export class TradingEngine {
     this.emit('market');
     this.emit('ticker');
 
-    // Trigger subtle notification sound effect
-    signalAudioNotifier.playSignalAlert(
-      wave.scenarioId === 'ny_bearish_choch' ? 'SELL' : 'BUY',
-      wave.bid
-    );
-
     // If AUTO is ON, automatically evaluate and execute the newly discovered perfect entry
     if (this.autoTrade && !this.killSwitch) {
       setTimeout(() => this.evaluateAutoExecution(), 400);
     }
   }
 
-  evaluateAutoExecution() {
+  async evaluateAutoExecution() {
     if (!this.autoTrade || this.killSwitch) return;
 
     // Real market hours check: Gold interbank trading is closed on weekends!
@@ -810,7 +943,7 @@ export class TradingEngine {
     }
 
     // Multi-position support: allow multiple trades running simultaneously
-    const maxAllowed = 15;
+    const maxAllowed = 1;
     if (this.positions.length >= maxAllowed) {
       return;
     }
@@ -826,9 +959,32 @@ export class TradingEngine {
         return;
       }
 
-      this.slog(`Auto-Trader executing optimal small-account entry: ${sig.direction} @ ${sig.entry} (Score ${sig.score})`, 'trade');
-      if (sig.actionReason) {
-        this.slog(`Rationale: ${sig.actionReason}`, 'info');
+      const rationale = buildSignalRationale(sig);
+      this.slog(`Auto-Trader executing: ${sig.direction} @ ${sig.entry} (Score ${sig.score}) · ${rationale}`, 'trade');
+      if (this.mt5Account.connected) {
+        if (!mt5Bridge.getStatus().connected) {
+          this.slog('MT5 auto-order blocked: local bridge is offline.', 'error');
+          return;
+        }
+        try {
+          const result = await mt5Bridge.sendTrade({
+            direction: sig.direction,
+            volume: 0.01,
+            symbol: mt5Bridge.getSymbol(),
+            sl: sig.sl,
+            tp: sig.tp,
+            rationale,
+          });
+          this.recordMt5Rationale(
+            result.ticket,
+            result.positionTicket,
+            rationale,
+            findCorrespondingOrderBlock(sig.direction, sig.entry, market.zones)
+          );
+        } catch (error) {
+          this.slog(`MT5 auto-order rejected: ${error instanceof Error ? error.message : 'Unknown bridge error'}`, 'error');
+        }
+        return;
       }
       this.sendMarket(
         sig.direction,
@@ -851,6 +1007,13 @@ export class TradingEngine {
       return { ok: false, error: 'Trading halted by Kill Switch' };
     }
 
+    if (this.mt5Account.connected) {
+      return {
+        ok: false,
+        error: 'MT5 is linked; use the confirmed SMC Signal Deck so orders are routed to the broker.',
+      };
+    }
+
     if (this.spread > MAX_SPREAD_POINTS) {
       return { ok: false, error: `Spread too wide (${this.spread} points > ${MAX_SPREAD_POINTS} max)` };
     }
@@ -867,7 +1030,9 @@ export class TradingEngine {
     const openPrice = direction === 'BUY' ? this.ask : this.bid;
     const ticket = ++this.ticketCounter;
     const market = this.getMarketSnapshot();
-    const rationale = market.signal?.actionReason ||
+    const rationale = market.signal
+      ? buildSignalRationale(market.signal)
+      :
       (direction === 'BUY'
         ? 'Liquidity sweep into M5 Bullish Order Block (+OB) in Discount zone (<50% EQ). Confirmed FVG displacement with 1:2.0 RR target.'
         : 'Liquidity sweep into M5 Bearish Order Block (-OB) in Premium zone (>50% EQ). Confirmed FVG displacement with 1:2.0 RR target.');
@@ -885,6 +1050,11 @@ export class TradingEngine {
       magic: MAGIC,
       comment,
       strategyRationale: rationale,
+      strategyOrderBlock: findCorrespondingOrderBlock(
+        direction,
+        market.signal?.entry ?? openPrice,
+        market.zones
+      ),
     };
 
     this.positions = [...this.positions, newPos];
@@ -903,15 +1073,31 @@ export class TradingEngine {
     const pos = this.positions.find((p) => p.ticket === ticket);
     if (!pos) return;
 
+    if (this.mt5Account.connected) {
+      if (!mt5Bridge.getStatus().connected) {
+        this.slog(`Unable to close MT5 position #${ticket}: bridge is offline.`, 'error');
+        return;
+      }
+      void mt5Bridge.closePosition(ticket).catch((error: unknown) => {
+        this.slog(
+          `Unable to close MT5 position #${ticket}: ${error instanceof Error ? error.message : 'Unknown bridge error'}`,
+          'error'
+        );
+      });
+      return;
+    }
+
     const closePrice = pos.type === 'BUY' ? this.bid : this.ask;
     const pts = pos.type === 'BUY' ? closePrice - pos.price_open : pos.price_open - closePrice;
     const profit = Number((pts * pos.volume * 100).toFixed(2));
     const pips = Number((pts * 10).toFixed(1));
 
+    const closedAt = new Date();
     const closed: ClosedTrade = {
       ticket: pos.ticket,
       openTime: pos.time,
-      closeTime: new Date().toISOString().substr(11, 8),
+      closeTime: closedAt.toISOString().substr(11, 8),
+      closedAt: closedAt.toISOString(),
       type: pos.type,
       volume: pos.volume,
       openPrice: pos.price_open,
@@ -921,11 +1107,14 @@ export class TradingEngine {
       reason,
       comment: pos.comment,
       strategyRationale: pos.strategyRationale || 'SMC Order Block & Fair Value Gap Confluence execution',
+      strategyOrderBlock: pos.strategyOrderBlock,
     };
 
     this.positions = this.positions.filter((p) => p.ticket !== ticket);
+    if (this.selectedTicket === ticket) this.selectedTicket = this.positions[0]?.ticket ?? null;
     // ClosedTrades order must be preserved (Priority 15)
     this.closedTrades = [closed, ...this.closedTrades];
+    persistClosedTrades(this.closedTrades);
     this.account.balance = Number((this.account.balance + profit).toFixed(2));
     const remainingFloatingPnl = this.positions.reduce((sum, p) => sum + p.profit, 0);
     this.account.equity = Number((this.account.balance + remainingFloatingPnl).toFixed(2));
@@ -938,6 +1127,31 @@ export class TradingEngine {
     this.emit('positions');
     this.emit('ticker');
     this.emit('engine');
+  }
+
+  modifyPositionStops(ticket: number, sl: number, tp: number) {
+    const position = this.positions.find((item) => item.ticket === ticket);
+    if (!position) return;
+
+    if (this.mt5Account.connected) {
+      if (!mt5Bridge.getStatus().connected) {
+        this.slog(`Unable to update MT5 position #${ticket}: bridge is offline.`, 'error');
+        return;
+      }
+      void mt5Bridge.modifyPositionStops(ticket, sl, tp).catch((error: unknown) => {
+        this.slog(
+          `Unable to update MT5 position #${ticket}: ${error instanceof Error ? error.message : 'Unknown bridge error'}`,
+          'error'
+        );
+      });
+      return;
+    }
+
+    position.sl = sl;
+    position.tp = tp;
+    position.beLocked = position.type === 'BUY' ? sl > position.price_open : sl < position.price_open;
+    this.slog(`Stops updated for position #${ticket}: SL $${sl.toFixed(2)}, TP $${tp.toFixed(2)}`, 'trade');
+    this.notify();
   }
 
   closeAll(reason: 'Manual' | 'KillSwitch' | 'TP' | 'SL' = 'Manual') {
@@ -953,7 +1167,12 @@ export class TradingEngine {
     if (this.killSwitch) {
       this.autoTrade = false;
       this.closeAll('KillSwitch');
-      this.slog('KILL SWITCH ARMED: All positions closed, auto-trade halted', 'warn');
+      this.slog(
+        this.mt5Account.connected
+          ? 'KILL SWITCH ARMED: MT5 close requests sent; verify broker positions. Auto-trade halted.'
+          : 'KILL SWITCH ARMED: All positions closed, auto-trade halted',
+        'warn'
+      );
     } else {
       this.slog('KILL SWITCH DISARMED: Engine ready', 'info');
     }

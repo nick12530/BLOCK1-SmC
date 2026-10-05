@@ -23,7 +23,7 @@ export const CompoundingLadderCard: React.FC<CompoundingLadderCardProps> = React
   const isAutoBe = engine.auto_be_enabled;
 
   return (
-    <div className="w-full bg-white dark:bg-[#0c0d10] border border-zinc-200/90 dark:border-zinc-800/90 shadow-[0_1px_3px_rgba(0,0,0,0.04)] dark:shadow-[0_1px_3px_rgba(0,0,0,0.4)] rounded-xl px-3.5 py-2.5 flex flex-col md:flex-row items-center justify-between gap-2.5 text-xs font-mono transition-colors">
+    <div className="w-full min-w-0 bg-white dark:bg-[#0d1823] border border-slate-200 dark:border-[#1a3040] shadow-xs dark:shadow-none rounded-xl px-3.5 py-3 flex flex-col md:flex-row items-center justify-between gap-3 text-xs font-mono transition-colors">
       {/* Left: Current Stage & Progress Bar */}
       <div className="flex items-center gap-2.5 flex-wrap justify-center md:justify-start">
         <span className="font-black px-2 py-0.5 rounded bg-zinc-100 dark:bg-zinc-900 text-zinc-800 dark:text-zinc-200 border border-zinc-200 dark:border-zinc-800 uppercase tracking-wider text-[11px]">
@@ -37,7 +37,7 @@ export const CompoundingLadderCard: React.FC<CompoundingLadderCardProps> = React
         <div className="flex items-center gap-1.5">
           <div className="w-20 sm:w-28 h-1.5 bg-zinc-200 dark:bg-zinc-800 rounded-full overflow-hidden">
             <div
-              className="h-full bg-zinc-700 dark:bg-zinc-300 rounded-full transition-all duration-300"
+              className="h-full bg-sky-600 dark:bg-sky-400 rounded-full transition-all duration-300"
               style={{ width: `${Math.max(5, stage.progressPct)}%` }}
             />
           </div>
@@ -62,10 +62,11 @@ export const CompoundingLadderCard: React.FC<CompoundingLadderCardProps> = React
       <div className="flex items-center gap-2">
         <button
           onClick={() => tradingEngine.toggleAutoBe()}
+          aria-pressed={isAutoBe}
           title="Toggle Automated Zero-Risk Break-Even Lock at 1:1 RR"
-          className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold transition-colors border cursor-pointer ${
+          className={`flex min-h-11 items-center gap-1.5 px-3 rounded-lg text-xs font-bold transition-colors border cursor-pointer ${
             isAutoBe
-              ? 'bg-zinc-900 text-white dark:bg-white dark:text-black border-zinc-800 dark:border-white'
+              ? 'bg-sky-600 text-white dark:bg-sky-500 dark:text-slate-950 border-sky-600 dark:border-sky-500'
               : 'bg-zinc-100 dark:bg-zinc-900 text-zinc-500 border-zinc-300 dark:border-zinc-800'
           }`}
         >

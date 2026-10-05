@@ -26,16 +26,16 @@ export function useAudioNotifications(): UseAudioNotificationsReturn {
   const lastSignalKeyRef = useRef<string>('');
 
   const playChime = useCallback(() => {
-    signalAudioNotifier.playSignalAlert();
-  }, []);
+    const signal = market.signal;
+    if (signal) signalAudioNotifier.playSignalAlert(signal.direction, signal.entry);
+  }, [market.signal]);
 
   const toggleMute = useCallback(() => {
     const nextMuted = !isMuted;
     setIsMuted(nextMuted);
     signalAudioNotifier.setMuted(nextMuted);
     if (!nextMuted) {
-      // Play brief test preview tone when unmuting
-      signalAudioNotifier.playSignalAlert();
+      signalAudioNotifier.playTestChime();
     }
   }, [isMuted]);
 

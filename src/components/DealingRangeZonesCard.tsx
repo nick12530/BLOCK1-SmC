@@ -40,7 +40,7 @@ export const DealingRangeZonesCard: React.FC = React.memo(() => {
   }, [market.zones, spot]);
 
   return (
-    <div className="bg-white dark:bg-[#0c0d10] border border-zinc-200/90 dark:border-zinc-800/90 rounded-2xl p-4 sm:p-5 flex flex-col justify-between font-mono text-xs sm:text-sm shadow-[0_1px_3px_rgba(0,0,0,0.04)] dark:shadow-[0_1px_3px_rgba(0,0,0,0.4)] space-y-4 transition-colors">
+    <div className="w-full min-w-0 bg-white dark:bg-[#0d1823] border border-slate-200 dark:border-[#1a3040] rounded-2xl p-4 sm:p-5 flex flex-col justify-between font-mono text-xs sm:text-sm shadow-xs dark:shadow-none space-y-4 transition-colors">
       {/* Dealing Range Meter */}
       <div className="space-y-3">
         <div className="flex items-center justify-between">

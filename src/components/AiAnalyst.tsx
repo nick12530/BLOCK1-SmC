@@ -34,8 +34,13 @@ Provide an ultra-concise, institutional trading brief in 3 short bullet sections
 Be professional, analytical, and direct. Avoid conversational filler.`;
 
     try {
-      // Use process.env.GEMINI_API_KEY
-      const apiKey = process.env.GEMINI_API_KEY;
+      const runtimeEnv = typeof process !== 'undefined' ? process.env : undefined;
+      const apiKey =
+        import.meta.env.VITE_GEMINI_API_KEY ||
+        runtimeEnv?.VITE_GEMINI_API_KEY ||
+        runtimeEnv?.GEMINI_API_KEY ||
+        undefined;
+
       if (apiKey && apiKey !== 'MY_GEMINI_API_KEY') {
         const ai = new GoogleGenAI({ apiKey });
         const response = await ai.models.generateContent({

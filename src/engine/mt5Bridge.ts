@@ -1,4 +1,5 @@
 import { Candle, ClosedTrade, TradeDirection } from '../types/smc';
+import type { SymbolRiskSpec } from './riskConfig';
 
 export interface BridgeAccountSnapshot {
   account: {
@@ -21,9 +22,14 @@ export interface BridgeAccountSnapshot {
     time: string;
   }>;
   symbol: string;
+  accountMode: 'demo' | 'live' | 'contest' | 'unknown';
+  tradingHalted: boolean;
+  symbolSpec: SymbolRiskSpec;
   bid: number;
   ask: number;
   spread: number;
+  candlesM1: Candle[];
+  candlesM5: Candle[];
   candlesM15: Candle[];
   candlesH1: Candle[];
 }
@@ -32,7 +38,7 @@ export interface BridgeStatus {
   connected: boolean;
   serverUrl: string;
   lastPing: number | null;
-  mode: 'standalone' | 'mt5_live';
+  mode: 'standalone' | 'demo' | 'live' | 'contest' | 'unknown';
 }
 
 const DEFAULT_SERVER_URL = 'http://127.0.0.1:8000';
@@ -43,6 +49,8 @@ export class MT5BridgeConnector {
   private serverUrl = getDefaultServerUrl();
   private symbol = 'XAUUSD';
   private isConnected = false;
+  private accountMode: BridgeStatus['mode'] = 'standalone';
+  private expectedAccount: { login: number; server: string } | null = null;
   private pollInterval: ReturnType<typeof setInterval> | null = null;
   private historyPollInterval: ReturnType<typeof setInterval> | null = null;
   private onDataCallback: ((data: BridgeAccountSnapshot) => void) | null = null;
@@ -62,7 +70,7 @@ export class MT5BridgeConnector {
       connected: this.isConnected,
       serverUrl: this.serverUrl,
       lastPing: this.lastPing,
-      mode: this.isConnected ? 'mt5_live' : 'standalone',
+      mode: this.isConnected ? this.accountMode : 'standalone',
     };
   }
 
@@ -81,6 +89,8 @@ export class MT5BridgeConnector {
       body: JSON.stringify({ symbol: this.symbol }),
     });
     this.isConnected = true;
+    this.accountMode = snapshot.accountMode;
+    this.expectedAccount = { login: snapshot.account.login, server: snapshot.account.server };
     this.lastPing = Date.now();
     this.onDataCallback?.(snapshot);
     this.startPolling();
@@ -91,7 +101,16 @@ export class MT5BridgeConnector {
   async disconnectAccount(): Promise<void> {
     this.stopPolling();
     this.isConnected = false;
+    this.accountMode = 'standalone';
+    this.expectedAccount = null;
     this.lastPing = null;
+  }
+
+  async setTradingHalted(tradingHalted: boolean): Promise<void> {
+    await this.request<{ tradingHalted: boolean }>('/api/trading-control', {
+      method: 'POST',
+      body: JSON.stringify({ tradingHalted }),
+    });
   }
 
   async sendTrade(trade: {
@@ -101,32 +120,66 @@ export class MT5BridgeConnector {
     sl: number;
     tp: number;
     rationale: string;
-  }): Promise<{ ok: true; ticket: number; positionTicket?: number; price: number }> {
+    clientOrderId: string;
+    poiKey: string;
+    signalTimeframe: 'M1' | 'M5';
+    signalTimestamp: string;
+  }): Promise<{
+    ok: true;
+    ticket: number;
+    positionTicket?: number;
+    price: number;
+    filledVolume: number;
+    partial: boolean;
+    pending: boolean;
+  }> {
+    if (!this.expectedAccount || !this.isConnected) {
+      throw new Error('MT5 account identity is not verified. Reconnect to the currently logged-in terminal account.');
+    }
     const response = await this.request<{
       ok: true;
       ticket: number;
       positionTicket?: number;
       price: number;
+      filledVolume: number;
+      partial: boolean;
+      pending: boolean;
       account: BridgeAccountSnapshot['account'];
       positions: BridgeAccountSnapshot['positions'];
       symbol: BridgeAccountSnapshot['symbol'];
+      accountMode: BridgeAccountSnapshot['accountMode'];
+      tradingHalted: boolean;
+      symbolSpec: BridgeAccountSnapshot['symbolSpec'];
       bid: number;
       ask: number;
       spread: number;
+      candlesM1: Candle[];
+      candlesM5: Candle[];
       candlesM15: Candle[];
       candlesH1: Candle[];
     }>('/api/trade', {
       method: 'POST',
-      body: JSON.stringify(trade),
+      body: JSON.stringify({
+        ...trade,
+        clientOrderId: trade.clientOrderId,
+        poiKey: trade.poiKey,
+        expectedLogin: this.expectedAccount.login,
+        expectedServer: this.expectedAccount.server,
+      }),
     });
     this.lastPing = Date.now();
     this.onDataCallback?.({
       account: response.account,
       positions: response.positions,
       symbol: response.symbol,
+      accountMode: response.accountMode,
+      tradingHalted: response.tradingHalted,
+      symbolSpec: response.symbolSpec,
       bid: response.bid,
       ask: response.ask,
       spread: response.spread,
+      candlesM1: response.candlesM1,
+      candlesM5: response.candlesM5,
       candlesM15: response.candlesM15,
       candlesH1: response.candlesH1,
     });
@@ -135,23 +188,29 @@ export class MT5BridgeConnector {
       ticket: response.ticket,
       positionTicket: response.positionTicket,
       price: response.price,
+      filledVolume: response.filledVolume,
+      partial: response.partial,
+      pending: response.pending,
     };
   }
 
   async closePosition(ticket: number): Promise<void> {
+    if (!this.expectedAccount || !this.isConnected) throw new Error('MT5 account identity is not verified.');
     const snapshot = await this.request<BridgeAccountSnapshot>('/api/close', {
       method: 'POST',
-      body: JSON.stringify({ ticket }),
+      body: JSON.stringify({ ticket, expectedLogin: this.expectedAccount.login, expectedServer: this.expectedAccount.server }),
     });
     this.lastPing = Date.now();
+    this.accountMode = snapshot.accountMode;
     this.onDataCallback?.(snapshot);
     void this.refreshClosedTrades();
   }
 
   async modifyPositionStops(ticket: number, sl: number, tp: number): Promise<void> {
+    if (!this.expectedAccount || !this.isConnected) throw new Error('MT5 account identity is not verified.');
     const snapshot = await this.request<BridgeAccountSnapshot>('/api/modify', {
       method: 'POST',
-      body: JSON.stringify({ ticket, sl, tp }),
+      body: JSON.stringify({ ticket, sl, tp, expectedLogin: this.expectedAccount.login, expectedServer: this.expectedAccount.server }),
     });
     this.lastPing = Date.now();
     this.onDataCallback?.(snapshot);
@@ -180,6 +239,16 @@ export class MT5BridgeConnector {
         `/api/account?symbol=${encodeURIComponent(this.symbol)}`,
         {}
       );
+      if (
+        !this.expectedAccount ||
+        snapshot.account.login !== this.expectedAccount.login ||
+        snapshot.account.server !== this.expectedAccount.server
+      ) {
+        this.isConnected = false;
+        this.accountMode = 'unknown';
+        this.stopPolling();
+        throw new Error('MT5 terminal account changed. Trading is paused; verify and reconnect to the intended account.');
+      }
       this.lastPing = Date.now();
       this.onDataCallback?.(snapshot);
     } catch (error) {

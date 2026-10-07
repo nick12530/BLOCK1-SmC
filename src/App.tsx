@@ -27,6 +27,7 @@ import { TradingViewWidget } from './components/TradingViewWidget';
 import { FooterView } from './components/FooterView';
 import { SignalToastNotification } from './components/SignalToastNotification';
 import { mt5Bridge } from './engine/mt5Bridge';
+import { RISK_CONFIG } from './engine/riskConfig';
 import {
   buildSignalRationale,
   findCorrespondingOrderBlock,
@@ -109,6 +110,28 @@ export default function App() {
         return;
       }
 
+      const gateReason = tradingEngine.getEntryBlockReason(signal.direction, signal);
+      if (gateReason) {
+        setConfirmDialog({
+          title: 'Trade blocked by risk controls',
+          message: gateReason,
+          confirmLabel: 'Understood',
+          onConfirm: () => setConfirmDialog(null),
+        });
+        return;
+      }
+
+      const riskVolume = tradingEngine.getRiskBasedVolume(signal.sl, customVolume);
+      if (!riskVolume) {
+        setConfirmDialog({
+          title: 'Safe position size unavailable',
+          message: 'The configured risk cannot be converted to a valid broker lot size for this stop. Check the MT5 symbol tick value and volume limits.',
+          confirmLabel: 'Understood',
+          onConfirm: () => setConfirmDialog(null),
+        });
+        return;
+      }
+
       if (ticker.spread > MAX_SPREAD_POINTS) {
         setConfirmDialog({
           title: 'High Spread Warning',
@@ -120,10 +143,10 @@ export default function App() {
         return;
       }
 
-      if (positionsState.positions.length + positionCount > 10) {
+      if (positionCount !== 1 || positionsState.positions.length + positionCount > RISK_CONFIG.maxOpenPositions) {
         setConfirmDialog({
-          title: 'Maximum Position Limit Reached',
-          message: `This would exceed the 10-position limit. You currently have ${positionsState.positions.length} active positions.`,
+          title: 'Signal stacking is disabled',
+          message: `One position per qualified signal is allowed, with a maximum of ${RISK_CONFIG.maxOpenPositions} open positions. You currently have ${positionsState.positions.length}.`,
           confirmLabel: 'Understood',
           isDestructive: false,
           onConfirm: () => setConfirmDialog(null),
@@ -152,11 +175,15 @@ export default function App() {
           try {
             const result = await mt5Bridge.sendTrade({
               direction: signal.direction,
-              volume: customVolume || 0.01,
+              volume: riskVolume,
               symbol: mt5Bridge.getSymbol(),
               sl: signal.sl,
               tp: signal.tp,
               rationale,
+              clientOrderId: `${signal.timeframe}:${signal.direction}:${signal.timestamp}:${signal.entry.toFixed(2)}`,
+              poiKey: tradingEngine.getSignalPoiKey(signal.direction, signal.entry),
+              signalTimeframe: signal.timeframe === 'M1' ? 'M1' : 'M5',
+              signalTimestamp: signal.timestamp,
             });
             tradingEngine.recordMt5Rationale(
               result.ticket,
@@ -164,7 +191,15 @@ export default function App() {
               rationale,
               strategyOrderBlock
             );
-            tradingEngine.slog(`MT5 order filled: #${result.ticket} ${signal.direction} @ ${result.price} · ${rationale}`, 'trade');
+            tradingEngine.recordAcceptedEntry(signal.direction, signal);
+            tradingEngine.slog(
+              result.pending
+                ? `MT5 order placed but not confirmed filled: #${result.ticket} · ${result.filledVolume} lots reported. Verify it in MT5.`
+                : result.partial
+                ? `MT5 order partially filled: #${result.ticket} ${signal.direction} ${result.filledVolume} lots @ ${result.price}. Verify remaining quantity.`
+                : `MT5 order filled: #${result.ticket} ${signal.direction} ${result.filledVolume} lots @ ${result.price} · ${rationale}`,
+              result.pending || result.partial ? 'warn' : 'trade'
+            );
           } catch (error) {
             const reason = error instanceof Error ? error.message : 'Unknown MT5 bridge error.';
             tradingEngine.slog(`MT5 order rejected: ${reason}`, 'error');
@@ -260,7 +295,7 @@ export default function App() {
           <section aria-label="FX chart" className="w-full space-y-3">
             <div>
               <h2 className="text-base font-semibold text-slate-900 dark:text-zinc-100">Price &amp; structure</h2>
-              <p className="mt-1 text-xs sm:text-sm text-slate-500 dark:text-zinc-400">Standalone chart card with SMC zones, breaks, and live price</p>
+              <p className="mt-1 text-xs sm:text-sm text-slate-500 dark:text-zinc-400">One price scale for broker candles, SMC zones, structure, and execution levels</p>
             </div>
             <TradingViewWidget
               isDark={isDark}

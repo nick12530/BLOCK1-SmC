@@ -9,7 +9,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { signalAudioNotifier } from '../utils/audioNotification';
 import { useMarket, useTicker, usePositions } from '../hooks/useTradingStore';
-import { tradingEngine, MAX_SPREAD_POINTS } from '../engine/tradingEngine';
+import { tradingEngine } from '../engine/tradingEngine';
+import { RISK_CONFIG } from '../engine/riskConfig';
 import { mt5Bridge } from '../engine/mt5Bridge';
 import {
   buildSignalRationale,
@@ -50,6 +51,7 @@ export const SignalToastNotification: React.FC = () => {
   const riskPts = Math.abs(activeEntry - activeSL);
   const rewardPts = Math.abs(activeTP - activeEntry);
   const strengthScore = signal?.score ?? 0;
+  const riskLimitedLotSize = signal ? tradingEngine.getRiskBasedVolume(signal.sl, lotSize) ?? 0 : 0;
 
   // Listen to engine signal chime alerts
   useEffect(() => {
@@ -86,13 +88,14 @@ export const SignalToastNotification: React.FC = () => {
   }, [isOpen]);
 
   const handleExecute = async () => {
-    if (!signal || positionsState.positions.length + stackCount > 10) return;
-    if (tradingEngine.killSwitch) {
-      tradingEngine.slog('Signal alert order blocked: Kill Switch is armed.', 'error');
+    if (!signal || stackCount !== 1 || positionsState.positions.length >= RISK_CONFIG.maxOpenPositions) return;
+    const gateReason = tradingEngine.getEntryBlockReason(signal.direction, signal);
+    if (gateReason) {
+      tradingEngine.slog(`Signal alert order blocked: ${gateReason}`, 'error');
       return;
     }
-    if (ticker.spread > MAX_SPREAD_POINTS) {
-      tradingEngine.slog(`Signal alert order blocked: spread ${ticker.spread} exceeds ${MAX_SPREAD_POINTS} points.`, 'error');
+    if (!riskLimitedLotSize) {
+      tradingEngine.slog('Signal alert order blocked: risk-based size is invalid for broker volume/tick-value specifications.', 'error');
       return;
     }
     if (tradingEngine.mt5Account.connected && !mt5Bridge.getStatus().connected) {
@@ -112,11 +115,15 @@ export const SignalToastNotification: React.FC = () => {
         try {
           const result = await mt5Bridge.sendTrade({
             direction: signal.direction,
-            volume: lotSize,
+            volume: riskLimitedLotSize,
             symbol: mt5Bridge.getSymbol(),
             sl: signal.sl,
             tp: signal.tp,
             rationale,
+            clientOrderId: `${signal.timeframe}:${signal.direction}:${signal.timestamp}:${signal.entry.toFixed(2)}`,
+            poiKey: tradingEngine.getSignalPoiKey(signal.direction, signal.entry),
+            signalTimeframe: signal.timeframe === 'M1' ? 'M1' : 'M5',
+            signalTimestamp: signal.timestamp,
           });
           tradingEngine.recordMt5Rationale(
             result.ticket,
@@ -124,6 +131,7 @@ export const SignalToastNotification: React.FC = () => {
             rationale,
             strategyOrderBlock
           );
+          tradingEngine.recordAcceptedEntry(signal.direction, signal);
           opened += 1;
         } catch (error) {
           tradingEngine.slog(
@@ -137,7 +145,7 @@ export const SignalToastNotification: React.FC = () => {
     } else {
       const result = tradingEngine.tradeMultiplePositions(stackCount, {
         direction: signal.direction,
-        volume: lotSize,
+        volume: riskLimitedLotSize,
         entry: signal.entry,
         sl: signal.sl,
         tp: signal.tp,
@@ -160,7 +168,7 @@ export const SignalToastNotification: React.FC = () => {
     });
   };
 
-  const totalExposureLots = Number((lotSize * stackCount).toFixed(2));
+  const totalExposureLots = Number((riskLimitedLotSize * stackCount).toFixed(2));
   const potentialProfitDollars = (rewardPts * 100 * totalExposureLots).toFixed(2);
   const potentialRiskDollars = (riskPts * 100 * totalExposureLots).toFixed(2);
 
@@ -258,21 +266,15 @@ export const SignalToastNotification: React.FC = () => {
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold text-zinc-300 flex items-center gap-1.5">
                   <Layers className="w-3.5 h-3.5 text-zinc-400" />
-                  <span>Stack Multiple Positions:</span>
+                  <span>Position Count (one entry per signal):</span>
                 </span>
                 <span className="text-[11px] font-mono text-zinc-400 font-bold">
                   {stackCount}x ({totalExposureLots} Lots Total)
                 </span>
               </div>
 
-              {/* Stack Presets: 1x, 2x, 3x, 5x */}
-              <div className="grid grid-cols-4 gap-1.5 font-mono text-xs">
-                {[
-                  { label: '1x Single', val: 1 },
-                  { label: '2x Split', val: 2 },
-                  { label: '3x Stack', val: 3 },
-                  { label: '5x Heavy', val: 5 },
-                ].map((item) => (
+              <div className="grid grid-cols-1 gap-1.5 font-mono text-xs">
+                {[{ label: '1x Single', val: 1 }].map((item) => (
                   <button
                     key={item.val}
                     type="button"

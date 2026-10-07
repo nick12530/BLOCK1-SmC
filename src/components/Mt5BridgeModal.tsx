@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { AlertCircle, CheckCircle2, Copy, Server, X } from 'lucide-react';
 import { mt5Bridge } from '../engine/mt5Bridge';
 import { tradingEngine } from '../engine/tradingEngine';
+import { useMarket } from '../hooks/useTradingStore';
 
 interface Mt5BridgeModalProps {
   isOpen: boolean;
@@ -15,7 +16,15 @@ export const Mt5BridgeModal: React.FC<Mt5BridgeModalProps> = ({ isOpen, onClose 
   const [status, setStatus] = useState<'idle' | 'connecting' | 'connected' | 'error'>('idle');
   const [message, setMessage] = useState('');
   const [copied, setCopied] = useState(false);
+  const market = useMarket();
+  const [connectionRefresh, setConnectionRefresh] = useState(0);
   const isConnected = mt5Bridge.getStatus().connected;
+  const accountMode = market.accountMode ?? mt5Bridge.getStatus().mode;
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setConnectionRefresh((value) => value + 1), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -49,7 +58,7 @@ export const Mt5BridgeModal: React.FC<Mt5BridgeModalProps> = ({ isOpen, onClose 
         snapshot.account.equity
       );
       setStatus('connected');
-      setMessage(`Connected to MT5 account ${snapshot.account.login} on ${snapshot.account.server}.`);
+      setMessage(`Connected to ${snapshot.accountMode.toUpperCase()} account ${snapshot.account.login} on ${snapshot.account.server}.`);
     } catch (error) {
       setStatus('error');
       setMessage(error instanceof Error ? error.message : 'Unable to connect to the MT5 bridge.');
@@ -116,7 +125,7 @@ export const Mt5BridgeModal: React.FC<Mt5BridgeModalProps> = ({ isOpen, onClose 
               <strong className="font-semibold">{isConnected ? 'MT5 connected' : 'MT5 not connected'}</strong>
               <p className="mt-1 text-xs opacity-80">
                 {isConnected
-                  ? 'Account, positions, quotes, and orders sync through your private bridge.'
+                  ? `${String(accountMode).toUpperCase()} account ${tradingEngine.mt5Account.login} on ${tradingEngine.mt5Account.server}. Positions and quotes sync through this shared MT5 bridge.`
                   : 'MT5 Desktop must be open and logged into the account you want to use.'}
               </p>
             </div>
@@ -155,6 +164,12 @@ export const Mt5BridgeModal: React.FC<Mt5BridgeModalProps> = ({ isOpen, onClose 
           <p className="rounded-lg bg-slate-50 px-4 py-3 text-xs leading-relaxed text-slate-600 dark:bg-zinc-900/60 dark:text-zinc-400">
             Keep the launcher windows open. It starts the dashboard, local bridge, and Tailscale Serve, then prints a private HTTPS address. Open that address on your phone with Tailscale connected. Never enable Funnel or expose port 8000.
           </p>
+
+          <section className="rounded-xl border border-slate-200 p-4 dark:border-zinc-800">
+            <p className="text-xs leading-relaxed text-slate-600 dark:text-zinc-400">
+              To switch between demo and live, first disconnect the dashboard, change the account in MT5 Desktop, then reconnect here. The account type and login are read from the broker; selecting a dashboard label never changes the trading account. If the terminal account changes while connected, order submission is paused until you reconnect.
+            </p>
+          </section>
 
           <section className="rounded-xl border border-slate-200 p-4 dark:border-zinc-800">
             <label className="block text-sm font-medium text-slate-900 dark:text-zinc-100">
@@ -203,6 +218,7 @@ export const Mt5BridgeModal: React.FC<Mt5BridgeModalProps> = ({ isOpen, onClose 
           <p className="text-center text-[11px] leading-relaxed text-slate-500 dark:text-zinc-500">
             Test on a demo account first. Live trading involves risk; a connected bridge can send real orders.
           </p>
+          <span className="sr-only" aria-live="polite">{connectionRefresh}</span>
         </div>
       </div>
     </div>

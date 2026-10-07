@@ -4,8 +4,8 @@
  * with timeframe controls and live price analysis.
  */
 
-import React, { useState, useEffect } from 'react';
-import { X, ExternalLink, RefreshCw, ArrowLeft } from 'lucide-react';
+import React, { useEffect } from 'react';
+import { X, ArrowLeft } from 'lucide-react';
 import { TradingViewWidget } from './TradingViewWidget';
 
 interface TradingViewModalProps {
@@ -15,9 +15,6 @@ interface TradingViewModalProps {
 }
 
 export const TradingViewModal: React.FC<TradingViewModalProps> = ({ isOpen, onClose, isDark }) => {
-  const [interval, setInterval] = useState<'1' | '5' | '15' | '30' | '60' | '240' | 'D'>('15');
-  const [symbol, setSymbol] = useState<'OANDA:XAUUSD' | 'CAPITALCOM:GOLD' | 'FX:XAUUSD'>('OANDA:XAUUSD');
-
   useEffect(() => {
     if (!isOpen) return;
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -42,36 +39,11 @@ export const TradingViewModal: React.FC<TradingViewModalProps> = ({ isOpen, onCl
           <div className="flex items-center gap-3">
           <span className="w-2.5 h-2.5 rounded-full bg-sky-500" />
             <h2 id="tradingview-modal-title" className="text-sm font-bold text-zinc-950 dark:text-white">
-              Real-Time Market Chart Workstation
+              Broker-Aligned SMC Chart Workstation
             </h2>
-            <div className="hidden sm:flex items-center gap-1.5 ml-2">
-              {(['1', '5', '15', '30', '60', '240', 'D'] as const).map((tf) => (
-                <button
-                  key={tf}
-                  onClick={() => setInterval(tf)}
-                  className={`px-2 py-0.5 rounded text-[11px] font-bold transition-colors ${
-                    interval === tf
-                      ? 'bg-sky-600 text-white dark:bg-sky-500 dark:text-slate-950'
-                      : 'bg-zinc-200 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-300 dark:hover:bg-zinc-700'
-                  }`}
-                >
-                  {tf === 'D' ? '1D' : tf === '60' ? '1h' : tf === '240' ? '4h' : `${tf}m`}
-                </button>
-              ))}
-            </div>
           </div>
 
           <div className="flex items-center gap-2">
-            <select
-              value={symbol}
-              onChange={(e) => setSymbol(e.target.value as any)}
-              className="bg-zinc-200 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-200 text-xs px-2.5 py-1 rounded-lg border border-zinc-300 dark:border-zinc-700 outline-none font-bold"
-            >
-              <option value="OANDA:XAUUSD">OANDA: XAUUSD</option>
-              <option value="CAPITALCOM:GOLD">CAPITALCOM: GOLD</option>
-              <option value="FX:XAUUSD">FX: XAUUSD</option>
-            </select>
-
             <button
               onClick={onClose}
               className="p-1.5 rounded-lg text-zinc-400 hover:text-zinc-950 dark:hover:text-white hover:bg-zinc-200 dark:hover:bg-zinc-800 transition-colors"
@@ -85,8 +57,8 @@ export const TradingViewModal: React.FC<TradingViewModalProps> = ({ isOpen, onCl
         <div className="flex-1 min-h-0 w-full bg-slate-100 dark:bg-[#080a0f] relative overflow-hidden">
           <TradingViewWidget
             isDark={isDark}
-            symbol={symbol}
-            interval={interval}
+            symbol="OANDA:XAUUSD"
+            interval="1"
             height="100%"
           />
         </div>
@@ -102,7 +74,7 @@ export const TradingViewModal: React.FC<TradingViewModalProps> = ({ isOpen, onCl
           </button>
 
           <span className="text-[11px] text-zinc-400 hidden sm:inline">
-            Interactive Institutional SMC Candlestick Canvas
+            One price scale for broker candles, SMC levels, and execution markers
           </span>
 
           <button

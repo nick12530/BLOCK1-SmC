@@ -150,7 +150,7 @@ export const SignalEngine: React.FC<SignalEngineProps> = ({ snapshot, onTradeSig
           {/* Confluence Checklist */}
           <div className="pt-2 border-t border-[#1e2a3d]">
             <div className="text-[10px] uppercase font-semibold tracking-wider text-[#6b7a90] mb-1.5">
-              Confluence Factors (Threshold ≥ 4.0)
+              Confluence Factors (Threshold ≥ 5.0)
             </div>
             <ul className="space-y-1">
               {sig.reasons.map((r, i) => (

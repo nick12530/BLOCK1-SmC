@@ -298,21 +298,28 @@ export function sessionFilter(dateOrTimestamp: Date | number): SessionInfo {
   const d = typeof dateOrTimestamp === 'number' ? new Date(dateOrTimestamp) : dateOrTimestamp;
   const utcHours = d.getUTCHours();
   const utcMinutes = d.getUTCMinutes();
-  const timeInMinutes = utcHours * 60 + utcMinutes;
+  const localMinutes = (timeZone: string) => {
+    const parts = new Intl.DateTimeFormat('en-GB', {
+      timeZone,
+      hour: '2-digit',
+      minute: '2-digit',
+      hourCycle: 'h23',
+    }).formatToParts(d);
+    const hour = Number(parts.find((part) => part.type === 'hour')?.value);
+    const minute = Number(parts.find((part) => part.type === 'minute')?.value);
+    return hour * 60 + minute;
+  };
+  const londonTime = localMinutes('Europe/London');
+  const newYorkTime = localMinutes('America/New_York');
+  const tokyoTime = localMinutes('Asia/Tokyo');
+  const sydneyTime = localMinutes('Australia/Sydney');
 
-  // London: 07:00 to 16:00 UTC (Kill Zone 07:00 - 10:00 UTC)
-  const london = timeInMinutes >= 420 && timeInMinutes <= 960;
-  const londonKillZone = timeInMinutes >= 420 && timeInMinutes <= 600;
-
-  // New York: 12:00 to 21:00 UTC (Kill Zone 12:00 - 16:00 UTC)
-  const newYork = timeInMinutes >= 720 && timeInMinutes <= 1260;
-  const newYorkKillZone = timeInMinutes >= 720 && timeInMinutes <= 960;
-
-  // Asian / Tokyo: 00:00 to 09:00 UTC
-  const asian = timeInMinutes >= 0 && timeInMinutes <= 540;
-
-  // Sydney: 21:00 to 06:00 UTC
-  const sydney = timeInMinutes >= 1260 || timeInMinutes <= 360;
+  const london = londonTime >= 480 && londonTime <= 1020;
+  const londonKillZone = londonTime >= 480 && londonTime <= 660;
+  const newYork = newYorkTime >= 480 && newYorkTime <= 1020;
+  const newYorkKillZone = newYorkTime >= 480 && newYorkTime <= 720;
+  const asian = tokyoTime >= 0 && tokyoTime <= 540;
+  const sydney = sydneyTime >= 420 && sydneyTime <= 960;
 
   const tradable = londonKillZone || newYorkKillZone;
 
@@ -329,10 +336,10 @@ export function sessionFilter(dateOrTimestamp: Date | number): SessionInfo {
   const currentUtcTime = `${pad(utcHours)}:${pad(utcMinutes)}:${pad(d.getUTCSeconds())} UTC`;
 
   const sessions = [
-    { id: 'london' as const, name: 'London', active: london, hours: '07:00–16:00 UTC' },
-    { id: 'new_york' as const, name: 'New York', active: newYork, hours: '12:00–21:00 UTC' },
-    { id: 'asian' as const, name: 'Asian / Tokyo', active: asian, hours: '00:00–09:00 UTC' },
-    { id: 'sydney' as const, name: 'Sydney', active: sydney, hours: '21:00–06:00 UTC' },
+    { id: 'london' as const, name: 'London', active: london, hours: '08:00–17:00 London local time' },
+    { id: 'new_york' as const, name: 'New York', active: newYork, hours: '08:00–17:00 New York local time' },
+    { id: 'asian' as const, name: 'Asian / Tokyo', active: asian, hours: '00:00–09:00 Tokyo local time' },
+    { id: 'sydney' as const, name: 'Sydney', active: sydney, hours: '07:00–16:00 Sydney local time' },
   ];
 
   return {
@@ -347,6 +354,13 @@ export function sessionFilter(dateOrTimestamp: Date | number): SessionInfo {
   };
 }
 
+export function hasRecentCandleGap(candles: Candle[], intervalMs: number, lookback: number = 4): boolean {
+  const recent = candles.slice(-lookback);
+  return recent.some(
+    (candle, index) => index > 0 && candle.time - recent[index - 1].time > intervalMs * 2
+  );
+}
+
 // ============================================================
 // 5. SIGNAL FUSION - Weighted Confluence Scoring
 // ============================================================
@@ -354,7 +368,8 @@ export function evaluateConfluence(
   dfExec: Candle[],
   dfHtf: Candle[],
   rr: number = 2.0,
-  minScoreThreshold: number = 4.0
+  minScoreThreshold: number = 5.0,
+  timeframe: 'M1' | 'M5' | 'M15' = 'M5'
 ): Signal | null {
   if (dfExec.length < 25 || dfHtf.length < 20) return null;
 
@@ -366,9 +381,13 @@ export function evaluateConfluence(
   if (isNaN(atrNow) || atrNow <= 0) return null;
   const now = Date.now();
   const toMilliseconds = (time: number) => (time < 1_000_000_000_000 ? time * 1000 : time);
+  const timeframeMs = { M1: 60_000, M5: 5 * 60_000, M15: 15 * 60_000 }[timeframe];
+  const htfTimeframeMs = timeframe === 'M1' ? 5 * 60_000 : timeframe === 'M5' ? 15 * 60_000 : 60 * 60_000;
   if (
-    now - toMilliseconds(lastCandle.time) > 30 * 60 * 1000 ||
-    now - toMilliseconds(dfHtf[dfHtf.length - 1].time) > 90 * 60 * 1000
+    now - toMilliseconds(lastCandle.time) > timeframeMs * 3 ||
+    now - toMilliseconds(dfHtf[dfHtf.length - 1].time) > htfTimeframeMs * 3 ||
+    hasRecentCandleGap(dfExec, timeframeMs) ||
+    hasRecentCandleGap(dfHtf, htfTimeframeMs)
   ) {
     return null;
   }
@@ -492,7 +511,7 @@ export function evaluateConfluence(
 
   const patternName = activePattern.name;
 
-  const tf = 'M5'; // Lower-timeframe execution confirmation
+  const tf = timeframe;
   const explanation = isBear
     ? `${tf} candle at ${lastCandle.timeStr} swept into premium supply at $${lastCandle.high.toFixed(2)}, meeting heavy institutional sell volume and closing down at $${lastCandle.close.toFixed(2)}. ${zone ? `Rejection confirmed off ${zone.kind} Supply (${zone.bottom}-${zone.top}).` : ''}`
     : `${tf} candle at ${lastCandle.timeStr} tapped discount demand at $${lastCandle.low.toFixed(2)}, soaking up sell-side liquidity with buyers pushing price up to close at $${lastCandle.close.toFixed(2)}. ${zone ? `Rejection confirmed off ${zone.kind} Demand (${zone.bottom}-${zone.top}).` : ''}`;
@@ -531,14 +550,14 @@ export function evaluateConfluence(
 
   return {
     direction,
-    timeframe: 'M5',
+    timeframe,
     score: Number(score.toFixed(2)),
     entry: Number(price.toFixed(2)),
     sl: Number(sl.toFixed(2)),
     tp: Number(tp.toFixed(2)),
     reasons,
     atr: Number(atrNow.toFixed(2)),
-    timestamp: new Date().toLocaleTimeString(),
+    timestamp: new Date(toMilliseconds(lastCandle.time)).toISOString(),
     actionReason,
     perfectEntryReason,
     candlestickPattern: activePattern,
@@ -546,7 +565,7 @@ export function evaluateConfluence(
     triggerPattern: {
       name: patternName,
       bias: isBear ? 'bearish' : 'bullish',
-      timeframe: 'M5',
+      timeframe,
       timeStr: lastCandle.timeStr,
       open: lastCandle.open,
       high: lastCandle.high,

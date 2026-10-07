@@ -201,10 +201,26 @@ export interface MarketState {
   signal: Signal | null;
   zones: Zone[];
   history: number[];
+  brokerMarketData: boolean;
+  accountMode: 'demo' | 'live' | 'contest' | 'unknown' | null;
+  symbolSpec: SymbolTradingSpec | null;
+  candlesM1: Candle[];
+  candlesM5: Candle[];
   candlesM15: Candle[];
   candlesH1: Candle[];
   mtfAlignment: MultiTimeframeAlignment[];
   candlestickAnalysis?: CandlestickAnalysis;
+}
+
+export interface SymbolTradingSpec {
+  tickSize: number;
+  tickValue: number;
+  contractSize: number;
+  volumeMin: number;
+  volumeMax: number;
+  volumeStep: number;
+  tradeStopsLevel: number;
+  tradeFreezeLevel: number;
 }
 
 export interface PositionsState {

@@ -3,7 +3,7 @@
  * Premium trader execution deck:
  * - Direction switch: BUY / SELL / AUTO SMC with distinct directional cues
  * - Live Entry spot price with real-time broker spread display
- * - Micro-Lot volume control and 1-click Stacking Selector (1x, 2x, 3x, 5x)
+ * - Broker-spec risk-limited position sizing and single-entry execution
  * - Defined Risk & Reward point matrix with dynamic dollar exposure calculation
  * - High-contrast 1-Click Execution button
  */
@@ -35,7 +35,7 @@ export const SignalEngineCard: React.FC<SignalEngineCardProps> = React.memo(({ o
 
   // Execution parameters
   const [lotSize, setLotSize] = useState<number>(0.01);
-  const [positionCount, setPositionCount] = useState<number>(1);
+  const positionCount = 1;
   const [copied, setCopied] = useState(false);
   const [executedFeedback, setExecutedFeedback] = useState<string | null>(null);
 
@@ -47,13 +47,14 @@ export const SignalEngineCard: React.FC<SignalEngineCardProps> = React.memo(({ o
   const currentSpot = activeDirection === 'BUY' ? ticker.ask : ticker.bid;
   const entryPrice = currentSpot;
   const signalEntry = rawSig?.entry ?? null;
+  const riskLimitedLotSize = rawSig ? tradingEngine.getRiskBasedVolume(rawSig.sl, lotSize) : null;
   const slPrice = rawSig?.sl ?? null;
   const tpPrice = rawSig?.tp ?? null;
   const riskPts = rawSig ? Math.abs(rawSig.entry - rawSig.sl) : 0;
   const rewardPts = rawSig ? Math.abs(rawSig.tp - rawSig.entry) : 0;
 
   const tradeMetrics = useMemo(() => {
-    const totalLots = Number((lotSize * positionCount).toFixed(2));
+    const totalLots = Number(((riskLimitedLotSize ?? 0) * positionCount).toFixed(2));
     const dollarPerPoint = totalLots * 100;
     const riskDollar = Number((riskPts * dollarPerPoint).toFixed(2));
     const rewardDollar = Number((rewardPts * dollarPerPoint).toFixed(2));
@@ -65,7 +66,7 @@ export const SignalEngineCard: React.FC<SignalEngineCardProps> = React.memo(({ o
       rewardDollar,
       rrRatio,
     };
-  }, [riskPts, rewardPts, lotSize, positionCount]);
+  }, [riskPts, rewardPts, lotSize, positionCount, riskLimitedLotSize]);
 
   const handleAdjustLot = (delta: number) => {
     setLotSize((prev) => {
@@ -87,11 +88,12 @@ export const SignalEngineCard: React.FC<SignalEngineCardProps> = React.memo(({ o
     if (isWideSpread || !rawSig) return;
 
     if (onExecuteSignal) {
-      await onExecuteSignal(lotSize, positionCount);
+      if (riskLimitedLotSize === null) return;
+      await onExecuteSignal(riskLimitedLotSize, positionCount);
     } else {
       const order = {
         direction: rawSig.direction,
-        volume: lotSize,
+        volume: riskLimitedLotSize ?? lotSize,
         entry: rawSig.entry,
         sl: rawSig.sl,
         tp: rawSig.tp,
@@ -208,7 +210,7 @@ export const SignalEngineCard: React.FC<SignalEngineCardProps> = React.memo(({ o
         <div className="flex items-center justify-between text-xs">
           <span className="text-zinc-500 dark:text-zinc-400 font-bold uppercase tracking-wider text-[11px] flex items-center gap-1.5">
             <Layers className="w-3.5 h-3.5 text-zinc-400" />
-            <span>Position Stacking:</span>
+            <span>Risk-limited single entry:</span>
           </span>
 
           <span className="font-bold text-slate-900 dark:text-white">
@@ -216,34 +218,10 @@ export const SignalEngineCard: React.FC<SignalEngineCardProps> = React.memo(({ o
           </span>
         </div>
 
-        {/* Stack Presets & Steppers Row */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-          {/* Stack Presets: 1x, 2x, 3x, 5x */}
-          <div className="grid grid-cols-4 gap-1">
-            {[
-              { label: '1x Single', val: 1 },
-              { label: '2x Split', val: 2 },
-              { label: '3x Stack', val: 3 },
-              { label: '5x Heavy', val: 5 },
-            ].map((item) => (
-              <button
-                key={item.val}
-                type="button"
-                onClick={() => setPositionCount(item.val)}
-                className={`py-1.5 rounded-lg font-bold text-[11px] border transition-colors cursor-pointer text-center ${
-                  positionCount === item.val
-                    ? 'bg-zinc-900 text-white dark:bg-white dark:text-black border-zinc-900 dark:border-white shadow-xs'
-                    : 'bg-white dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 border-slate-200 dark:border-zinc-700 hover:text-zinc-900 dark:hover:text-white'
-                }`}
-              >
-                {item.label}
-              </button>
-            ))}
-          </div>
-
           {/* Volume Lot Adjuster */}
           <div className="flex items-center justify-between px-3 py-1 rounded-lg bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700">
-            <span className="text-[11px] text-zinc-500 dark:text-zinc-400 font-bold">Lot per Order:</span>
+            <span className="text-[11px] text-zinc-500 dark:text-zinc-400 font-bold">Max requested lots:</span>
             <div className="flex items-center gap-1.5">
               <button
                 type="button"
@@ -253,7 +231,7 @@ export const SignalEngineCard: React.FC<SignalEngineCardProps> = React.memo(({ o
                 <Minus className="w-3 h-3" />
               </button>
               <span className="font-black text-xs sm:text-sm text-slate-900 dark:text-white tabular-nums w-12 text-center">
-                {lotSize.toFixed(2)}
+                {riskLimitedLotSize === null ? '—' : riskLimitedLotSize.toFixed(2)}
               </span>
               <button
                 type="button"
@@ -277,7 +255,7 @@ export const SignalEngineCard: React.FC<SignalEngineCardProps> = React.memo(({ o
       {/* 1-Click Execution Button */}
       <button
         onClick={handleExecute}
-        disabled={isWideSpread || !rawSig}
+        disabled={isWideSpread || !rawSig || riskLimitedLotSize === null || riskLimitedLotSize <= 0}
         className={`w-full py-3.5 rounded-xl font-black text-xs sm:text-sm tracking-wider uppercase transition-all flex items-center justify-center gap-2 active:scale-[0.99] cursor-pointer ${
           isWideSpread || !rawSig
             ? 'bg-zinc-200 text-zinc-400 dark:bg-zinc-900 dark:text-zinc-500 cursor-not-allowed border border-zinc-300 dark:border-zinc-800'
@@ -291,9 +269,9 @@ export const SignalEngineCard: React.FC<SignalEngineCardProps> = React.memo(({ o
             ? 'WAITING FOR CONFIRMED SETUP'
             : isWideSpread
             ? `SPREAD TOO WIDE (${ticker.spread} PTS)`
-            : positionCount > 1
-            ? `EXECUTE SIGNAL · STACK ${positionCount}X ${activeDirection} ORDERS (${tradeMetrics.totalLots} LOTS TOTAL)`
-            : `EXECUTE SIGNAL · ${activeDirection} ${lotSize.toFixed(2)} LOTS @ $${entryPrice.toFixed(2)}`}
+            : !riskLimitedLotSize
+            ? 'BROKER RISK SIZE UNAVAILABLE'
+            : `EXECUTE SIGNAL · ${activeDirection} ${riskLimitedLotSize.toFixed(2)} RISK-SIZED LOTS @ $${entryPrice.toFixed(2)}`}
         </span>
         <ArrowRight className="w-4 h-4" />
       </button>

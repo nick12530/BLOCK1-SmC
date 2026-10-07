@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { X, Sliders, Shield, AlertTriangle, ArrowLeft } from 'lucide-react';
 import { TerminalSnapshot } from '../types/smc';
 import { tradingEngine } from '../engine/tradingEngine';
+import { RISK_CONFIG } from '../engine/riskConfig';
 
 interface RiskSettingsModalProps {
   isOpen: boolean;
@@ -15,10 +16,6 @@ export const RiskSettingsModal: React.FC<RiskSettingsModalProps> = ({
   snapshot,
 }) => {
   const [balanceInput, setBalanceInput] = useState<number>(snapshot.balance);
-  const [maxDailyLoss, setMaxDailyLoss] = useState<number>(
-    tradingEngine.account.max_daily_loss_pct
-  );
-  const [riskPct, setRiskPct] = useState<number>(tradingEngine.account.risk_pct);
   const [autoRr, setAutoRr] = useState<number>(tradingEngine.account.auto_rr);
 
   useEffect(() => {
@@ -33,14 +30,15 @@ export const RiskSettingsModal: React.FC<RiskSettingsModalProps> = ({
   if (!isOpen) return null;
 
   const handleSave = () => {
-    tradingEngine.account.balance = balanceInput;
-    tradingEngine.account.equity = balanceInput;
-    tradingEngine.account.daily_start_balance = balanceInput;
-    tradingEngine.account.max_daily_loss_pct = maxDailyLoss;
-    tradingEngine.account.risk_pct = riskPct;
+    tradingEngine.account.max_daily_loss_pct = RISK_CONFIG.maxDailyLossPercent;
+    tradingEngine.account.risk_pct = RISK_CONFIG.riskPercentPerTrade;
     tradingEngine.account.auto_rr = autoRr;
-    tradingEngine.account.daily_loss_hit = false;
-    tradingEngine.slog(`Risk parameters updated: Balance $${balanceInput}, Max DD ${maxDailyLoss}%, Risk ${riskPct}%`, 'info');
+    if (!tradingEngine.mt5Account.connected) {
+      tradingEngine.account.balance = balanceInput;
+      tradingEngine.account.equity = balanceInput;
+      tradingEngine.account.daily_start_balance = balanceInput;
+    }
+    tradingEngine.slog(`Risk parameters updated: Max daily loss ${RISK_CONFIG.maxDailyLossPercent}%, Risk ${RISK_CONFIG.riskPercentPerTrade}%`, 'info');
     tradingEngine.notify();
     onClose();
   };
@@ -79,17 +77,18 @@ export const RiskSettingsModal: React.FC<RiskSettingsModalProps> = ({
           {/* Account Balance Presets */}
           <div>
             <div className="flex justify-between text-slate-500 dark:text-slate-400 mb-1.5">
-              <span>Account Balance ($ USD)</span>
-              <span className="text-slate-900 dark:text-white font-semibold">${balanceInput.toLocaleString()}</span>
+              <span>{tradingEngine.mt5Account.connected ? 'Broker Equity (read only)' : 'Simulation Balance ($ USD)'}</span>
+              <span className="text-slate-900 dark:text-white font-semibold">${snapshot.equity.toLocaleString()}</span>
             </div>
             <input
               type="number"
               step="1000"
               value={balanceInput}
               onChange={(e) => setBalanceInput(Number(e.target.value))}
+              disabled={tradingEngine.mt5Account.connected}
               className="w-full bg-slate-50 dark:bg-[#0c1017] border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-slate-900 dark:text-white font-semibold focus:outline-none focus:border-blue-500"
             />
-            <div className="grid grid-cols-4 gap-1.5 mt-2">
+            {!tradingEngine.mt5Account.connected && <div className="grid grid-cols-4 gap-1.5 mt-2">
               {[10000, 25000, 50000, 100000].map((b) => (
                 <button
                   key={b}
@@ -104,46 +103,18 @@ export const RiskSettingsModal: React.FC<RiskSettingsModalProps> = ({
                   ${(b / 1000).toFixed(0)}k
                 </button>
               ))}
-            </div>
+            </div>}
           </div>
 
-          {/* Max Daily Drawdown % */}
-          <div>
-            <div className="flex justify-between text-slate-500 dark:text-slate-400 mb-1">
-              <span>Max Daily Drawdown Kill-Switch (%)</span>
-              <span className="text-red-500 font-semibold">{maxDailyLoss}%</span>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="rounded-lg border border-rose-200 bg-rose-50 p-3 dark:border-rose-900/50 dark:bg-rose-950/20">
+              <div className="text-[10px] uppercase text-slate-500 dark:text-zinc-400">Max daily loss</div>
+              <div className="mt-1 text-lg font-bold text-rose-600 dark:text-rose-300">{RISK_CONFIG.maxDailyLossPercent}%</div>
             </div>
-            <input
-              type="range"
-              min="1.0"
-              max="5.0"
-              step="0.5"
-              value={maxDailyLoss}
-              onChange={(e) => setMaxDailyLoss(Number(e.target.value))}
-              className="w-full accent-red-500 cursor-pointer"
-            />
-            <div className="flex justify-between text-[10px] text-slate-400 mt-1">
-              <span>1.0% (Strict)</span>
-              <span>3.0% (Default)</span>
-              <span>5.0% (Prop Firm Limit)</span>
+            <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 dark:border-emerald-900/50 dark:bg-emerald-950/20">
+              <div className="text-[10px] uppercase text-slate-500 dark:text-zinc-400">Max risk per order</div>
+              <div className="mt-1 text-lg font-bold text-emerald-600 dark:text-emerald-300">{RISK_CONFIG.riskPercentPerTrade}%</div>
             </div>
-          </div>
-
-          {/* Risk per trade % */}
-          <div>
-            <div className="flex justify-between text-slate-500 dark:text-slate-400 mb-1">
-              <span>Risk Per Signal Trade (%)</span>
-              <span className="text-emerald-500 font-semibold">{riskPct}%</span>
-            </div>
-            <input
-              type="range"
-              min="0.25"
-              max="3.0"
-              step="0.25"
-              value={riskPct}
-              onChange={(e) => setRiskPct(Number(e.target.value))}
-              className="w-full accent-emerald-500 cursor-pointer"
-            />
           </div>
 
           {/* Auto R:R Target */}
@@ -167,7 +138,7 @@ export const RiskSettingsModal: React.FC<RiskSettingsModalProps> = ({
           <div className="bg-slate-50 dark:bg-[#0c1017] border border-slate-200 dark:border-slate-800 p-3 rounded-xl flex items-start gap-2 text-[11px] text-slate-600 dark:text-slate-400">
             <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
             <span>
-              If daily equity falls by <strong className="text-slate-900 dark:text-white">{maxDailyLoss}%</strong>, the engine locks all trading until the next trading day.
+              Risk controls come from <code>risk-config.json</code>. If the configured news windows are not a fit, review them before enabling live automation; these time windows are not a substitute for a live economic calendar.
             </span>
           </div>
         </div>

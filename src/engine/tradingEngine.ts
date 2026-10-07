@@ -23,7 +23,9 @@ import {
   Zone,
   DealingRange,
   CompoundingStageInfo,
+  SymbolTradingSpec,
 } from '../types/smc';
+import { RISK_CONFIG, calculateRiskBasedVolume, isWithinConfiguredNewsBlackout } from './riskConfig';
 import {
   calculateATR,
   MarketStructureEngine,
@@ -53,10 +55,12 @@ const SYMBOL = 'XAUUSD';
 const MAGIC = 20261001;
 export const MAX_SPREAD_POINTS = 40; // 40 points = 4.0 pips on gold
 const AUTO_RR = 2.0;
-const SCORE_THRESHOLD = 4.0;
+const SCORE_THRESHOLD = 5.0;
 
 export class TradingEngine {
   candlesM15: Candle[] = [];
+  candlesM1: Candle[] = [];
+  candlesM5: Candle[] = [];
   candlesH1: Candle[] = [];
   positions: Position[] = [];
   closedTrades: ClosedTrade[] = [];
@@ -74,6 +78,12 @@ export class TradingEngine {
   connected: boolean = true;
   simulateWeekendMode: boolean = false;
   private hasBrokerMarketData = false;
+  private symbolSpec: SymbolTradingSpec | null = null;
+  private brokerAccountMode: 'demo' | 'live' | 'contest' | 'unknown' | null = null;
+  private hasBrokerDayAnchor = false;
+  private pendingCentralKillSwitch: boolean | null = null;
+  private dailyRiskDate = new Date().toISOString().slice(0, 10);
+  private entryHistory: Array<{ at: number; direction: TradeDirection; poiKey: string }> = [];
 
   mt5Account: {
     connected: boolean;
@@ -100,8 +110,8 @@ export class TradingEngine {
     margin_used: 0.0,
     initial_balance: 10.0,
     daily_start_balance: 10.0,
-    max_daily_loss_pct: 15.0, // $1.50 maximum daily loss protection for $10 account
-    risk_pct: 10.0, // 0.01 lot micro sizing
+    max_daily_loss_pct: RISK_CONFIG.maxDailyLossPercent,
+    risk_pct: RISK_CONFIG.riskPercentPerTrade,
     auto_rr: 2.0, // 1:2.0 Risk/Reward optimal compound ratio
     daily_drawdown_pct: 0.0,
     daily_loss_hit: false,
@@ -170,10 +180,21 @@ export class TradingEngine {
     bid: number;
     ask: number;
     spread: number;
+    accountMode: 'demo' | 'live' | 'contest' | 'unknown';
+    tradingHalted: boolean;
+    symbolSpec: SymbolTradingSpec;
+    candlesM1: Candle[];
+    candlesM5: Candle[];
     candlesM15: Candle[];
     candlesH1: Candle[];
   }) {
     const { account, positions } = snapshot;
+    const killSwitchWasArmed = this.killSwitch;
+    if (this.pendingCentralKillSwitch === snapshot.tradingHalted) {
+      this.pendingCentralKillSwitch = null;
+    }
+    this.killSwitch = this.pendingCentralKillSwitch ?? snapshot.tradingHalted;
+    if (this.killSwitch) this.autoTrade = false;
     this.mt5Account = {
       connected: true,
       login: String(account.login),
@@ -186,11 +207,26 @@ export class TradingEngine {
     this.account.balance = account.balance;
     this.account.equity = account.equity;
     this.account.margin_free = account.margin_free;
+    if (!this.hasBrokerDayAnchor) {
+      this.account.daily_start_balance = account.balance;
+      this.dailyRiskDate = new Date().toISOString().slice(0, 10);
+      this.account.daily_loss_hit = false;
+      this.hasBrokerDayAnchor = true;
+    }
     this.bid = snapshot.bid;
     this.ask = snapshot.ask;
     this.lastPrice = (snapshot.bid + snapshot.ask) / 2;
     this.spread = snapshot.spread;
-    if (snapshot.candlesM15.length >= 25 && snapshot.candlesH1.length >= 20) {
+    this.symbolSpec = snapshot.symbolSpec;
+    this.brokerAccountMode = snapshot.accountMode;
+    this.candlesM1 = snapshot.candlesM1;
+    this.candlesM5 = snapshot.candlesM5;
+    if (
+      snapshot.candlesM1.length >= 25 &&
+      snapshot.candlesM5.length >= 20 &&
+      snapshot.candlesM15.length >= 25 &&
+      snapshot.candlesH1.length >= 20
+    ) {
       this.candlesM15 = snapshot.candlesM15;
       this.candlesH1 = snapshot.candlesH1;
       this.hasBrokerMarketData = true;
@@ -206,9 +242,18 @@ export class TradingEngine {
       strategyOrderBlock: this.tradeOrderBlocks[String(position.ticket)],
       beLocked: position.sl > 0 && (position.type === 'BUY' ? position.sl > position.price_open : position.sl < position.price_open),
     }));
+    if (this.killSwitch && !killSwitchWasArmed) {
+      this.closeAll('KillSwitch');
+      this.slog('Central MT5 kill switch armed on another connected dashboard; close requests sent. Verify broker positions.', 'warn');
+    }
     if (!this.positions.some((position) => position.ticket === this.selectedTicket)) {
       this.selectedTicket = this.positions[0]?.ticket ?? null;
     }
+    if (!killSwitchWasArmed && this.killSwitch && this.positions.length > 0) {
+      this.slog('Central MT5 kill switch is armed; closing synced positions and blocking new orders.', 'error');
+      this.closeAll('KillSwitch');
+    }
+    this.refreshDailyRiskState();
     this.invalidateMarket();
     this.invalidatePositions();
     this.invalidateTicker();
@@ -233,6 +278,7 @@ export class TradingEngine {
       if (positionTicket !== undefined) this.tradeOrderBlocks[String(positionTicket)] = strategyOrderBlock;
       persistTradeOrderBlocks(this.tradeOrderBlocks);
     }
+
     const position = this.positions.find(
       (item) => item.ticket === positionTicket || item.ticket === orderTicket
     );
@@ -415,9 +461,25 @@ export class TradingEngine {
       const zones = [...fvgs, ...obs];
 
       const dr = ms.dealingRange();
-      const sig = this.hasBrokerMarketData
-        ? evaluateConfluence(this.candlesM15, this.candlesH1, this.account.auto_rr, SCORE_THRESHOLD)
-        : null;
+      const candidateSignals = this.hasBrokerMarketData
+        ? [
+            evaluateConfluence(
+              this.candlesM1,
+              this.candlesM5,
+              this.account.auto_rr,
+              SCORE_THRESHOLD,
+              'M1'
+            ),
+            evaluateConfluence(
+              this.candlesM5,
+              this.candlesM15,
+              this.account.auto_rr,
+              SCORE_THRESHOLD,
+              'M5'
+            ),
+          ].filter((signal): signal is Signal => signal !== null)
+        : [];
+      const sig = candidateSignals.sort((left, right) => right.score - left.score)[0] ?? null;
 
       let pricePos: number | null = null;
       if (dr && dr.high > dr.low) {
@@ -466,6 +528,11 @@ export class TradingEngine {
         signal: sig,
         zones,
         history,
+        brokerMarketData: this.hasBrokerMarketData,
+        accountMode: this.brokerAccountMode,
+        symbolSpec: this.symbolSpec,
+        candlesM1: this.candlesM1,
+        candlesM5: this.candlesM5,
         candlesM15: this.candlesM15,
         candlesH1: this.candlesH1,
         mtfAlignment,
@@ -604,7 +671,7 @@ export class TradingEngine {
         kill_switch: this.killSwitch,
         auto_trade: this.autoTrade,
         auto_be_enabled: this.autoBeEnabled,
-        news_blackout: this.newsBlackout,
+        news_blackout: this.newsBlackout || isWithinConfiguredNewsBlackout(new Date()),
         session: sess,
         connected: this.connected,
         max_spread_points: MAX_SPREAD_POINTS,
@@ -635,8 +702,10 @@ export class TradingEngine {
 
     this.account.balance = bal;
     this.account.equity = eq;
-    this.account.initial_balance = bal;
-    this.account.daily_start_balance = bal;
+    if (!this.hasBrokerDayAnchor) {
+      this.account.initial_balance = bal;
+      this.account.daily_start_balance = bal;
+    }
     this.account.margin_free = bal;
 
     this.slog(`MetaTrader 5 Linked: Account #${login} on ${server} (Equity: $${eq.toFixed(2)})`, 'trade');
@@ -676,6 +745,96 @@ export class TradingEngine {
 
   getScenarioSnapshot(): string {
     return this.currentScenario;
+  }
+
+  getRiskBasedVolume(stopLoss: number, requestedVolume?: number): number | null {
+    if (!this.symbolSpec) return this.mt5Account.connected ? null : requestedVolume ?? 0.01;
+    const riskVolume = calculateRiskBasedVolume(
+      this.account.equity,
+      this.account.risk_pct,
+      Math.abs(this.bid - stopLoss),
+      this.symbolSpec
+    );
+    if (riskVolume === null || requestedVolume === undefined) return riskVolume;
+    const cappedVolume = Math.min(riskVolume, requestedVolume);
+    const steps = Math.floor((cappedVolume - this.symbolSpec.volumeMin) / this.symbolSpec.volumeStep + 1e-9);
+    const precision = Math.min(8, (String(this.symbolSpec.volumeStep).split('.')[1] || '').length);
+    const adjustedVolume = Number((this.symbolSpec.volumeMin + Math.max(0, steps) * this.symbolSpec.volumeStep).toFixed(precision));
+    return adjustedVolume <= riskVolume ? adjustedVolume : null;
+  }
+
+  getEntryBlockReason(direction: TradeDirection, signal = this.getMarketSnapshot().signal): string | null {
+    const now = Date.now();
+    this.entryHistory = this.entryHistory.filter((entry) => now - entry.at < 60 * 60_000);
+    if (this.killSwitch) return 'Kill switch is armed.';
+    if (this.newsBlackout) return 'News blackout is enabled.';
+    if (isWithinConfiguredNewsBlackout(new Date(now))) return 'Configured high-impact news blackout window is active.';
+    if (this.account.daily_loss_hit || this.account.daily_drawdown_pct >= this.account.max_daily_loss_pct) {
+      return 'Daily loss limit reached.';
+    }
+    if (this.spread > MAX_SPREAD_POINTS) return `Spread too wide (${this.spread} points).`;
+    if (this.positions.length >= RISK_CONFIG.maxOpenPositions) return 'Maximum open-position limit reached.';
+    if (this.entryHistory.length >= RISK_CONFIG.maxTradesPerHour) return 'Hourly trade limit reached.';
+
+    const consecutiveLosses = this.closedTrades.slice(0, RISK_CONFIG.maxConsecutiveLosses)
+      .every((trade) => trade.profit <= 0);
+    if (this.closedTrades.length >= RISK_CONFIG.maxConsecutiveLosses && consecutiveLosses) {
+      return 'Consecutive-loss circuit breaker reached.';
+    }
+
+    const lastDirectionEntry = [...this.entryHistory].reverse().find((entry) => entry.direction === direction);
+    if (lastDirectionEntry && now - lastDirectionEntry.at < RISK_CONFIG.directionCooldownMs) {
+      return 'Direction cooldown is active.';
+    }
+    const poiKey = signal ? this.getSignalPoiKey(signal.direction, signal.entry) : '';
+    if (
+      poiKey &&
+      this.entryHistory.some((entry) => entry.poiKey === poiKey && now - entry.at < RISK_CONFIG.samePoiCooldownMs)
+    ) {
+      return 'This SMC point of interest was traded recently.';
+    }
+    return null;
+  }
+
+  recordAcceptedEntry(direction: TradeDirection, signal = this.getMarketSnapshot().signal) {
+    const poiKey = signal ? this.getSignalPoiKey(signal.direction, signal.entry) : '';
+    this.entryHistory.push({ at: Date.now(), direction, poiKey });
+    this.entryHistory = this.entryHistory.slice(-RISK_CONFIG.maxTradesPerHour);
+  }
+
+  getSignalPoiKey(direction: TradeDirection, entry: number): string {
+    const bullish = direction === 'BUY';
+    const zone = this.getMarketSnapshot().zones.find(
+      (item) =>
+        item.bullish === bullish &&
+        item.bottom <= entry &&
+        entry <= item.top &&
+        !item.filled
+    );
+    return zone ? `${direction}:${zone.kind}:${zone.bottom.toFixed(2)}:${zone.top.toFixed(2)}` : `${direction}:${entry.toFixed(2)}`;
+  }
+
+  private refreshDailyRiskState() {
+    const date = new Date().toISOString().slice(0, 10);
+    if (date !== this.dailyRiskDate) {
+      this.dailyRiskDate = date;
+      this.account.daily_start_balance = this.account.balance;
+      this.account.daily_loss_hit = false;
+      this.entryHistory = [];
+      this.slog('Daily risk limits reset for the new UTC trading day.', 'info');
+    }
+    if (this.account.daily_start_balance <= 0) return;
+    this.account.daily_drawdown_pct = Number(
+      Math.max(0, ((this.account.daily_start_balance - this.account.equity) / this.account.daily_start_balance) * 100).toFixed(2)
+    );
+    if (!this.account.daily_loss_hit && this.account.daily_drawdown_pct >= this.account.max_daily_loss_pct) {
+      this.account.daily_loss_hit = true;
+      this.autoTrade = false;
+      this.slog(`Daily loss circuit breaker triggered at ${this.account.daily_drawdown_pct}%. Trading disabled until UTC day reset.`, 'error');
+      this.closeAll('KillSwitch');
+      this.invalidateEngine();
+      this.emit('engine');
+    }
   }
 
   getSnapshot(): TerminalSnapshot {
@@ -868,9 +1027,7 @@ export class TradingEngine {
     // Recalculate floating PnL after any closes
     const currentFloatingPnl = this.positions.reduce((sum, p) => sum + p.profit, 0);
     this.account.equity = Number((this.account.balance + currentFloatingPnl).toFixed(2));
-    this.account.daily_drawdown_pct = Number(
-      Math.max(0, ((this.account.daily_start_balance - this.account.equity) / this.account.daily_start_balance) * 100).toFixed(2)
-    );
+    this.refreshDailyRiskState();
 
     // Invalidate ticker cache and emit
     this.invalidateTicker();
@@ -937,30 +1094,22 @@ export class TradingEngine {
       return;
     }
 
-    // Check spread gate
-    if (this.spread > MAX_SPREAD_POINTS) {
-      return;
-    }
-
-    // Multi-position support: allow multiple trades running simultaneously
-    const maxAllowed = 1;
-    if (this.positions.length >= maxAllowed) {
-      return;
-    }
-
     const market = this.getMarketSnapshot();
     if (market.signal && market.signal.score >= SCORE_THRESHOLD) {
       const sig = market.signal;
-      // Prevent executing the exact same entry repeatedly
-      const hasRecentSimilarPos = this.positions.some(
-        (p) => Math.abs(p.price_open - sig.entry) < 0.8 && p.type === sig.direction
-      );
-      if (hasRecentSimilarPos) {
+      if (!market.brokerMarketData) {
+        this.slog('Auto-trade blocked: live MT5 broker candle feed is unavailable.', 'warn');
+        return;
+      }
+      if (this.getEntryBlockReason(sig.direction, sig)) return;
+      const volume = this.getRiskBasedVolume(sig.sl);
+      if (!volume) {
+        this.slog('Auto-trade blocked: broker symbol tick-value/volume specification cannot size this stop safely.', 'error');
         return;
       }
 
       const rationale = buildSignalRationale(sig);
-      this.slog(`Auto-Trader executing: ${sig.direction} @ ${sig.entry} (Score ${sig.score}) · ${rationale}`, 'trade');
+      this.slog(`Auto-Trader approved: ${sig.timeframe} ${sig.direction} score ${sig.score} · ${rationale}`, 'signal');
       if (this.mt5Account.connected) {
         if (!mt5Bridge.getStatus().connected) {
           this.slog('MT5 auto-order blocked: local bridge is offline.', 'error');
@@ -969,17 +1118,30 @@ export class TradingEngine {
         try {
           const result = await mt5Bridge.sendTrade({
             direction: sig.direction,
-            volume: 0.01,
+            volume,
             symbol: mt5Bridge.getSymbol(),
             sl: sig.sl,
             tp: sig.tp,
             rationale,
+            clientOrderId: `${sig.timeframe}:${sig.direction}:${sig.timestamp}:${sig.entry.toFixed(2)}`,
+            poiKey: this.getSignalPoiKey(sig.direction, sig.entry),
+            signalTimeframe: sig.timeframe === 'M1' ? 'M1' : 'M5',
+            signalTimestamp: sig.timestamp,
           });
           this.recordMt5Rationale(
             result.ticket,
             result.positionTicket,
             rationale,
             findCorrespondingOrderBlock(sig.direction, sig.entry, market.zones)
+          );
+          this.recordAcceptedEntry(sig.direction, sig);
+          this.slog(
+            result.pending
+              ? `MT5 auto-order placed but not confirmed filled: #${result.ticket} · ${result.filledVolume} lots reported. Verify it in MT5.`
+              : result.partial
+              ? `MT5 auto-order partially filled: ${sig.direction} ${result.filledVolume} lots · #${result.ticket}. Verify remaining quantity.`
+              : `MT5 auto-order accepted: ${sig.direction} ${result.filledVolume} lots on ${sig.timeframe} score ${sig.score} · #${result.ticket}`,
+            result.pending || result.partial ? 'warn' : 'trade'
           );
         } catch (error) {
           this.slog(`MT5 auto-order rejected: ${error instanceof Error ? error.message : 'Unknown bridge error'}`, 'error');
@@ -988,7 +1150,7 @@ export class TradingEngine {
       }
       this.sendMarket(
         sig.direction,
-        0.01,
+        volume,
         sig.sl,
         sig.tp,
         `auto:${sig.score}`
@@ -1014,22 +1176,16 @@ export class TradingEngine {
       };
     }
 
-    if (this.spread > MAX_SPREAD_POINTS) {
-      return { ok: false, error: `Spread too wide (${this.spread} points > ${MAX_SPREAD_POINTS} max)` };
-    }
-
-    // Multi-trade execution: allow multiple simultaneous trades running concurrently
-    const maxAllowed = 20;
-    if (this.positions.length >= maxAllowed) {
-      return {
-        ok: false,
-        error: `Max limit of ${maxAllowed} concurrent positions reached. Close some positions to open more.`,
-      };
+    const market = this.getMarketSnapshot();
+    const blockReason = this.getEntryBlockReason(direction, market.signal);
+    if (blockReason) return { ok: false, error: blockReason };
+    const riskVolume = this.getRiskBasedVolume(sl, volume);
+    if (!riskVolume) {
+      return { ok: false, error: 'Position size is below broker minimum or cannot be calculated from valid risk specifications.' };
     }
 
     const openPrice = direction === 'BUY' ? this.ask : this.bid;
     const ticket = ++this.ticketCounter;
-    const market = this.getMarketSnapshot();
     const rationale = market.signal
       ? buildSignalRationale(market.signal)
       :
@@ -1041,7 +1197,7 @@ export class TradingEngine {
       ticket,
       time: new Date().toISOString().substr(11, 8),
       type: direction,
-      volume,
+      volume: riskVolume,
       price_open: openPrice,
       sl,
       tp,
@@ -1059,7 +1215,8 @@ export class TradingEngine {
 
     this.positions = [...this.positions, newPos];
     this.selectedTicket = ticket; // Automatically focus the newly entered trade on the chart!
-    this.slog(`${comment} ${direction} ${volume} @ ${openPrice} -> #${ticket}`, 'trade');
+    this.recordAcceptedEntry(direction, market.signal);
+    this.slog(`${comment} ${direction} ${riskVolume} @ ${openPrice} -> #${ticket}`, 'trade');
 
     this.invalidatePositions();
     this.invalidateTicker();
@@ -1175,6 +1332,16 @@ export class TradingEngine {
       );
     } else {
       this.slog('KILL SWITCH DISARMED: Engine ready', 'info');
+    }
+    if (this.mt5Account.connected) {
+      this.pendingCentralKillSwitch = this.killSwitch;
+      void mt5Bridge.setTradingHalted(this.killSwitch).catch((error: unknown) => {
+        this.pendingCentralKillSwitch = null;
+        this.slog(
+          `Central kill-switch update failed: ${error instanceof Error ? error.message : 'Unknown bridge error'}`,
+          'error'
+        );
+      });
     }
 
     this.invalidateEngine();

@@ -11,9 +11,9 @@ import React, { useEffect } from 'react';
 
 interface StartupLoadingScreenProps {
   onStartTrading: () => void;
-  spotPrice: number;
-  balance: number;
-  connectionStatus: 'checking' | 'connected' | 'offline';
+  spotPrice: number | null;
+  balance: number | null;
+  connectionStatus: 'checking' | 'connected' | 'waiting' | 'offline';
 }
 
 export const StartupLoadingScreen: React.FC<StartupLoadingScreenProps> = ({
@@ -48,9 +48,13 @@ export const StartupLoadingScreen: React.FC<StartupLoadingScreenProps> = ({
             SMC <span className="font-bold">Gold</span>
           </h1>
           <div className="pt-2 text-xs text-zinc-400 tabular-nums">
-            <span>Spot ${spotPrice.toFixed(2)}</span>
-            <span className="mx-2 text-zinc-700">·</span>
-            <span className="text-zinc-500">Balance ${balance.toFixed(2)}</span>
+            {spotPrice !== null ? `MT5 ${spotPrice.toFixed(2)}` : 'No verified broker quote'}
+            {balance !== null && (
+              <>
+                <span className="mx-2 text-zinc-700">·</span>
+                <span className="text-zinc-500">Balance ${balance.toFixed(2)}</span>
+              </>
+            )}
           </div>
         </div>
 
@@ -73,8 +77,10 @@ export const StartupLoadingScreen: React.FC<StartupLoadingScreenProps> = ({
         {connectionStatus === 'checking'
           ? 'Checking saved MT5 connection…'
           : connectionStatus === 'connected'
-            ? 'MT5 broker connected · Verify account and quotes'
-            : 'MT5 offline · Broker orders disabled'}
+            ? 'MT5 broker connected · Quotes and indicators verified'
+            : connectionStatus === 'waiting'
+              ? 'MT5 connected · Waiting for verified candles · Trading disabled'
+              : 'MT5 offline · Broker orders disabled'}
       </div>
     </div>
   );

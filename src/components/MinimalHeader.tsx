@@ -9,7 +9,6 @@ import {
   ShieldAlert,
   Sliders,
   Server,
-  Database,
   Radio,
 } from 'lucide-react';
 
@@ -19,7 +18,6 @@ interface MinimalHeaderProps {
   onToggleTheme: () => void;
   onOpenSettings: () => void;
   onOpenBridge: () => void;
-  onOpenScenarios: () => void;
 }
 
 export const MinimalHeader: React.FC<MinimalHeaderProps> = ({
@@ -28,7 +26,6 @@ export const MinimalHeader: React.FC<MinimalHeaderProps> = ({
   onToggleTheme,
   onOpenSettings,
   onOpenBridge,
-  onOpenScenarios,
 }) => {
   const isKill = snapshot.kill_switch;
   const isAuto = snapshot.auto_trade;
@@ -167,13 +164,6 @@ export const MinimalHeader: React.FC<MinimalHeaderProps> = ({
             className="p-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 transition-colors"
           >
             <Sliders className="w-4 h-4" />
-          </button>
-          <button
-            onClick={onOpenScenarios}
-            title="Market Regimes & Replay"
-            className="p-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 transition-colors"
-          >
-            <Database className="w-4 h-4" />
           </button>
         </div>
       </div>

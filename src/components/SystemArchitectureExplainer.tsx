@@ -27,7 +27,7 @@ export const SystemArchitectureExplainer: React.FC = () => {
   const engine = useEngine();
 
   const account = tradingEngine.account;
-  const balance = ticker.balance || 10300;
+  const balance = ticker.balance;
   const riskPct = account.risk_pct || 1.0;
   const autoRr = account.auto_rr || 2.0;
   const maxLossPct = account.max_daily_loss_pct || 3.0;

@@ -12,7 +12,6 @@ import {
   useMarket,
   usePositions,
   useEngine,
-  useScenario,
   useScannerAnalyses,
   useBestOpportunity,
 } from './hooks/useTradingStore';
@@ -55,9 +54,6 @@ const Mt5BridgeModal = lazy(() =>
 const RiskSettingsModal = lazy(() =>
   import('./components/RiskSettingsModal').then((module) => ({ default: module.RiskSettingsModal }))
 );
-const ReplayScenariosModal = lazy(() =>
-  import('./components/ReplayScenariosModal').then((module) => ({ default: module.ReplayScenariosModal }))
-);
 const ClosedTradesModal = lazy(() =>
   import('./components/ClosedTradesModal').then((module) => ({ default: module.ClosedTradesModal }))
 );
@@ -79,7 +75,6 @@ export default function App() {
   const market = useMarket();
   const positionsState = usePositions();
   const engine = useEngine();
-  const scenario = useScenario();
   const scannerAnalyses = useScannerAnalyses();
   const bestOpportunity = useBestOpportunity();
 
@@ -89,7 +84,7 @@ export default function App() {
 
   // Discriminated modal state (Priority 4, Item 12)
   const [activeModal, setActiveModal] = useState<
-    'bridge' | 'settings' | 'scenarios' | 'closed_trades' | 'daily_report' | 'tradingview' | 'help' | 'phone_pwa' | null
+    'bridge' | 'settings' | 'closed_trades' | 'daily_report' | 'tradingview' | 'help' | 'phone_pwa' | null
   >(null);
   const [reportDate, setReportDate] = useState(() => localDayKey(new Date()));
   const [showStartupScreen, setShowStartupScreen] = useState(true);
@@ -107,6 +102,9 @@ export default function App() {
   useEffect(() => {
     mt5Bridge.setCallback((snapshot) => tradingEngine.syncMt5Snapshot(snapshot));
     mt5Bridge.setClosedTradesCallback((trades) => tradingEngine.syncMt5ClosedTrades(trades));
+    mt5Bridge.setConnectionChangeCallback((connected, error) => {
+      if (!connected) tradingEngine.setMt5BridgeConnectionStatus(false, error);
+    });
     void mt5Bridge.autoConnectIfSaved()
       .catch((error: unknown) => {
         tradingEngine.slog(
@@ -485,13 +483,6 @@ export default function App() {
               snapshot={tradingEngine.getSnapshot()}
             />
           )}
-          {activeModal === 'scenarios' && (
-            <ReplayScenariosModal
-              isOpen
-              onClose={() => setActiveModal(null)}
-              currentScenario={scenario}
-            />
-          )}
           {activeModal === 'closed_trades' && (
             <ClosedTradesModal isOpen onClose={() => setActiveModal(null)} />
           )}
@@ -526,13 +517,15 @@ export default function App() {
       {showStartupScreen && (
         <StartupLoadingScreen
           onStartTrading={() => setShowStartupScreen(false)}
-          spotPrice={ticker.bid}
-          balance={ticker.balance}
+          spotPrice={market.brokerMarketData ? ticker.bid : null}
+          balance={engine.mt5Account?.connected ? ticker.balance : null}
           connectionStatus={
             !autoConnectChecked
               ? 'checking'
-              : engine.mt5Account?.connected
+              : market.brokerMarketData
                 ? 'connected'
+                : engine.mt5Account?.connected
+                  ? 'waiting'
                 : 'offline'
           }
         />

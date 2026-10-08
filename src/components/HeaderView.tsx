@@ -27,7 +27,7 @@ interface HeaderViewProps {
   isDark: boolean;
   onToggleTheme: () => void;
   onOpenModal: (
-    modal: 'bridge' | 'settings' | 'scenarios' | 'daily_report' | 'tradingview' | 'help' | 'phone_pwa'
+    modal: 'bridge' | 'settings' | 'daily_report' | 'tradingview' | 'help' | 'phone_pwa'
   ) => void;
   onToggleKillSwitchPrompt?: () => void;
 }
@@ -128,7 +128,9 @@ export const HeaderView: React.FC<HeaderViewProps> = React.memo(({
           <div className="flex items-baseline gap-1 px-2.5 py-1 rounded-lg bg-slate-50 dark:bg-[#0c131a] border border-slate-200 dark:border-[#1a3040]">
             <span className="text-[10px] text-zinc-400 uppercase font-bold">Balance:</span>
             <strong className="text-xs sm:text-sm font-black text-slate-900 dark:text-white tabular-nums">
-              ${ticker.balance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              {mt5?.connected
+                ? `$${ticker.balance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                : 'Unavailable'}
             </strong>
           </div>
 
@@ -140,7 +142,9 @@ export const HeaderView: React.FC<HeaderViewProps> = React.memo(({
                 isProfit ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'
               }`}
             >
-              ${ticker.equity.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              {mt5?.connected
+                ? `$${ticker.equity.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                : 'Unavailable'}
             </strong>
             {floatingPnl !== 0 && (
               <span
@@ -159,7 +163,7 @@ export const HeaderView: React.FC<HeaderViewProps> = React.memo(({
           <div className="hidden sm:flex items-baseline gap-1 px-2.5 py-1 rounded-lg bg-slate-50 dark:bg-[#0c131a] border border-slate-200 dark:border-[#1a3040]">
             <span className="text-[10px] text-zinc-400 uppercase font-bold">Free Margin:</span>
             <strong className="text-xs sm:text-sm font-black text-slate-800 dark:text-zinc-200 tabular-nums">
-              ${marginMetrics.freeMargin}
+              {mt5?.connected ? `$${marginMetrics.freeMargin}` : 'Unavailable'}
             </strong>
           </div>
 

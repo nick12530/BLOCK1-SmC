@@ -278,7 +278,6 @@ export interface EngineState {
     equity: number;
     freeMargin: number;
   };
-  simulateWeekendMode?: boolean;
   allowHighConfluenceOverride?: boolean;
   autoSelectBestScenario?: boolean;
 }
@@ -314,4 +313,4 @@ export interface TerminalSnapshot extends TickerState, MarketState, EngineState 
   economicEvents: EconomicEvent[];
 }
 
-export type StoreChannel = 'ticker' | 'market' | 'positions' | 'engine' | 'events' | 'scenario' | 'scanner';
+export type StoreChannel = 'ticker' | 'market' | 'positions' | 'engine' | 'events' | 'scanner';

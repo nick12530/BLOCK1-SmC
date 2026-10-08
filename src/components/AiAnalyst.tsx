@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { TerminalSnapshot } from '../types/smc';
-import { Sparkles, RefreshCw, CheckCircle2, AlertCircle } from 'lucide-react';
+import { Sparkles, RefreshCw } from 'lucide-react';
 import { GoogleGenAI } from '@google/genai';
 
 interface AiAnalystProps {
@@ -12,6 +12,10 @@ export const AiAnalyst: React.FC<AiAnalystProps> = ({ snapshot }) => {
   const [isLoading, setIsLoading] = useState(false);
 
   const generateAnalysis = async () => {
+    if (!snapshot.brokerMarketData) {
+      setAnalysis('Analysis unavailable: connect MT5 and wait for verified broker candles before requesting a market brief.');
+      return;
+    }
     setIsLoading(true);
 
     const promptContext = `You are a Tier-1 institutional FX & Commodities market analyst specializing in Smart Money Concepts (SMC) and order flow for Gold (XAUUSD).
@@ -41,37 +45,18 @@ Be professional, analytical, and direct. Avoid conversational filler.`;
         runtimeEnv?.GEMINI_API_KEY ||
         undefined;
 
-      if (apiKey && apiKey !== 'MY_GEMINI_API_KEY') {
-        const ai = new GoogleGenAI({ apiKey });
-        const response = await ai.models.generateContent({
-          model: 'gemini-2.5-flash',
-          contents: promptContext,
-        });
-        setAnalysis(response.text || 'Unable to generate analysis.');
-      } else {
-        // High-fidelity algorithmic heuristic breakdown fallback
-        const isBull = snapshot.bias === 'bullish';
-        const inDiscount = snapshot.price_pos !== null && snapshot.price_pos < 0.5;
-        const topZone = snapshot.zones[0];
-
-        const simulatedAnalysis = `### 1. Institutional Order Flow & Liquidity
-• Market structure on H1 remains structurally **${snapshot.bias.toUpperCase()}** following ${snapshot.bos ? `the confirmed ${snapshot.bos.kind} at ${snapshot.bos.price.toFixed(2)}` : 'recent swing cycle'}.
-• Buy-side liquidity rests above ${snapshot.dealing_range?.high || 2715.00}, while sell-side liquidity pools below ${snapshot.dealing_range?.low || 2670.00}.
-• Active Session: **${snapshot.session.activeSessionName}** — ${snapshot.session.tradable ? 'institutional participation elevated, volume supportive of impulsive continuation' : 'off-peak volume, potential for compression'}.
-
-### 2. Dealing Range & Zone POI Context
-• Current price (${snapshot.bid.toFixed(2)}) is trading in **${inDiscount ? 'DISCOUNT' : 'PREMIUM'}** relative to the equilibrium of ${snapshot.dealing_range?.equilibrium || 2690.00}.
-• ${topZone ? `Key active POI is the unmitigated ${topZone.kind} ${topZone.bullish ? 'Demand' : 'Supply'} zone at ${topZone.bottom.toFixed(2)}–${topZone.top.toFixed(2)} (${topZone.tests} prior tests).` : 'No major unmitigated order blocks within immediate 1.0x ATR range.'}
-
-### 3. Tactical Execution Plan
-• **${snapshot.signal ? `CONFIRMED ${snapshot.signal.direction} SETUP (Confluence: ${snapshot.signal.score}/5.0)` : 'HOLD / PATIENT CONFLUENCE WATCH'}**: ${snapshot.signal ? `Entry at ${snapshot.signal.entry.toFixed(2)} targeting TP ${snapshot.signal.tp.toFixed(2)} with hard SL at ${snapshot.signal.sl.toFixed(2)}.` : `Wait for price to tap ${isBull ? 'Discount Demand OB/FVG' : 'Premium Supply'} before committing risk.`}
-• Daily drawdown risk is nominal; maintain 1:2 R:R parameter discipline.`;
-
-        setAnalysis(simulatedAnalysis);
+      if (!apiKey || apiKey === 'MY_GEMINI_API_KEY') {
+        setAnalysis('Analysis unavailable: configure VITE_GEMINI_API_KEY to generate a brief from the verified MT5 snapshot.');
+        return;
       }
-    } catch (err: any) {
-      // Graceful fallback
-      setAnalysis(`Market Structure Analysis:\n• H1 Bias: ${snapshot.bias.toUpperCase()}\n• Range Location: ${snapshot.price_pos !== null && snapshot.price_pos < 0.5 ? 'Discount Zone (< Equilibrium)' : 'Premium Zone (> Equilibrium)'}\n• Session Status: ${snapshot.session.activeSessionName}`);
+      const ai = new GoogleGenAI({ apiKey });
+      const response = await ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: promptContext,
+      });
+      setAnalysis(response.text || 'The analysis service returned no content.');
+    } catch (error) {
+      setAnalysis(`Analysis failed: ${error instanceof Error ? error.message : 'Unknown analysis service error.'}`);
     } finally {
       setIsLoading(false);
     }

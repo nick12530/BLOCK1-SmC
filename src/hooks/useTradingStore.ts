@@ -46,12 +46,6 @@ export function useEvents(): EventsState {
   return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 }
 
-export function useScenario(): string {
-  const subscribe = useCallback((cb: () => void) => tradingEngine.on('scenario', cb), []);
-  const getSnapshot = useCallback(() => tradingEngine.getScenarioSnapshot(), []);
-  return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
-}
-
 export function useClosedTrades(): ClosedTrade[] {
   const subscribe = useCallback((cb: () => void) => tradingEngine.on('positions', cb), []);
   const getSnapshot = useCallback(() => tradingEngine.getClosedTradesSnapshot(), []);
@@ -75,4 +69,3 @@ export function useActiveSymbol(): SupportedSymbol {
   const getSnapshot = useCallback(() => tradingEngine.activeSymbol, []);
   return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 }
-

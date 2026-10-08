@@ -7,9 +7,8 @@
  */
 
 import React from 'react';
-import { useEngine, useTicker } from '../hooks/useTradingStore';
-import { tradingEngine } from '../engine/tradingEngine';
-import { Clock, Play, Pause } from 'lucide-react';
+import { useEngine } from '../hooks/useTradingStore';
+import { Clock } from 'lucide-react';
 
 interface WeekendMarketBannerProps {
   onOpenMt5Modal?: () => void;
@@ -17,13 +16,9 @@ interface WeekendMarketBannerProps {
 
 export const WeekendMarketBanner: React.FC<WeekendMarketBannerProps> = React.memo(() => {
   const engine = useEngine();
-  const ticker = useTicker();
-
   const schedule = engine.marketSchedule;
-  const isWeekendSim = engine.simulateWeekendMode;
 
-  // Only render if market is closed or simulation is enabled
-  if (!schedule || (schedule.isOpen && !isWeekendSim)) {
+  if (!schedule || schedule.isOpen) {
     return null;
   }
 
@@ -35,23 +30,8 @@ export const WeekendMarketBanner: React.FC<WeekendMarketBannerProps> = React.mem
           <span>Weekend Pause</span>
         </span>
         <span className="text-slate-700 dark:text-zinc-300">
-          Holding @ ${ticker.bid.toFixed(2)} · Re-opens {schedule.timeUntilOpenFormatted} (Sun 22:00 UTC)
+          MT5 quotes may be stale while the market is closed · Re-opens {schedule.timeUntilOpenFormatted} (Sun 22:00 UTC)
         </span>
-      </div>
-
-      <div className="flex items-center gap-2 shrink-0">
-        <button
-          onClick={() => tradingEngine.toggleSimulateWeekend()}
-          className={`flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold border transition-colors cursor-pointer ${
-            isWeekendSim
-              ? 'bg-zinc-900 text-white dark:bg-white dark:text-black border-zinc-700'
-              : 'bg-white dark:bg-zinc-800 text-slate-600 dark:text-zinc-300 border-slate-200 dark:border-zinc-700 hover:text-slate-950 dark:hover:text-white'
-          }`}
-          title={isWeekendSim ? 'Disable weekend simulation' : 'Test order execution during weekend'}
-        >
-          {isWeekendSim ? <Pause className="w-2.5 h-2.5" /> : <Play className="w-2.5 h-2.5" />}
-          <span>{isWeekendSim ? 'Sim Active' : 'Sim Mode'}</span>
-        </button>
       </div>
     </div>
   );

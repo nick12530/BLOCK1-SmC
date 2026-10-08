@@ -5,12 +5,13 @@
  */
 
 import React from 'react';
-import { useEngine, useTicker } from '../hooks/useTradingStore';
+import { useEngine, useMarket, useTicker } from '../hooks/useTradingStore';
 import { ShieldCheck } from 'lucide-react';
 
 export const FooterView: React.FC = React.memo(() => {
   const engine = useEngine();
   const ticker = useTicker();
+  const market = useMarket();
   const mt5 = engine.mt5Account;
 
   return (
@@ -30,7 +31,9 @@ export const FooterView: React.FC = React.memo(() => {
           <span className="text-slate-300 dark:text-slate-700 hidden sm:inline">·</span>
 
           <span className="hidden sm:inline">
-            Spread: <strong className="text-slate-800 dark:text-slate-200 tabular-nums">{ticker.spread} pts</strong>
+            Spread: <strong className="text-slate-800 dark:text-slate-200 tabular-nums">
+              {market.brokerMarketData ? `${ticker.spread} pts` : 'Unavailable'}
+            </strong>
           </span>
         </div>
 
@@ -38,8 +41,10 @@ export const FooterView: React.FC = React.memo(() => {
         <div className="flex items-center gap-2 text-[11px] text-slate-400 dark:text-slate-500">
           <ShieldCheck className={`w-3.5 h-3.5 ${mt5?.connected ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400'}`} />
           <span>
-            {mt5?.connected
-              ? `MT5 account ${mt5.login} connected · Broker orders enabled`
+            {mt5?.connected && market.brokerMarketData
+              ? `MT5 account ${mt5.login} connected · Broker data verified`
+              : mt5?.connected
+                ? 'MT5 connected · Waiting for verified broker candles · Orders blocked'
               : 'MT5 not linked · Orders are not routed to a broker'}
           </span>
         </div>

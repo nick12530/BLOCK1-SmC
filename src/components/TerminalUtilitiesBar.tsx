@@ -2,7 +2,7 @@
  * TerminalUtilitiesBar.tsx - Streamlined Executive Utilities Bar
  * De-cluttered: single-row horizontal strip with distinct active states:
  * - Left: Core safeguards (Auto Trade, Kill Switch, Audio Chime)
- * - Right: Terminal analysis tools (Scenarios, Risk Rules, MT5 Center)
+ * - Right: Risk Rules and MT5 Center
  * - Eliminates redundant sub-rows and oversized cards
  */
 
@@ -17,14 +17,13 @@ import {
   Zap,
   Volume2,
   VolumeX,
-  PlaySquare,
   AlertOctagon,
   Smartphone,
 } from 'lucide-react';
 
 interface TerminalUtilitiesBarProps {
   onOpenModal: (
-    modal: 'bridge' | 'settings' | 'scenarios' | 'daily_report' | 'tradingview' | 'help' | 'phone_pwa'
+    modal: 'bridge' | 'settings' | 'daily_report' | 'tradingview' | 'help' | 'phone_pwa'
   ) => void;
   onToggleKillSwitchPrompt: () => void;
 }
@@ -108,14 +107,6 @@ export const TerminalUtilitiesBar: React.FC<TerminalUtilitiesBarProps> = React.m
 
       {/* Right: Clean Analysis & System Links */}
       <div className="grid w-full grid-cols-2 gap-2 lg:flex lg:w-auto lg:justify-end">
-        <button
-          onClick={() => onOpenModal('scenarios')}
-          className="min-h-11 min-w-0 whitespace-nowrap py-2 px-2.5 rounded-lg border bg-slate-50 hover:bg-slate-100 dark:bg-zinc-900 dark:hover:bg-zinc-800 border-slate-200 dark:border-zinc-800 text-slate-700 dark:text-zinc-300 transition-colors cursor-pointer flex items-center justify-center gap-1.5 text-xs font-bold"
-        >
-          <PlaySquare className="w-4 h-4 text-sky-600 dark:text-sky-400" />
-          <span>Scenarios</span>
-        </button>
-
         <button
           onClick={() => onOpenModal('settings')}
           className="min-h-11 min-w-0 whitespace-nowrap py-2 px-2.5 rounded-lg border bg-slate-50 hover:bg-slate-100 dark:bg-zinc-900 dark:hover:bg-zinc-800 border-slate-200 dark:border-zinc-800 text-slate-700 dark:text-zinc-300 transition-colors cursor-pointer flex items-center justify-center gap-1.5 text-xs font-bold"

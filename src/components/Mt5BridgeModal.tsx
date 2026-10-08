@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { AlertCircle, CheckCircle2, Copy, Server, X } from 'lucide-react';
-import { mt5Bridge } from '../engine/mt5Bridge';
+import { getDefaultServerUrl, mt5Bridge } from '../engine/mt5Bridge';
 import { tradingEngine } from '../engine/tradingEngine';
 import { useMarket } from '../hooks/useTradingStore';
 import type { InstrumentType } from '../types/smc';
@@ -50,7 +50,7 @@ export const Mt5BridgeModal: React.FC<Mt5BridgeModalProps> = ({ isOpen, onClose 
     setMessage('');
     try {
       const snapshot = await mt5Bridge.connectAccount({
-        baseUrl: `${window.location.origin}/mt5-bridge`,
+        baseUrl: getDefaultServerUrl(),
         symbol: symbol.trim(),
         instrumentType,
       });
@@ -129,7 +129,7 @@ export const Mt5BridgeModal: React.FC<Mt5BridgeModalProps> = ({ isOpen, onClose 
               <p className="mt-1 text-xs opacity-80">
                 {isConnected
                   ? `${String(accountMode).toUpperCase()} account ${tradingEngine.mt5Account.login} on ${tradingEngine.mt5Account.server}. Positions and quotes sync through this shared MT5 bridge.`
-                  : 'MT5 Desktop must be open and logged into the account you want to use.'}
+                  : mt5Bridge.getStatus().lastError || 'MT5 Desktop must be open and logged into the account you want to use.'}
               </p>
             </div>
           </div>

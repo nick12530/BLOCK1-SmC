@@ -36,7 +36,6 @@ import {
   sessionFilter,
   evaluateConfluence,
 } from './smcCore';
-import { generateSeedMarketData, fetchLiveGoldCandles, DEFAULT_ECONOMIC_EVENTS } from './dataFeed';
 import { analyzeGoldCandlestickPatterns } from './candlestickPatterns';
 import { getGoldMarketSchedule, MarketScheduleStatus } from './marketHours';
 import { evaluateTechnicalStrategies } from './technicalStrategies';
@@ -62,7 +61,6 @@ import {
   checkCorrelationExposure,
   calculateSmallAccountPositionSize,
 } from './multiPairScanner';
-import { generatePairCandles } from './dataFeed';
 import { signalAudioNotifier } from '../utils/audioNotification';
 
 const MAGIC = 20261001;
@@ -79,10 +77,10 @@ export class TradingEngine {
   closedTrades: ClosedTrade[] = [];
   logs: EngineLog[] = [];
 
-  bid: number = 4188.5;
-  ask: number = 4188.68;
-  spread: number = 18; // 18 points = 1.8 pips
-  lastPrice: number = 4188.5;
+  bid: number = 0;
+  ask: number = 0;
+  spread: number = 0;
+  lastPrice: number = 0;
 
   activeSymbol: SupportedSymbol = 'XAUUSD';
   activeBrokerSymbol = 'XAUUSD';
@@ -100,10 +98,10 @@ export class TradingEngine {
       spread: number;
     }
   > = {
-    XAUUSD: { candlesM1: [], candlesM5: [], candlesM15: [], candlesH1: [], bid: 4188.50, ask: 4188.68, spread: 18 },
-    EURUSD: { candlesM1: [], candlesM5: [], candlesM15: [], candlesH1: [], bid: 1.08750, ask: 1.08758, spread: 8 },
-    USDJPY: { candlesM1: [], candlesM5: [], candlesM15: [], candlesH1: [], bid: 153.850, ask: 153.862, spread: 12 },
-    GBPUSD: { candlesM1: [], candlesM5: [], candlesM15: [], candlesH1: [], bid: 1.29650, ask: 1.29662, spread: 12 },
+    XAUUSD: { candlesM1: [], candlesM5: [], candlesM15: [], candlesH1: [], bid: 0, ask: 0, spread: 0 },
+    EURUSD: { candlesM1: [], candlesM5: [], candlesM15: [], candlesH1: [], bid: 0, ask: 0, spread: 0 },
+    USDJPY: { candlesM1: [], candlesM5: [], candlesM15: [], candlesH1: [], bid: 0, ask: 0, spread: 0 },
+    GBPUSD: { candlesM1: [], candlesM5: [], candlesM15: [], candlesH1: [], bid: 0, ask: 0, spread: 0 },
   };
 
   killSwitch: boolean = false;
@@ -112,7 +110,6 @@ export class TradingEngine {
   newsBlackout: boolean = false;
   bypassNewsBlackout: boolean = false;
   connected: boolean = true;
-  simulateWeekendMode: boolean = false;
   allowHighConfluenceOverride: boolean = true;
   autoSelectBestScenario: boolean = true;
   instrumentType: InstrumentType = 'standard';
@@ -120,6 +117,7 @@ export class TradingEngine {
   private hasReceivedBrokerSnapshot = false;
   private hasReceivedClosedTradeSnapshot = false;
   private autoTradeOfflineLogged = false;
+  private mt5ReconnectRequiresManualEnable = false;
   private symbolSpec: SymbolTradingSpec | null = null;
    private brokerAccountMode: 'demo' | 'live' | 'contest' | 'unknown' | null = null;
    private hasBrokerDayAnchor = false;
@@ -161,10 +159,7 @@ export class TradingEngine {
   };
 
   selectedTicket: number | null = null;
-  currentScenario: string = 'london_bullish_fvg';
   ticketCounter: number = 8820410;
-  tickCount: number = 0;
-  private hasInitializedInitialPosition: boolean = false;
   private tradeRationales: TradeRationales = {};
   private tradeOrderBlocks: TradeOrderBlocks = {};
 
@@ -177,11 +172,9 @@ export class TradingEngine {
     ['positions', new Set()],
     ['engine', new Set()],
     ['events', new Set()],
-    ['scenario', new Set()],
     ['scanner', new Set()],
   ]);
 
-  private tickIntervalId: ReturnType<typeof setInterval> | null = null;
   private autoTraderIntervalId: ReturnType<typeof setInterval> | null = null;
 
   // Cached referentially-stable snapshots (Priority 1)
@@ -197,11 +190,8 @@ export class TradingEngine {
     this.closedTrades = readStoredClosedTrades();
     this.tradeRationales = readTradeRationales();
     this.tradeOrderBlocks = readTradeOrderBlocks();
-    this.initPairData();
-    this.resetWithScenario('london_bullish_fvg');
     this.refreshScanner();
     this.startEngineLoops();
-    this.syncLiveMarketData();
   }
 
   syncMt5Snapshot(snapshot: {
@@ -247,10 +237,21 @@ export class TradingEngine {
       this.pendingCentralKillSwitch = null;
     }
     this.killSwitch = this.pendingCentralKillSwitch ?? snapshot.tradingHalted;
-    if (this.pendingCentralAutoTrade === snapshot.autoTrade) {
-      this.pendingCentralAutoTrade = null;
+    if (this.mt5ReconnectRequiresManualEnable) {
+      this.autoTrade = false;
+      if (snapshot.autoTrade) {
+        void mt5Bridge.setAutoTrade(false).catch((error: unknown) => {
+          this.slog(`Could not keep auto-trading disabled after MT5 reconnect: ${error instanceof Error ? error.message : 'Unknown bridge error'}`, 'error');
+        });
+      } else {
+        this.mt5ReconnectRequiresManualEnable = false;
+      }
+    } else {
+      if (this.pendingCentralAutoTrade === snapshot.autoTrade) {
+        this.pendingCentralAutoTrade = null;
+      }
+      this.autoTrade = this.pendingCentralAutoTrade ?? snapshot.autoTrade;
     }
-    this.autoTrade = this.pendingCentralAutoTrade ?? snapshot.autoTrade;
     if (this.killSwitch) this.autoTrade = false;
     this.mt5Account = {
       connected: true,
@@ -352,6 +353,51 @@ export class TradingEngine {
     this.emit('engine');
   }
 
+  setMt5BridgeConnectionStatus(connected: boolean, error?: string) {
+    if (connected) return;
+    const wasConnected = this.mt5Account.connected || this.hasBrokerMarketData;
+    if (wasConnected || this.autoTrade) this.mt5ReconnectRequiresManualEnable = true;
+    this.mt5Account = { ...this.mt5Account, connected: false };
+    this.brokerAccountMode = null;
+    this.hasBrokerMarketData = false;
+    this.symbolSpec = null;
+    this.autoTrade = false;
+    this.bid = 0;
+    this.ask = 0;
+    this.spread = 0;
+    this.lastPrice = 0;
+    this.candlesM1 = [];
+    this.candlesM5 = [];
+    this.candlesM15 = [];
+    this.candlesH1 = [];
+    for (const symbol of SUPPORTED_SYMBOLS) {
+      this.pairData[symbol] = {
+        candlesM1: [],
+        candlesM5: [],
+        candlesM15: [],
+        candlesH1: [],
+        bid: 0,
+        ask: 0,
+        spread: 0,
+      };
+    }
+    this.invalidateTicker();
+    this.invalidateMarket();
+    this.invalidateEngine();
+    this.refreshScanner();
+    this.emit('ticker');
+    this.emit('market');
+    this.emit('engine');
+    if (wasConnected) {
+      this.slog(
+        error
+          ? `MT5 bridge lost; quotes cleared and trading disabled: ${error}`
+          : 'MT5 bridge disconnected; quotes cleared and trading disabled.',
+        'error'
+      );
+    }
+  }
+
   private hasFreshBrokerCandles(candles: Candle[], intervalMs: number): boolean {
     const latest = candles[candles.length - 1];
     if (!latest) return false;
@@ -428,56 +474,6 @@ export class TradingEngine {
     this.emit('positions');
   }
 
-  async syncLiveMarketData() {
-    try {
-      const live = await fetchLiveGoldCandles();
-      if (live && live.candlesM15.length > 0) {
-        this.candlesM15 = live.candlesM15;
-        this.candlesH1 = live.candlesH1;
-        this.lastPrice = live.currentPrice;
-        this.bid = live.currentPrice;
-        this.ask = Number((this.bid + this.spread * 0.01).toFixed(2));
-        this.slog(`Live XAUUSD interbank data synced @ $${this.bid.toFixed(2)}`, 'info');
-        this.invalidateMarket();
-        this.invalidateTicker();
-        this.emit('ticker');
-        this.emit('market');
-      }
-    } catch {
-      // Graceful fallback to established session data
-    }
-  }
-
-  resetWithScenario(scenarioId: string) {
-    this.currentScenario = scenarioId;
-    const data = generateSeedMarketData(scenarioId);
-    this.candlesM15 = data.candlesM15;
-    this.candlesH1 = data.candlesH1;
-
-    const last = this.candlesM15[this.candlesM15.length - 1];
-    this.lastPrice = last.close;
-    this.bid = Number(last.close.toFixed(2));
-    this.ask = Number((last.close + 0.18).toFixed(2));
-    this.spread = 18;
-
-    // Production deployment: Start with zero mock positions (real live positions only)
-    if (!this.hasInitializedInitialPosition) {
-      this.hasInitializedInitialPosition = true;
-      this.positions = [];
-      this.slog(`Institutional engine online · Market regime: ${scenarioId}`, 'info');
-      this.slog('MT5 bridge ready for live execution', 'info');
-    } else {
-      this.slog(`Market regime transitioned to: ${scenarioId}`, 'info');
-    }
-
-    // Invalidate caches & notify
-    this.invalidateMarket();
-    this.invalidatePositions();
-    this.invalidateEngine();
-    this.invalidateTicker();
-    this.emit('scenario');
-  }
-
   slog(msg: string, type: 'info' | 'trade' | 'warn' | 'error' | 'signal' = 'info') {
     const t = new Date().toISOString().substr(11, 8); // Explicit UTC string
     const logItem: EngineLog = {
@@ -535,11 +531,14 @@ export class TradingEngine {
       const point = this.symbolSpec?.point ?? config.pointSize;
       const priceDigits = Math.max(0, Math.min(10, (String(point).split('.')[1] || '').length));
       const allCloses = this.candlesM15.map((c) => c.close);
-      const high24h = this.candlesM15.length ? Math.max(...this.candlesM15.map((c) => c.high)) : this.bid;
-      const low24h = this.candlesM15.length ? Math.min(...this.candlesM15.map((c) => c.low)) : this.bid;
-      const open24h = this.candlesM15[0]?.open || this.bid;
-      const change24h = Number((this.bid - open24h).toFixed(priceDigits));
-      const change24hPct = Number(((change24h / open24h) * 100).toFixed(2));
+      const hasQuote = this.hasBrokerMarketData;
+      const high24h = this.candlesM15.length ? Math.max(...this.candlesM15.map((c) => c.high)) : 0;
+      const low24h = this.candlesM15.length ? Math.min(...this.candlesM15.map((c) => c.low)) : 0;
+      const open24h = this.candlesM15[0]?.open ?? 0;
+      const change24h = hasQuote ? Number((this.bid - open24h).toFixed(priceDigits)) : 0;
+      const change24hPct = hasQuote && open24h !== 0
+        ? Number(((change24h / open24h) * 100).toFixed(2))
+        : 0;
       const globalSessions = getGlobalSessionStatus(new Date());
 
       this._cachedTicker = {
@@ -557,7 +556,7 @@ export class TradingEngine {
         low24h: Number(low24h.toFixed(priceDigits)),
         change24h,
         change24hPct,
-        volume24h: config.category === 'metals' ? '184.2K oz' : '2.4M Lots',
+        volume24h: '',
       };
     }
     return this._cachedTicker;
@@ -656,9 +655,9 @@ export class TradingEngine {
         },
         {
           tf: 'H4' as const,
-          bias: (this.currentScenario === 'ny_bearish_choch' ? 'bearish' : 'bullish') as 'bullish' | 'bearish' | 'ranging',
-          lastEvent: 'BOS' as const,
-          status: 'Macro Flow Aligned',
+          bias: ms.trend,
+          lastEvent: (lastBOS ? 'BOS' : 'SWING') as 'BOS' | 'CHoCH' | 'SWING',
+          status: dr ? 'Tracking broker candles' : 'Waiting for broker candles',
         },
       ];
 
@@ -829,7 +828,6 @@ export class TradingEngine {
         compoundingStage: this.getCompoundingStage(this.account.balance),
         marketSchedule: getGoldMarketSchedule(),
         mt5Account: this.mt5Account,
-        simulateWeekendMode: this.simulateWeekendMode,
         allowHighConfluenceOverride: this.allowHighConfluenceOverride,
         autoSelectBestScenario: this.autoSelectBestScenario,
       };
@@ -867,38 +865,10 @@ export class TradingEngine {
   }
 
   unlinkMt5Account() {
-    this.mt5Account.connected = false;
+    this.setMt5BridgeConnectionStatus(false);
     this.slog('MetaTrader 5 Disconnected. Switched to standalone terminal mode.', 'info');
     this.invalidateEngine();
     this.emit('engine');
-  }
-
-  toggleSimulateWeekend(): boolean {
-    this.simulateWeekendMode = !this.simulateWeekendMode;
-    this.slog(
-      `Weekend Simulation: ${this.simulateWeekendMode ? 'ENABLED (Testing Mode)' : 'DISABLED (Real Market Hours Enforced)'}`,
-      'info'
-    );
-    this.invalidateEngine();
-    this.emit('engine');
-    return this.simulateWeekendMode;
-  }
-
-  initPairData() {
-    for (const sym of SUPPORTED_SYMBOLS) {
-      if (!this.pairData[sym].candlesM1.length) {
-        const generated = generatePairCandles(sym, 80);
-        this.pairData[sym] = {
-          candlesM1: generated.candlesM1,
-          candlesM5: generated.candlesM5,
-          candlesM15: generated.candlesM15,
-          candlesH1: generated.candlesH1,
-          bid: generated.currentBid,
-          ask: generated.currentAsk,
-          spread: generated.spreadPoints,
-        };
-      }
-    }
   }
 
   getScannerAnalyses(): PairAnalysis[] {
@@ -939,17 +909,16 @@ export class TradingEngine {
   }
 
   refreshScanner() {
-    this.initPairData();
     const analyses: PairAnalysis[] = [];
     const events = this.getEventsSnapshot().economicEvents;
 
     for (const sym of SUPPORTED_SYMBOLS) {
       const data = this.pairData[sym];
       const isCurrent = this.activeSymbol === sym;
-      const cM1 = isCurrent && this.candlesM1.length ? this.candlesM1 : data.candlesM1;
-      const cM5 = isCurrent && this.candlesM5.length ? this.candlesM5 : data.candlesM5;
-      const cM15 = isCurrent && this.candlesM15.length ? this.candlesM15 : data.candlesM15;
-      const cH1 = isCurrent && this.candlesH1.length ? this.candlesH1 : data.candlesH1;
+      const cM1 = isCurrent ? this.candlesM1 : data.candlesM1;
+      const cM5 = isCurrent ? this.candlesM5 : data.candlesM5;
+      const cM15 = isCurrent ? this.candlesM15 : data.candlesM15;
+      const cH1 = isCurrent ? this.candlesH1 : data.candlesH1;
       const curBid = isCurrent ? this.bid : data.bid;
       const curAsk = isCurrent ? this.ask : data.ask;
       const curSpread = isCurrent ? this.spread : data.spread;
@@ -969,8 +938,10 @@ export class TradingEngine {
         events
       );
       const brokerDataUnavailable =
-        this.mt5Account.connected &&
-        (!isCurrent || !this.hasBrokerMarketData || this.activeBrokerSymbol.toUpperCase() !== sym);
+        !this.mt5Account.connected ||
+        !isCurrent ||
+        !this.hasBrokerMarketData ||
+        this.activeBrokerSymbol.toUpperCase() !== sym;
       const analysis = brokerDataUnavailable
         ? {
             ...calculatedAnalysis,
@@ -978,7 +949,7 @@ export class TradingEngine {
             bias: 'WAITING' as const,
             confluenceScore: 0,
             status: 'BLOCKED' as const,
-            rejectionReason: `No verified MT5 candle data for ${sym}. Select this symbol and wait for its broker quote to sync before trading.`,
+            rejectionReason: `No verified MT5 candle data for ${sym}. Connect the MT5 bridge, select this exact broker symbol, and wait for fresh quotes and candles.`,
             safeLotSize: null,
             estimatedRiskUsd: null,
             scoreBreakdown: {
@@ -1020,8 +991,8 @@ export class TradingEngine {
       (!this.mt5Account.connected || this.activeBrokerSymbol.toUpperCase() === newSymbol)
     ) return;
 
-    // Cache current state back to pairData
-    if (!this.mt5Account.connected || this.activeBrokerSymbol.toUpperCase() === this.activeSymbol) {
+    // Cache only verified broker data; never retain disconnected quotes as current market data.
+    if (this.hasBrokerMarketData && this.activeBrokerSymbol.toUpperCase() === this.activeSymbol) {
       this.pairData[this.activeSymbol] = {
         candlesM1: this.candlesM1,
         candlesM5: this.candlesM5,
@@ -1039,17 +1010,25 @@ export class TradingEngine {
       this.hasBrokerMarketData = false;
       this.symbolSpec = null;
     }
-    const targetData = this.pairData[newSymbol];
     const config = getInstrumentConfig(newSymbol);
 
-    this.candlesM1 = targetData.candlesM1;
-    this.candlesM5 = targetData.candlesM5;
-    this.candlesM15 = targetData.candlesM15;
-    this.candlesH1 = targetData.candlesH1;
-    this.bid = targetData.bid;
-    this.ask = targetData.ask;
-    this.spread = targetData.spread;
-    this.lastPrice = this.bid;
+    this.candlesM1 = [];
+    this.candlesM5 = [];
+    this.candlesM15 = [];
+    this.candlesH1 = [];
+    this.bid = 0;
+    this.ask = 0;
+    this.spread = 0;
+    this.lastPrice = 0;
+    this.pairData[newSymbol] = {
+      candlesM1: [],
+      candlesM5: [],
+      candlesM15: [],
+      candlesH1: [],
+      bid: 0,
+      ask: 0,
+      spread: 0,
+    };
 
     mt5Bridge.setSymbol(newSymbol);
 
@@ -1068,14 +1047,10 @@ export class TradingEngine {
     if (!this._cachedEvents) {
       this._cachedEvents = {
         log: this.logs,
-        economicEvents: DEFAULT_ECONOMIC_EVENTS,
+        economicEvents: [],
       };
     }
     return this._cachedEvents;
-  }
-
-  getScenarioSnapshot(): string {
-    return this.currentScenario;
   }
 
   getRiskBasedVolume(
@@ -1232,6 +1207,9 @@ export class TradingEngine {
     if (this.instrumentType === 'standard' && !this.bypassNewsBlackout && isWithinConfiguredNewsBlackout(new Date(now))) {
       return 'Configured high-impact news blackout window is active.';
     }
+    if (!this.mt5Account.connected || !this.hasBrokerMarketData) {
+      return 'A connected MT5 account and fresh verified broker candles/quotes are required. No order was sent.';
+    }
     return null;
   }
 
@@ -1343,13 +1321,7 @@ export class TradingEngine {
   // ==========================================
 
   startEngineLoops() {
-    if (this.tickIntervalId) clearInterval(this.tickIntervalId);
     if (this.autoTraderIntervalId) clearInterval(this.autoTraderIntervalId);
-
-    // Fast Ticker Loop (~1.5s)
-    this.tickIntervalId = setInterval(() => {
-      this.simulatePriceTick();
-    }, 1500);
 
     // Auto-trader cycle (~5s)
     this.autoTraderIntervalId = setInterval(() => {
@@ -1358,209 +1330,8 @@ export class TradingEngine {
   }
 
   stopEngineLoops() {
-    if (this.tickIntervalId) clearInterval(this.tickIntervalId);
     if (this.autoTraderIntervalId) clearInterval(this.autoTraderIntervalId);
-    this.tickIntervalId = null;
     this.autoTraderIntervalId = null;
-  }
-
-  simulatePriceTick(force: boolean = false) {
-    if (this.mt5Account.connected) return;
-
-    // Real market hours check: Gold interbank trading is closed on weekends!
-    const isTest =
-      typeof (globalThis as any).vi !== 'undefined' ||
-      typeof (globalThis as any).__vitest_worker__ !== 'undefined' ||
-      (typeof process !== 'undefined' && (process.env?.NODE_ENV === 'test' || !!process.env?.VITEST));
-    const schedule = getGoldMarketSchedule();
-    if (!force && !isTest && !schedule.isOpen && !this.simulateWeekendMode) {
-      return;
-    }
-
-    // Institutional price progression:
-    // When positions are open or strong signals exist, simulate realistic order flow momentum (80% follow-through)
-    let momentum = 0;
-    if (this.positions.length > 0) {
-      // Calculate net position bias
-      const netDirection = this.positions.reduce((acc, p) => acc + (p.type === 'BUY' ? 1 : -1), 0);
-      momentum = netDirection > 0 ? 0.08 : netDirection < 0 ? -0.08 : 0;
-    } else {
-      const market = this.getMarketSnapshot();
-      if (market.signal && market.signal.score >= 4.0) {
-        momentum = market.signal.direction === 'BUY' ? 0.05 : -0.05;
-      }
-    }
-
-    const config = getInstrumentConfig(this.activeSymbol);
-    const noise = (Math.random() - 0.48) * config.pointSize * 4;
-    const drift = momentum * config.pointSize * 10 + noise;
-    this.bid = Number(Math.max(config.pointSize * 100, this.bid + drift).toFixed(config.digits));
-    this.spread = Math.floor(config.minSpread + Math.random() * 3);
-    this.ask = Number((this.bid + this.spread * config.pointSize).toFixed(config.digits));
-
-    // Progress latest M15 candle with real price updates
-    if (this.candlesM15.length > 0) {
-      const lastC = this.candlesM15[this.candlesM15.length - 1];
-      lastC.close = this.bid;
-      if (this.bid > lastC.high) lastC.high = this.bid;
-      if (this.bid < lastC.low) lastC.low = this.bid;
-    }
-
-    // Advance background micro ticks for inactive pairs in pairData
-    for (const sym of SUPPORTED_SYMBOLS) {
-      if (sym === this.activeSymbol) continue;
-      const p = this.pairData[sym];
-      const cfg = getInstrumentConfig(sym);
-      const microNoise = (Math.random() - 0.49) * cfg.pointSize * 3;
-      p.bid = Number((p.bid + microNoise).toFixed(cfg.digits));
-      p.ask = Number((p.bid + p.spread * cfg.pointSize).toFixed(cfg.digits));
-      if (p.candlesM1.length > 0) {
-        const lastBar = p.candlesM1[p.candlesM1.length - 1];
-        lastBar.close = p.bid;
-        if (p.bid > lastBar.high) lastBar.high = p.bid;
-        if (p.bid < lastBar.low) lastBar.low = p.bid;
-      }
-    }
-
-    // Update positions PnL safely
-    let floatingPnl = 0;
-    const toClose: { ticket: number; reason: 'TP' | 'SL' }[] = [];
-
-    if (this.positions.length > 0) {
-      this.positions = this.positions.map((p) => {
-        const posSym = (p.symbol || this.activeSymbol) as SupportedSymbol;
-        const cfg = getInstrumentConfig(posSym);
-        const curPrice = p.type === 'BUY' ? this.bid : this.ask;
-        const pts = p.type === 'BUY' ? curPrice - p.price_open : p.price_open - curPrice;
-        const pips = Number((pts / cfg.pipSize).toFixed(1));
-        let profit = 0;
-        if (cfg.category === 'metals') {
-          profit = Number((pts * p.volume * cfg.contractSize).toFixed(2));
-        } else if (posSym === 'USDJPY') {
-          profit = Number(((pts * p.volume * cfg.contractSize) / Math.max(1, curPrice)).toFixed(2));
-        } else {
-          profit = Number((pts * p.volume * cfg.contractSize).toFixed(2));
-        }
-        floatingPnl += profit;
-
-        let currentSl = p.sl;
-        let beLocked = p.beLocked;
-        let trailLocked = p.trailLocked;
-
-        // Auto Break-Even (BE) Lock: when trade reaches 1:1 RR, move SL to entry
-        const beBuffer = cfg.pipSize * 3;
-        if (this.autoBeEnabled && !beLocked && pts >= cfg.pipSize * 15) {
-          beLocked = true;
-          currentSl = Number((p.type === 'BUY' ? p.price_open + beBuffer : p.price_open - beBuffer).toFixed(cfg.digits));
-          this.slog(`🛡️ ZERO-RISK BE LOCK: SL moved to $${currentSl.toFixed(cfg.digits)} (#${p.ticket}) · Trade cannot lose!`, 'trade');
-        }
-
-        // Tier-2 Profit Shield Lock: when trade reaches 75% of target, lock 50% profit
-        const targetPts = Math.abs(p.tp - p.price_open);
-        if (this.autoBeEnabled && !trailLocked && targetPts > 0 && pts >= targetPts * 0.75) {
-          trailLocked = true;
-          const lockedProfitPts = targetPts * 0.5;
-          currentSl = Number((p.type === 'BUY' ? p.price_open + lockedProfitPts : p.price_open - lockedProfitPts).toFixed(cfg.digits));
-          this.slog(`🎯 TIER-2 PROFIT SHIELD: Locked $${profit.toFixed(2)} profit floor (#${p.ticket})!`, 'trade');
-        }
-
-        // Check SL / TP
-        if (p.type === 'BUY') {
-          if (curPrice <= currentSl) toClose.push({ ticket: p.ticket, reason: 'SL' });
-          else if (curPrice >= p.tp) toClose.push({ ticket: p.ticket, reason: 'TP' });
-        } else {
-          if (curPrice >= currentSl) toClose.push({ ticket: p.ticket, reason: 'SL' });
-          else if (curPrice <= p.tp) toClose.push({ ticket: p.ticket, reason: 'TP' });
-        }
-
-        return { ...p, sl: currentSl, beLocked, trailLocked, profit, pips };
-      });
-
-      // Safely close positions outside the map loop
-      if (toClose.length > 0) {
-        for (const item of toClose) {
-          this.closePosition(item.ticket, item.reason);
-        }
-      }
-
-      // Automatic basket protection: compound profit target (+15%) or drawdown cap (-12%)
-      if (this.positions.length > 0) {
-        const targetBasketTp = Math.max(1.50, this.account.balance * 0.15);
-        const targetBasketSl = -Math.max(1.20, this.account.balance * 0.12);
-        const currentNetPnl = this.positions.reduce((sum, p) => sum + p.profit, 0);
-
-        if (currentNetPnl >= targetBasketTp) {
-          this.slog(`🎯 Desired Profit Target Hit (+${currentNetPnl.toFixed(2)} USD). Auto-closing all positions!`, 'trade');
-          this.closeAll('TP');
-        } else if (currentNetPnl <= targetBasketSl) {
-          this.slog(`🛡️ Account Drawdown Protection Hit (${currentNetPnl.toFixed(2)} USD). Auto-closing all positions!`, 'warn');
-          this.closeAll('SL');
-        }
-      }
-    }
-
-    // Recalculate floating PnL after any closes
-    const currentFloatingPnl = this.positions.reduce((sum, p) => sum + p.profit, 0);
-    this.account.equity = Number((this.account.balance + currentFloatingPnl).toFixed(2));
-    this.refreshDailyRiskState();
-
-    // Invalidate ticker cache and emit
-    this.invalidateTicker();
-    this.invalidatePositions();
-    this.emit('ticker');
-    this.emit('positions');
-
-    // Periodically re-evaluate market dynamics on live tick progression
-    this.tickCount++;
-    if (this.tickCount % 2 === 0) {
-      this.refreshScanner();
-    }
-    if (this.tickCount % 6 === 0) {
-      this.invalidateMarket();
-      this.emit('market');
-    }
-  }
-
-  // Advances the market wave across realistic SMC regimes (Bullish Demand -> Bearish Supply Sweep -> Reversal)
-  cycleMarketWave() {
-    const waves = [
-      {
-        scenarioId: 'london_bullish_fvg',
-        bid: 4188.50,
-        msg: 'Bullish Demand Tap in Discount dealing range (<50% EQ). Buyer absorption confirmed.',
-      },
-      {
-        scenarioId: 'ny_bearish_choch',
-        bid: 4202.40,
-        msg: 'Bearish Liquidity Sweep of swing high into Premium Supply. Seller rejection confirmed.',
-      },
-      {
-        scenarioId: 'asia_range_sweep',
-        bid: 4182.20,
-        msg: 'Liquidity Grab below Asian session low into virgin unmitigated Demand OB.',
-      },
-    ];
-
-    const currentIdx = waves.findIndex((w) => w.scenarioId === this.currentScenario);
-    const nextIdx = (currentIdx + 1) % waves.length;
-    const wave = waves[nextIdx];
-
-    this.resetWithScenario(wave.scenarioId);
-    this.bid = wave.bid;
-    this.ask = Number((wave.bid + 0.18).toFixed(2));
-    this.spread = 18;
-
-    this.slog(`Market Wave: ${wave.msg}`, 'signal');
-
-    this.invalidateMarket();
-    this.invalidateTicker();
-    this.emit('market');
-    this.emit('ticker');
-
-    // If AUTO is ON, automatically evaluate and execute the newly discovered perfect entry
-    if (this.autoTrade && !this.killSwitch) {
-      setTimeout(() => this.evaluateAutoExecution(), 400);
-    }
   }
 
   async evaluateAutoExecution() {
@@ -1576,7 +1347,7 @@ export class TradingEngine {
 
     // Real market hours check: Gold interbank trading is closed on weekends!
     const schedule = getGoldMarketSchedule();
-    if (this.instrumentType === 'standard' && !schedule.isOpen && !this.simulateWeekendMode) {
+    if (this.instrumentType === 'standard' && !schedule.isOpen) {
       return;
     }
 
@@ -1872,6 +1643,10 @@ export class TradingEngine {
   }
 
   toggleAutoTrade(): boolean {
+    if (!this.mt5Account.connected || !this.hasBrokerMarketData) {
+      this.slog('Cannot enable auto-trade without a connected MT5 account and fresh verified broker market data.', 'error');
+      return false;
+    }
     if (this.killSwitch) {
       this.slog('Cannot enable auto-trade while Kill Switch is armed', 'error');
       return false;

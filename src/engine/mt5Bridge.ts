@@ -41,11 +41,12 @@ export interface BridgeStatus {
   connected: boolean;
   serverUrl: string;
   lastPing: number | null;
+  lastError: string | null;
   mode: 'standalone' | 'demo' | 'live' | 'contest' | 'unknown';
 }
 
 const DEFAULT_SERVER_URL = 'http://127.0.0.1:8000';
-const getDefaultServerUrl = () =>
+export const getDefaultServerUrl = () =>
   typeof window === 'undefined' ? DEFAULT_SERVER_URL : `${window.location.origin}/mt5-bridge`;
 
 export class MT5BridgeConnector {
@@ -61,7 +62,9 @@ export class MT5BridgeConnector {
   private accountPollInFlight = false;
   private onDataCallback: ((data: BridgeAccountSnapshot) => void) | null = null;
   private onClosedTradesCallback: ((trades: ClosedTrade[]) => void) | null = null;
+  private onConnectionChangeCallback: ((connected: boolean, error?: string) => void) | null = null;
   private lastPing: number | null = null;
+  private lastError: string | null = null;
 
   setCallback(callback: (data: BridgeAccountSnapshot) => void) {
     this.onDataCallback = callback;
@@ -71,11 +74,16 @@ export class MT5BridgeConnector {
     this.onClosedTradesCallback = callback;
   }
 
+  setConnectionChangeCallback(callback: (connected: boolean, error?: string) => void) {
+    this.onConnectionChangeCallback = callback;
+  }
+
   getStatus(): BridgeStatus {
     return {
       connected: this.isConnected,
       serverUrl: this.serverUrl,
       lastPing: this.lastPing,
+      lastError: this.lastError,
       mode: this.isConnected ? this.accountMode : 'standalone',
     };
   }
@@ -103,15 +111,31 @@ export class MT5BridgeConnector {
     this.serverUrl = credentials.baseUrl.replace(/\/+$/, '');
     this.symbol = credentials.symbol.trim();
     this.instrumentType = credentials.instrumentType;
-    const snapshot = await this.request<BridgeAccountSnapshot>('/api/connect', {
-      method: 'POST',
-      body: JSON.stringify({ symbol: this.symbol }),
-    });
+    this.stopPolling();
+    this.isConnected = false;
+    this.expectedAccount = null;
+    this.lastPing = null;
+    this.lastError = null;
+    this.onConnectionChangeCallback?.(false);
+    let snapshot: BridgeAccountSnapshot;
+    try {
+      snapshot = await this.request<BridgeAccountSnapshot>('/api/connect', {
+        method: 'POST',
+        body: JSON.stringify({ symbol: this.symbol }),
+      });
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : 'Unknown connection error.';
+      this.lastError = `Could not connect to the MT5 bridge at ${this.serverUrl}: ${detail} Start the private-link launcher on the MT5 PC and keep its windows open.`;
+      this.onConnectionChangeCallback?.(false, this.lastError);
+      throw new Error(this.lastError);
+    }
     this.isConnected = true;
     this.consecutiveErrors = 0;
+    this.lastError = null;
     this.accountMode = snapshot.accountMode;
     this.expectedAccount = { login: snapshot.account.login, server: snapshot.account.server };
     this.lastPing = Date.now();
+    this.onConnectionChangeCallback?.(true);
     const instrumentSnapshot = { ...snapshot, instrumentType: this.instrumentType };
     this.onDataCallback?.(instrumentSnapshot);
     this.startPolling();
@@ -134,6 +158,8 @@ export class MT5BridgeConnector {
     this.expectedAccount = null;
     this.lastPing = null;
     this.consecutiveErrors = 0;
+    this.lastError = null;
+    this.onConnectionChangeCallback?.(false);
     if (typeof window !== 'undefined') {
       localStorage.removeItem('smc_mt5_auto_connect');
     }
@@ -146,12 +172,8 @@ export class MT5BridgeConnector {
     const baseUrl = localStorage.getItem('smc_mt5_base_url') || getDefaultServerUrl();
     const symbol = localStorage.getItem('smc_mt5_symbol') || 'XAUUSD';
     const instrumentType = (localStorage.getItem('smc_mt5_instrument_type') as InstrumentType) || 'standard';
-    try {
-      await this.connectAccount({ baseUrl, symbol, instrumentType });
-      return true;
-    } catch {
-      return false;
-    }
+    await this.connectAccount({ baseUrl, symbol, instrumentType });
+    return true;
   }
 
    async setTradingHalted(tradingHalted: boolean): Promise<void> {
@@ -323,6 +345,8 @@ export class MT5BridgeConnector {
       }
       this.lastPing = Date.now();
       this.isConnected = true;
+      this.lastError = null;
+      this.onConnectionChangeCallback?.(true);
       this.accountMode = snapshot.accountMode;
       this.consecutiveErrors = 0;
       this.onDataCallback?.({ ...snapshot, instrumentType: this.instrumentType });
@@ -330,6 +354,8 @@ export class MT5BridgeConnector {
       failed = true;
       this.isConnected = false;
       this.consecutiveErrors += 1;
+      this.lastError = error instanceof Error ? error.message : 'Unknown MT5 bridge polling error.';
+      this.onConnectionChangeCallback?.(false, this.lastError);
       console.error(`[MT5 Bridge] Account sync failed (attempt ${this.consecutiveErrors}); retrying:`, error);
     } finally {
       this.accountPollInFlight = false;

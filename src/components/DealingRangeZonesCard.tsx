@@ -13,33 +13,32 @@ export const DealingRangeZonesCard: React.FC = React.memo(() => {
   const market = useMarket();
   const ticker = useTicker();
   const [showExplanation, setShowExplanation] = useState(false);
-  const spot = ticker.bid || 4190.0;
-
-  const dr = market.dealing_range || {
-    low: spot - 25.0,
-    high: spot + 25.0,
-    equilibrium: spot,
-  };
 
   const posPercent = useMemo(() => {
     if (market.price_pos !== null) {
       return Math.min(99, Math.max(1, Math.round(market.price_pos * 100)));
     }
-    return 48;
+    return 50;
   }, [market.price_pos]);
 
   const isDiscount = posPercent <= 50;
 
   const liveZones = useMemo(() => {
-    if (market.zones && market.zones.length > 0) {
-      return market.zones.slice(0, 3);
-    }
-    return [
-      { kind: 'OB' as const, bullish: true, bottom: spot - 4.5, top: spot - 1.2, tests: 1 },
-      { kind: 'FVG' as const, bullish: true, bottom: spot - 7.0, top: spot - 5.0, tests: 0 },
-      { kind: 'OB' as const, bullish: false, bottom: spot + 14.0, top: spot + 18.0, tests: 2 },
-    ];
-  }, [market.zones, spot]);
+    return market.zones.slice(0, 3);
+  }, [market.zones]);
+
+  if (!market.brokerMarketData || !market.dealing_range) {
+    return (
+      <div className="w-full min-w-0 rounded-2xl border border-slate-200 bg-white p-4 font-mono text-xs shadow-xs dark:border-[#1a3040] dark:bg-[#0d1823] sm:p-5">
+        <h3 className="font-bold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">Dealing range &amp; POI zones</h3>
+        <p className="mt-3 text-sm text-slate-600 dark:text-zinc-300" role="status">
+          Waiting for verified MT5 candles. Indicators and zones are unavailable until broker data is synchronized.
+        </p>
+      </div>
+    );
+  }
+
+  const dr = market.dealing_range;
 
   return (
     <div className="w-full min-w-0 bg-white dark:bg-[#0d1823] border border-slate-200 dark:border-[#1a3040] rounded-2xl p-4 sm:p-5 flex flex-col justify-between font-mono text-xs sm:text-sm shadow-xs dark:shadow-none space-y-4 transition-colors">
@@ -156,6 +155,11 @@ export const DealingRangeZonesCard: React.FC = React.memo(() => {
               </div>
             </div>
           ))}
+          {liveZones.length === 0 && (
+            <p className="rounded-xl border border-dashed border-zinc-200 p-3 text-zinc-500 dark:border-zinc-800 dark:text-zinc-400">
+              No active broker-derived order blocks or fair value gaps.
+            </p>
+          )}
         </div>
       </div>
     </div>

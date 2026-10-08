@@ -14,7 +14,7 @@ A React/TypeScript dashboard for market-structure analysis, broker-aware risk si
 - Supports manually confirmed broker orders and optional auto-trading. Auto-trading is off by default and requires a reachable, verified MT5 connection.
 - Provides a private phone connection through Tailscale Serve; the MT5 terminal and bridge remain on the Windows PC.
 
-When no MT5 broker data is connected, market/scanner data may be simulated for dashboard exploration. It is not a live quote or a broker-confirmed signal. The dashboard's order controls require a reachable MT5 bridge.
+When verified MT5 data is unavailable, quotes and candles are shown as unavailable, scanner setups are blocked, and order execution is disabled. The runtime does not substitute generated prices, replay scenarios, or tokenized-gold (PAXG) data for the selected broker instrument. TradingView remains a view-only chart and does not feed the indicator or execution engine.
 
 ## Run the dashboard
 
@@ -50,7 +50,7 @@ In the dashboard, connect to the exact broker symbol shown in MT5 Market Watch. 
 - Auto-trading starts off. Enabling it permits unattended broker order submission; verify the selected account and configured limits first.
 - A kill switch blocks new entries and requests closure of open broker positions. Check MT5 itself to confirm every close was executed.
 - The bridge validates account identity, signal freshness, stop levels, configured risk, broker volume steps, daily loss, trade frequency, and other limits. The broker remains authoritative.
-- Each connected dashboard polls positions and quotes about every two seconds and history about every 30 seconds. Temporary bridge/network failures retry with backoff; orders remain paused while the bridge is unreachable.
+- Each connected dashboard polls positions and quotes about every two seconds and history about every 30 seconds. Temporary bridge/network failures retry with backoff; a failed connection clears broker quotes/candles and blocks trading until fresh broker data is received again. Auto-trading is not re-armed automatically after a bridge interruption.
 - Shared account and control state comes from the MT5 bridge. Theme and sound preferences are local to each browser/device.
 - Audio playback may require an initial user gesture and can be muted by browser/device settings.
 

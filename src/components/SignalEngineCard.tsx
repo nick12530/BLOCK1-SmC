@@ -147,7 +147,11 @@ export const SignalEngineCard: React.FC<SignalEngineCardProps> = React.memo(({ o
               ? 'bg-sky-500/10 text-sky-700 dark:text-sky-300 border-sky-500/30'
               : 'bg-slate-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 border-slate-200 dark:border-zinc-700'
           }`}>
-            {rawSig ? `${rawSig.direction} · ${rawSig.strategy} · ${ticker.spread} PTS` : `SCANNING · ${ticker.spread} PTS`}
+            {rawSig
+              ? `${rawSig.direction} · ${rawSig.strategy} · ${ticker.spread} PTS`
+              : market.brokerMarketData
+                ? `SCANNING · ${ticker.spread} PTS`
+                : 'WAITING FOR VERIFIED MT5 DATA'}
           </span>
         </div>
 

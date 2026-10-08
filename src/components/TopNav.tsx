@@ -8,7 +8,6 @@ import {
   Radio,
   Sliders,
   Terminal,
-  Database,
   TrendingUp,
   TrendingDown,
 } from 'lucide-react';
@@ -17,14 +16,12 @@ interface TopNavProps {
   snapshot: TerminalSnapshot;
   onOpenSettings: () => void;
   onOpenBridge: () => void;
-  onOpenScenarios: () => void;
 }
 
 export const TopNav: React.FC<TopNavProps> = ({
   snapshot,
   onOpenSettings,
   onOpenBridge,
-  onOpenScenarios,
 }) => {
   const isKill = snapshot.kill_switch;
   const isAuto = snapshot.auto_trade;
@@ -46,7 +43,7 @@ export const TopNav: React.FC<TopNavProps> = ({
 
             <div className="flex items-center gap-2 font-mono">
               <span className="text-xl font-bold text-white tabular-nums tracking-tight">
-                {snapshot.bid.toFixed(2)}
+                {snapshot.brokerMarketData ? snapshot.bid.toFixed(2) : 'MT5 data unavailable'}
               </span>
               <span className="text-xs text-[#6b7a90]">/</span>
               <span className="text-xs text-[#94a3b8] tabular-nums">
@@ -137,13 +134,6 @@ export const TopNav: React.FC<TopNavProps> = ({
           </div>
 
           {/* Quick Tools */}
-          <button
-            onClick={onOpenScenarios}
-            title="Replay historical SMC market scenarios"
-            className="p-2 rounded-lg bg-[#121826] border border-[#1e2a3d] text-[#6b7a90] hover:text-white transition-colors"
-          >
-            <Database className="w-4 h-4" />
-          </button>
           <button
             onClick={onOpenBridge}
             title="MetaTrader 5 Python bridge setup & server script"

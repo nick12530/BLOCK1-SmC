@@ -52,7 +52,7 @@ export const SignalEngineCard: React.FC<SignalEngineCardProps> = React.memo(({ o
   const currentSpot = activeDirection === 'BUY' ? ticker.ask : ticker.bid;
   const entryPrice = currentSpot;
   const signalEntry = rawSig?.entry ?? null;
-  const riskLimitedLotSize = rawSig ? tradingEngine.getRiskBasedVolume(rawSig.sl, lotSize) : null;
+  const riskLimitedLotSize = rawSig ? tradingEngine.getRiskBasedVolume(rawSig.sl, lotSize, rawSig.direction) : null;
   const slPrice = rawSig?.sl ?? null;
   const tpPrice = rawSig?.tp ?? null;
   const riskPts = rawSig ? Math.abs(rawSig.entry - rawSig.sl) : 0;

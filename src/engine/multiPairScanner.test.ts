@@ -5,12 +5,34 @@ import {
   rankOpportunities,
   checkCorrelationExposure,
   calculateSmallAccountPositionSize,
+  findLiquidityLevels,
 } from './multiPairScanner';
 import { generatePairCandles } from './dataFeed';
 import { getGlobalSessionStatus, evaluateNewsRisk, isSessionPreferredForPair } from './sessionTimezones';
 import { tradingEngine } from './tradingEngine';
 
 describe('Multi-Pair Market Scanner & Instrument System', () => {
+  it('detects liquidity sweeps only when a wick breaches and closes back inside prior liquidity', () => {
+    const candles = Array.from({ length: 30 }, (_, index) => ({
+      time: Date.now() - (30 - index) * 60_000,
+      timeStr: '12:00',
+      open: 1.1,
+      high: 1.101,
+      low: 1.099,
+      close: 1.1,
+      volume: 100,
+    }));
+    candles[29] = { ...candles[29], high: 1.102, close: 1.1005 };
+
+    expect(findLiquidityLevels(candles, 0.0001).recentSweep).toBe('high');
+
+    candles[29] = { ...candles[29], close: 1.102 };
+    expect(findLiquidityLevels(candles, 0.0001).recentSweep).toBeNull();
+
+    candles[29] = { ...candles[29], high: 1.1005, low: 1.098, close: 1.0995 };
+    expect(findLiquidityLevels(candles, 0.0001).recentSweep).toBe('low');
+  });
+
   it('supports all 4 instruments with independent specifications', () => {
     expect(SUPPORTED_SYMBOLS).toEqual(['XAUUSD', 'EURUSD', 'USDJPY', 'GBPUSD']);
 
@@ -94,6 +116,13 @@ describe('Multi-Pair Market Scanner & Instrument System', () => {
       const sizing = calculateSmallAccountPositionSize(100.0, 1.0, 0.0010, 'EURUSD', 0.01, 0.01);
       expect(sizing.safeVolume).toBe(0.01);
       expect(sizing.rejectionReason).toBeUndefined();
+    });
+
+    it('rejects minimum volume when it exceeds the configured risk on larger accounts too', () => {
+      const sizing = calculateSmallAccountPositionSize(100, 1, 0.003, 'EURUSD', 0.01, 0.01);
+
+      expect(sizing.safeVolume).toBeNull();
+      expect(sizing.rejectionReason).toContain('TRADE_REJECTED: MINIMUM_LOT_EXCEEDS_RISK');
     });
   });
 

@@ -9,9 +9,10 @@
  * - Clean theme switcher
  */
 
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useTicker, useEngine, usePositions } from '../hooks/useTradingStore';
 import { tradingEngine } from '../engine/tradingEngine';
+import { mt5Bridge } from '../engine/mt5Bridge';
 import { SUPPORTED_SYMBOLS, SupportedSymbol } from '../engine/instrumentConfig';
 import {
   Sun,
@@ -41,6 +42,14 @@ export const HeaderView: React.FC<HeaderViewProps> = React.memo(({
   const { positions } = usePositions();
 
   const mt5 = engine.mt5Account;
+  const [bridgeReachable, setBridgeReachable] = useState(mt5Bridge.getStatus().connected);
+
+  useEffect(() => {
+    const refreshStatus = () => setBridgeReachable(mt5Bridge.getStatus().connected);
+    refreshStatus();
+    const timer = window.setInterval(refreshStatus, 1000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   // Margin telemetry calculation
   const marginMetrics = useMemo(() => {
@@ -177,16 +186,20 @@ export const HeaderView: React.FC<HeaderViewProps> = React.memo(({
           {/* MT5 Connection Link */}
           <button
             onClick={() => onOpenModal('bridge')}
-            title="MetaTrader 5 Bridge Link & Server Status"
+            title={mt5?.connected && !bridgeReachable
+              ? 'MT5 account is linked, but bridge synchronization is offline; broker orders are paused.'
+              : 'MetaTrader 5 Bridge Link & Server Status'}
             className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-bold transition-all cursor-pointer ${
-              mt5?.connected
+              mt5?.connected && bridgeReachable
                 ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-600 dark:text-emerald-400'
                 : 'bg-slate-100 hover:bg-slate-200 dark:bg-zinc-900 dark:hover:bg-zinc-800 border-slate-200 dark:border-zinc-800 text-slate-800 dark:text-zinc-200'
             }`}
           >
-            <Server className={`w-3.5 h-3.5 ${mt5?.connected ? 'text-emerald-500' : 'text-slate-400'}`} />
+            <Server className={`w-3.5 h-3.5 ${mt5?.connected && bridgeReachable ? 'text-emerald-500' : 'text-slate-400'}`} />
             <span className="font-mono text-[11px]">
-              {mt5?.connected ? `MT5 #${mt5.login}` : 'Connect MT5'}
+              {mt5?.connected
+                ? bridgeReachable ? `MT5 #${mt5.login}` : `MT5 #${mt5.login} · OFFLINE`
+                : 'Connect MT5'}
             </span>
           </button>
 

@@ -36,6 +36,7 @@ import { DailyPnLCalendarCard } from './components/DailyPnLCalendarCard';
 import { TradingViewWidget } from './components/TradingViewWidget';
 import { FooterView } from './components/FooterView';
 import { SignalToastNotification } from './components/SignalToastNotification';
+import { StartupLoadingScreen } from './components/StartupLoadingScreen';
 import { mt5Bridge } from './engine/mt5Bridge';
 import { RISK_CONFIG } from './engine/riskConfig';
 import type { Signal } from './types/smc';
@@ -91,6 +92,8 @@ export default function App() {
     'bridge' | 'settings' | 'scenarios' | 'closed_trades' | 'daily_report' | 'tradingview' | 'help' | 'phone_pwa' | null
   >(null);
   const [reportDate, setReportDate] = useState(() => localDayKey(new Date()));
+  const [showStartupScreen, setShowStartupScreen] = useState(true);
+  const [autoConnectChecked, setAutoConnectChecked] = useState(false);
 
   // Safety Confirmation Dialog state (Priority 3, Item 8)
   const [confirmDialog, setConfirmDialog] = useState<{
@@ -104,11 +107,24 @@ export default function App() {
   useEffect(() => {
     mt5Bridge.setCallback((snapshot) => tradingEngine.syncMt5Snapshot(snapshot));
     mt5Bridge.setClosedTradesCallback((trades) => tradingEngine.syncMt5ClosedTrades(trades));
+    void mt5Bridge.autoConnectIfSaved()
+      .catch((error: unknown) => {
+        tradingEngine.slog(
+          `Saved MT5 reconnect failed: ${error instanceof Error ? error.message : 'Unknown bridge error'}`,
+          'warn'
+        );
+      })
+      .finally(() => setAutoConnectChecked(true));
   }, []);
 
-  // Execute signal with multiple position support (up to 10)
+  // Route one explicitly confirmed signal order to the connected MT5 account.
   const handleExecuteSignal = useCallback(
-    async (customVolume?: number, positionCount: number = 1, selectedSignal?: Signal) => {
+    async (
+      customVolume?: number,
+      positionCount: number = 1,
+      selectedSignal?: Signal,
+      confirmedVolume?: number
+    ) => {
       const signal = selectedSignal ?? tradingEngine.getMarketSnapshot().signal;
       if (!signal) {
         setConfirmDialog({
@@ -141,11 +157,22 @@ export default function App() {
         return;
       }
 
-      const riskVolume = tradingEngine.getRiskBasedVolume(signal.sl, customVolume);
+      const riskVolume = tradingEngine.getRiskBasedVolume(signal.sl, customVolume, signal.direction);
       if (!riskVolume) {
         setConfirmDialog({
           title: 'Safe position size unavailable',
-          message: 'The configured risk cannot be converted to a valid broker lot size for this stop. Check the MT5 symbol tick value and volume limits.',
+          message: tradingEngine.getRiskSizingFailureReason(signal.sl, customVolume, signal.direction),
+          confirmLabel: 'Understood',
+          onConfirm: () => setConfirmDialog(null),
+        });
+        return;
+      }
+
+      if (confirmedVolume !== undefined && Math.abs(riskVolume - confirmedVolume) > 1e-8) {
+        const entry = signal.direction === 'BUY' ? ticker.ask : ticker.bid;
+        setConfirmDialog({
+          title: 'Quote or safe volume changed',
+          message: `No order was sent because the broker quote changed after your confirmation. The current ${signal.direction} ${ticker.symbol} quote is approximately ${entry}, and the recalculated safe size is ${riskVolume} lots. Review and submit again to confirm these updated details.`,
           confirmLabel: 'Understood',
           onConfirm: () => setConfirmDialog(null),
         });
@@ -175,75 +202,96 @@ export default function App() {
         return;
       }
 
-      if (tradingEngine.mt5Account.connected && !mt5Bridge.getStatus().connected) {
+      if (!mt5Bridge.getStatus().connected) {
         setConfirmDialog({
-          title: 'MT5 bridge unavailable',
-          message: 'The linked MT5 bridge is offline. No order was sent. Reconnect the bridge before trying again.',
+          title: 'MT5 is not connected',
+          message: 'No broker order was sent. Connect to the intended MT5 account and wait for its broker quote to sync. Disconnected dashboard orders are not sent to a broker.',
           confirmLabel: 'Understood',
           onConfirm: () => setConfirmDialog(null),
         });
         return;
       }
 
-      if (mt5Bridge.getStatus().connected) {
-        const rationale = buildSignalRationale(signal);
-        const strategyOrderBlock = findCorrespondingOrderBlock(
-          signal.direction,
-          signal.entry,
-          tradingEngine.getMarketSnapshot().zones
+      const rationale = buildSignalRationale(signal);
+      const strategyOrderBlock = findCorrespondingOrderBlock(
+        signal.direction,
+        signal.entry,
+        tradingEngine.getMarketSnapshot().zones
+      );
+      try {
+        const result = await mt5Bridge.sendTrade({
+          direction: signal.direction,
+          volume: riskVolume,
+          symbol: mt5Bridge.getSymbol(),
+          sl: signal.sl,
+          tp: signal.tp,
+          rationale,
+          clientOrderId: `${signal.strategy}:${signal.timeframe}:${signal.direction}:${signal.timestamp}:${signal.entry.toFixed(8)}`,
+          poiKey: tradingEngine.getSignalPoiKey(signal.direction, signal.entry),
+          instrumentType: tradingEngine.instrumentType,
+          signalTimeframe: signal.timeframe === 'M1' ? 'M1' : 'M5',
+          signalTimestamp: signal.timestamp,
+        });
+        tradingEngine.recordMt5Rationale(
+          result.ticket,
+          result.positionTicket,
+          rationale,
+          strategyOrderBlock
         );
-        for (let index = 0; index < positionCount; index += 1) {
-          try {
-            const result = await mt5Bridge.sendTrade({
-              direction: signal.direction,
-              volume: riskVolume,
-              symbol: ticker.symbol || mt5Bridge.getSymbol(),
-              sl: signal.sl,
-              tp: signal.tp,
-              rationale,
-              clientOrderId: `${signal.strategy}:${signal.timeframe}:${signal.direction}:${signal.timestamp}:${signal.entry.toFixed(8)}`,
-              poiKey: tradingEngine.getSignalPoiKey(signal.direction, signal.entry),
-              instrumentType: tradingEngine.instrumentType,
-              signalTimeframe: signal.timeframe === 'M1' ? 'M1' : 'M5',
-              signalTimestamp: signal.timestamp,
-            });
-            tradingEngine.recordMt5Rationale(
-              result.ticket,
-              result.positionTicket,
-              rationale,
-              strategyOrderBlock
-            );
-            tradingEngine.recordAcceptedEntry(signal.direction, signal);
-            tradingEngine.slog(
-              result.pending
-                ? `MT5 order placed but not confirmed filled: #${result.ticket} · ${result.filledVolume} lots reported. Verify it in MT5.`
-                : result.partial
-                ? `MT5 order partially filled: #${result.ticket} ${signal.direction} ${result.filledVolume} lots @ ${result.price}. Verify remaining quantity.`
-                : `MT5 order filled: #${result.ticket} ${signal.direction} ${result.filledVolume} lots @ ${result.price} · ${rationale}`,
-              result.pending || result.partial ? 'warn' : 'trade'
-            );
-          } catch (error) {
-            const reason = error instanceof Error ? error.message : 'Unknown MT5 bridge error.';
-            tradingEngine.slog(`MT5 order rejected: ${reason}`, 'error');
-            setConfirmDialog({
-              title: 'MT5 order rejected',
-              message: `Order ${index + 1} of ${positionCount} was not sent: ${reason}`,
-              confirmLabel: 'Understood',
-              onConfirm: () => setConfirmDialog(null),
-            });
-            return;
-          }
-        }
+        tradingEngine.recordAcceptedEntry(signal.direction, signal);
+        tradingEngine.slog(
+          result.pending
+            ? `MT5 order placed but not confirmed filled: #${result.ticket} · ${result.filledVolume} lots reported. Verify it in MT5.`
+            : result.partial
+            ? `MT5 order partially filled: #${result.ticket} ${signal.direction} ${result.filledVolume} lots @ ${result.price}. Verify remaining quantity.`
+            : `MT5 order filled: #${result.ticket} ${signal.direction} ${result.filledVolume} lots @ ${result.price} · ${rationale}`,
+          result.pending || result.partial ? 'warn' : 'trade'
+        );
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : 'Unknown MT5 bridge error.';
+        tradingEngine.slog(`MT5 order rejected: ${reason}`, 'error');
+        setConfirmDialog({
+          title: 'MT5 order rejected',
+          message: `The order was not accepted by the broker: ${reason}`,
+          confirmLabel: 'Understood',
+          onConfirm: () => setConfirmDialog(null),
+        });
+        return;
+      }
+    },
+    [ticker.ask, ticker.bid, ticker.symbol, ticker.spread, positionsState.positions.length, engine.kill_switch]
+  );
+
+  const handleRequestExecuteSignal = useCallback(
+    (customVolume?: number, positionCount: number = 1, selectedSignal?: Signal) => {
+      if (!mt5Bridge.getStatus().connected) {
+        void handleExecuteSignal(customVolume, positionCount, selectedSignal);
+        return;
+      }
+      const signal = selectedSignal ?? tradingEngine.getMarketSnapshot().signal;
+      if (!signal) {
+        void handleExecuteSignal(customVolume, positionCount, selectedSignal);
+        return;
+      }
+      const volume = tradingEngine.getRiskBasedVolume(signal.sl, customVolume, signal.direction);
+      if (!volume) {
+        void handleExecuteSignal(customVolume, positionCount, selectedSignal);
         return;
       }
 
-      if (positionCount > 1) {
-        tradingEngine.tradeMultiplePositions(positionCount, customVolume);
-      } else {
-        tradingEngine.tradeSignal(customVolume);
-      }
+      const entry = signal.direction === 'BUY' ? ticker.ask : ticker.bid;
+      setConfirmDialog({
+        title: `Confirm ${signal.direction} order`,
+        message: `Send ${signal.direction} ${ticker.symbol} at approximately ${entry} using ${volume} lots, SL ${signal.sl}, and TP ${signal.tp} to MT5 account ${engine.mt5Account?.login ?? 'unknown'} (${engine.mt5Account?.server ?? 'unknown server'}, ${market.accountMode?.toUpperCase() ?? 'account type unknown'})? This submits a broker order. Verify the symbol, volume, and stop levels before continuing.`,
+        confirmLabel: `Send ${signal.direction} order`,
+        isDestructive: true,
+        onConfirm: () => {
+          setConfirmDialog(null);
+          void handleExecuteSignal(customVolume, positionCount, signal, volume);
+        },
+      });
     },
-    [ticker.spread, positionsState.positions.length, engine.kill_switch]
+    [market.accountMode, engine.mt5Account?.login, engine.mt5Account?.server, handleExecuteSignal, ticker.ask, ticker.bid, ticker.symbol]
   );
 
   const handleExecuteAnalysis = useCallback(
@@ -252,10 +300,10 @@ export default function App() {
         tradingEngine.switchSymbol(analysis.symbol);
       }
       if (analysis.signal) {
-        void handleExecuteSignal(analysis.safeLotSize ?? undefined, 1, analysis.signal);
+        handleRequestExecuteSignal(analysis.safeLotSize ?? undefined, 1, analysis.signal);
       }
     },
-    [ticker.symbol, handleExecuteSignal]
+    [ticker.symbol, handleRequestExecuteSignal]
   );
 
   // Kill switch toggle with disarm confirm (Priority 3, Item 8c)
@@ -284,7 +332,7 @@ export default function App() {
       <KillSwitchBanner />
 
       {/* Subtle Non-Disruptive Signal Toast Notification */}
-      <SignalToastNotification />
+      <SignalToastNotification onExecuteSignal={handleRequestExecuteSignal} />
 
       {/* 2. Top Header matching image.png with session indicators & audio alert */}
       <HeaderView
@@ -338,7 +386,7 @@ export default function App() {
               <h2 className="text-base font-semibold text-slate-900 dark:text-zinc-100">Trade signals</h2>
               <p className="mt-1 text-xs sm:text-sm text-slate-500 dark:text-zinc-400">Only confirmed setups are eligible for execution</p>
             </div>
-            <SignalEngineCard onExecuteSignal={handleExecuteSignal} />
+            <SignalEngineCard onExecuteSignal={handleRequestExecuteSignal} />
           </section>
 
           <section aria-label="Trading parameters" className="space-y-3 lg:col-span-4">
@@ -474,6 +522,21 @@ export default function App() {
 
       {/* Institutional Footer Bar */}
       <FooterView />
+
+      {showStartupScreen && (
+        <StartupLoadingScreen
+          onStartTrading={() => setShowStartupScreen(false)}
+          spotPrice={ticker.bid}
+          balance={ticker.balance}
+          connectionStatus={
+            !autoConnectChecked
+              ? 'checking'
+              : engine.mt5Account?.connected
+                ? 'connected'
+                : 'offline'
+          }
+        />
+      )}
     </div>
   );
 }

@@ -13,7 +13,7 @@ import { analyzeGoldCandlestickPatterns } from './candlestickPatterns';
 export function calculateATR(candles: Candle[], n: number = 14): number[] {
   const len = candles.length;
   const out = new Array<number>(len).fill(NaN);
-  if (len < n) return out;
+  if (len < n || !Number.isInteger(n) || n < 1) return out;
 
   const tr: number[] = new Array(len);
   tr[0] = candles[0].high - candles[0].low;
@@ -25,12 +25,12 @@ export function calculateATR(candles: Candle[], n: number = 14): number[] {
     tr[i] = Math.max(h - l, Math.abs(h - prevC), Math.abs(l - prevC));
   }
 
-  // Initial average of true ranges from index 1 to n-1 (as per Wilder's algorithm in smc_core.py)
+  // Seed Wilder's smoothing with n true-range observations.
   let sum = 0;
-  for (let i = 1; i < n; i++) {
+  for (let i = 0; i < n; i++) {
     sum += tr[i];
   }
-  out[n - 1] = sum / (n - 1);
+  out[n - 1] = sum / n;
 
   // Wilder recursive smoothing
   for (let i = n; i < len; i++) {
@@ -104,7 +104,7 @@ export class MarketStructureEngine {
           newEvents.push({
             kind,
             direction: 'bullish',
-            price: Number(sw.price.toFixed(2)),
+            price: sw.price,
             bar,
             time: candles[bar]?.time,
           });
@@ -119,7 +119,7 @@ export class MarketStructureEngine {
           newEvents.push({
             kind,
             direction: 'bearish',
-            price: Number(sw.price.toFixed(2)),
+            price: sw.price,
             bar,
             time: candles[bar]?.time,
           });
@@ -140,9 +140,9 @@ export class MarketStructureEngine {
       const lo = this.lastSwingLow.price;
       const hi = this.lastSwingHigh.price;
       return {
-        low: Number(lo.toFixed(2)),
-        high: Number(hi.toFixed(2)),
-        equilibrium: Number(((hi + lo) / 2).toFixed(2)),
+        low: lo,
+        high: hi,
+        equilibrium: (hi + lo) / 2,
       };
     }
     return null;
@@ -191,8 +191,8 @@ export function detectFVGs(candles: Candle[], atrArr: number[], minMult: number 
     if (gapUp > minMult * atrNow) {
       zones.push({
         kind: 'FVG',
-        top: Number(candles[i].low.toFixed(2)),
-        bottom: Number(candles[i - 2].high.toFixed(2)),
+        top: candles[i].low,
+        bottom: candles[i - 2].high,
         bullish: true,
         born: i,
         bornTime: candles[i].time,
@@ -204,8 +204,8 @@ export function detectFVGs(candles: Candle[], atrArr: number[], minMult: number 
     if (gapDn > minMult * atrNow) {
       zones.push({
         kind: 'FVG',
-        top: Number(candles[i - 2].low.toFixed(2)),
-        bottom: Number(candles[i].high.toFixed(2)),
+        top: candles[i - 2].low,
+        bottom: candles[i].high,
         bullish: false,
         born: i,
         bornTime: candles[i].time,
@@ -262,8 +262,8 @@ export function detectOrderBlocks(
       // Bullish impulse -> Demand OB (previous bearish candle)
       zones.push({
         kind: 'OB',
-        top: Number(prev.high.toFixed(2)),
-        bottom: Number(prev.low.toFixed(2)),
+        top: prev.high,
+        bottom: prev.low,
         bullish: true,
         born: j,
         bornTime: prev.time,
@@ -275,8 +275,8 @@ export function detectOrderBlocks(
       // Bearish impulse -> Supply OB (previous bullish candle)
       zones.push({
         kind: 'OB',
-        top: Number(prev.high.toFixed(2)),
-        bottom: Number(prev.low.toFixed(2)),
+        top: prev.high,
+        bottom: prev.low,
         bullish: false,
         born: j,
         bornTime: prev.time,

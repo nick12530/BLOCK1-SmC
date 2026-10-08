@@ -99,9 +99,10 @@ export interface PairAnalysis {
 /**
  * Detects equal highs and equal lows within a small threshold.
  */
-function findLiquidityLevels(candles: Candle[], pipSize: number): LiquidityLevels {
-  const highs = candles.slice(-30).map((c) => c.high);
-  const lows = candles.slice(-30).map((c) => c.low);
+export function findLiquidityLevels(candles: Candle[], pipSize: number): LiquidityLevels {
+  const priorCandles = candles.slice(-31, -1);
+  const highs = priorCandles.map((c) => c.high);
+  const lows = priorCandles.map((c) => c.low);
   const threshold = pipSize * 3; // within 3 pips is equal high/low
 
   const equalHighs: number[] = [];
@@ -123,19 +124,22 @@ function findLiquidityLevels(candles: Candle[], pipSize: number): LiquidityLevel
     }
   }
 
-  const highest = Math.max(...highs);
-  const lowest = Math.min(...lows);
+  const highest = highs.length ? Math.max(...highs) : null;
+  const lowest = lows.length ? Math.min(...lows) : null;
   const latest = candles[candles.length - 1];
   let recentSweep: 'high' | 'low' | null = null;
 
-  if (latest && latest.high >= highest) recentSweep = 'high';
-  else if (latest && latest.low <= lowest) recentSweep = 'low';
+  if (latest && highest !== null && latest.high > highest && latest.close < highest) {
+    recentSweep = 'high';
+  } else if (latest && lowest !== null && latest.low < lowest && latest.close > lowest) {
+    recentSweep = 'low';
+  }
 
   return {
     equalHighs: Array.from(new Set(equalHighs)).slice(-2),
     equalLows: Array.from(new Set(equalLows)).slice(-2),
-    buySideLiquidity: highest,
-    sellSideLiquidity: lowest,
+    buySideLiquidity: highest ?? latest?.high ?? 0,
+    sellSideLiquidity: lowest ?? latest?.low ?? 0,
     recentSweep,
   };
 }
@@ -199,7 +203,21 @@ export function calculateSmallAccountPositionSize(
   lotStep: number = 0.01
 ): { safeVolume: number | null; riskAmount: number; rejectionReason?: string } {
   const config = getInstrumentConfig(symbol);
-  const riskBudget = Math.max(0.1, Number((equity * (riskPct / 100)).toFixed(2)));
+  if (
+    ![equity, riskPct, stopDistancePrice, minLot, lotStep].every(Number.isFinite) ||
+    equity <= 0 ||
+    riskPct <= 0 ||
+    stopDistancePrice <= 0 ||
+    minLot <= 0 ||
+    lotStep <= 0
+  ) {
+    return {
+      safeVolume: null,
+      riskAmount: 0,
+      rejectionReason: 'TRADE_REJECTED: INVALID_POSITION_SIZING_INPUT',
+    };
+  }
+  const riskBudget = equity * (riskPct / 100);
 
   // Dollar value of 1 pip for 1 standard lot
   // For EURUSD / GBPUSD: 1 lot ($100,000) = $10 per pip ($1 per pip for 0.1 lot, $0.10 per pip for 0.01 lot)
@@ -211,14 +229,9 @@ export function calculateSmallAccountPositionSize(
 
   const stopPips = stopDistancePrice / config.pipSize;
   const riskPerStandardLot = stopPips * pipValuePerLot;
-  const riskPerMinLot = Number((riskPerStandardLot * minLot).toFixed(2));
+  const riskPerMinLot = riskPerStandardLot * minLot;
 
-  // Small account strict safety check:
-  // If the absolute minimum lot results in a dollar loss greater than 2.5x the configured risk budget,
-  // or exceeds 25% of the account equity (on a $10 account), reject immediately.
-  const maxTolerableDollarRisk = Math.max(riskBudget * 2.0, equity * 0.15);
-
-  if (riskPerMinLot > maxTolerableDollarRisk && equity < 50.0) {
+  if (riskPerMinLot > riskBudget) {
     return {
       safeVolume: null,
       riskAmount: riskPerMinLot,
@@ -228,8 +241,16 @@ export function calculateSmallAccountPositionSize(
 
   // Calculate volume
   const rawVolume = riskPerStandardLot > 0 ? riskBudget / riskPerStandardLot : minLot;
-  const steppedVolume = Math.floor(rawVolume / lotStep) * lotStep;
-  const finalVolume = Number(Math.max(minLot, Math.min(5.0, steppedVolume)).toFixed(2));
+  const steps = Math.floor((rawVolume - minLot) / lotStep + 1e-9);
+  const precision = Math.min(8, (String(lotStep).split('.')[1] || '').length);
+  const finalVolume = Number(Math.min(5.0, minLot + Math.max(0, steps) * lotStep).toFixed(precision));
+  if (finalVolume < minLot) {
+    return {
+      safeVolume: null,
+      riskAmount: riskPerMinLot,
+      rejectionReason: `TRADE_REJECTED: MINIMUM_LOT_EXCEEDS_RISK (${minLot}L risks $${riskPerMinLot.toFixed(2)}, budget: $${riskBudget.toFixed(2)})`,
+    };
+  }
   const finalRisk = Number((finalVolume * riskPerStandardLot).toFixed(2));
 
   return {

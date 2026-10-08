@@ -51,10 +51,9 @@ export function calculateRiskBasedVolume(
   const riskAmount = equity * riskPercent / 100;
   const riskPerLot = stopDistancePrice / spec.tickSize * spec.tickValue;
   const rawVolume = riskAmount / riskPerLot;
-  const steps = Math.floor((rawVolume - spec.volumeMin) / spec.volumeStep + 1e-9);
-  const volume = rawVolume < spec.volumeMin
-    ? 0
-    : spec.volumeMin + Math.max(0, steps) * spec.volumeStep;
+  if (rawVolume < spec.volumeMin) return null;
+  const steps = Math.floor((Math.min(rawVolume, spec.volumeMax) - spec.volumeMin) / spec.volumeStep + 1e-9);
+  const volume = spec.volumeMin + Math.max(0, steps) * spec.volumeStep;
   const precision = Math.min(8, (String(spec.volumeStep).split('.')[1] || '').length);
   const normalized = Number(volume.toFixed(precision));
   return normalized >= spec.volumeMin && normalized <= spec.volumeMax ? normalized : null;

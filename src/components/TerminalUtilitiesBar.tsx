@@ -6,10 +6,11 @@
  * - Eliminates redundant sub-rows and oversized cards
  */
 
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { useEngine } from '../hooks/useTradingStore';
 import { useAudioNotifications } from '../hooks/useAudioNotifications';
 import { tradingEngine } from '../engine/tradingEngine';
+import { mt5Bridge } from '../engine/mt5Bridge';
 import {
   Shield,
   Server,
@@ -34,9 +35,18 @@ export const TerminalUtilitiesBar: React.FC<TerminalUtilitiesBarProps> = React.m
 }) => {
   const engine = useEngine();
   const { isMuted, toggleMute, hasNewAlert } = useAudioNotifications();
+  const [bridgeReachable, setBridgeReachable] = useState(mt5Bridge.getStatus().connected);
+
+  useEffect(() => {
+    const refreshStatus = () => setBridgeReachable(mt5Bridge.getStatus().connected);
+    refreshStatus();
+    const timer = window.setInterval(refreshStatus, 1000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   const isAuto = engine.auto_trade;
   const isKill = engine.kill_switch;
+  const canEnableAutoTrade = Boolean(engine.mt5Account?.connected && bridgeReachable);
 
   return (
     <div className="w-full bg-white dark:bg-[#0d1823] border border-slate-200/90 dark:border-[#1a3040] rounded-2xl p-3 sm:p-4 shadow-xs font-mono text-xs transition-colors flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">
@@ -45,13 +55,14 @@ export const TerminalUtilitiesBar: React.FC<TerminalUtilitiesBarProps> = React.m
         {/* 1. Auto Trade */}
         <button
           onClick={() => tradingEngine.toggleAutoTrade()}
+          disabled={!isAuto && !canEnableAutoTrade}
           aria-pressed={isAuto}
           className={`min-h-11 min-w-0 whitespace-nowrap py-2 px-2.5 sm:px-3 rounded-lg border text-left transition-all cursor-pointer flex items-center justify-center sm:justify-start gap-1.5 ${
             isAuto
               ? 'bg-emerald-700 text-white border-emerald-700'
               : 'bg-slate-50 hover:bg-slate-100 dark:bg-zinc-900 dark:hover:bg-zinc-800 border-slate-200 dark:border-zinc-800 text-slate-700 dark:text-zinc-300'
           }`}
-          title="Toggle automated trade execution"
+          title={canEnableAutoTrade ? 'Toggle automated broker order execution' : 'Connect the intended MT5 account before enabling auto-trade'}
         >
           <Zap className={`w-3.5 h-3.5 shrink-0 ${isAuto ? 'text-white fill-current' : 'text-emerald-500'}`} />
           <span className="font-bold text-xs">Auto Trade</span>
@@ -82,7 +93,7 @@ export const TerminalUtilitiesBar: React.FC<TerminalUtilitiesBarProps> = React.m
             !isMuted
               ? 'bg-sky-600 text-white border-sky-600 dark:bg-sky-500 dark:text-slate-950 dark:border-sky-500'
               : 'bg-slate-50 hover:bg-slate-100 dark:bg-zinc-900 dark:hover:bg-zinc-800 border-slate-200 dark:border-zinc-800 text-slate-700 dark:text-zinc-300'
-          }`}
+          } disabled:cursor-not-allowed disabled:opacity-60`}
           title="Toggle audio alerts"
         >
           {isMuted ? (

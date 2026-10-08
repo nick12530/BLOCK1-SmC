@@ -8,29 +8,23 @@
  */
 
 import React, { useEffect } from 'react';
-import { signalAudioNotifier } from '../utils/audioNotification';
 
 interface StartupLoadingScreenProps {
   onStartTrading: () => void;
   spotPrice: number;
   balance: number;
+  connectionStatus: 'checking' | 'connected' | 'offline';
 }
 
 export const StartupLoadingScreen: React.FC<StartupLoadingScreenProps> = ({
   onStartTrading,
   spotPrice,
   balance,
+  connectionStatus,
 }) => {
-  const handleLaunch = () => {
-    signalAudioNotifier.playSignalAlert();
-    onStartTrading();
-  };
-
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Enter') {
-        handleLaunch();
-      }
+      if (e.key === 'Enter') onStartTrading();
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
@@ -63,7 +57,7 @@ export const StartupLoadingScreen: React.FC<StartupLoadingScreenProps> = ({
         {/* Minimalist Tactile Action */}
         <div className="w-full space-y-3">
           <button
-            onClick={handleLaunch}
+            onClick={onStartTrading}
             className="w-full py-3.5 px-6 rounded-lg bg-white text-black hover:bg-zinc-200 font-bold text-xs uppercase tracking-wider transition-colors cursor-pointer active:scale-[0.99]"
           >
             Enter Terminal
@@ -75,8 +69,12 @@ export const StartupLoadingScreen: React.FC<StartupLoadingScreenProps> = ({
       </div>
 
       {/* Bottom Status */}
-      <div className="text-[10px] text-zinc-600 uppercase tracking-wider">
-        System Ready · Interbank Connected
+      <div className="text-xs font-semibold text-zinc-400 uppercase tracking-wider" role="status">
+        {connectionStatus === 'checking'
+          ? 'Checking saved MT5 connection…'
+          : connectionStatus === 'connected'
+            ? 'MT5 broker connected · Verify account and quotes'
+            : 'MT5 offline · Broker orders disabled'}
       </div>
     </div>
   );

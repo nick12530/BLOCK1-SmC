@@ -22,11 +22,18 @@ function createSignal(
   score: number,
   candle: Candle,
   atr: number,
-  reasons: string[]
+  reasons: string[],
+  digits: number,
+  tickSize?: number
 ): Signal {
-  const entry = candle.close;
-  const sl = direction === 'BUY' ? entry - atr : entry + atr;
-  const tp = direction === 'BUY' ? entry + atr * 2 : entry - atr * 2;
+  const normalizePrice = (price: number) => Number(
+    (tickSize && tickSize > 0
+      ? Math.round(price / tickSize) * tickSize
+      : price).toFixed(digits)
+  );
+  const entry = normalizePrice(candle.close);
+  const sl = normalizePrice(direction === 'BUY' ? entry - atr : entry + atr);
+  const tp = normalizePrice(direction === 'BUY' ? entry + atr * 2 : entry - atr * 2);
   return {
     strategy,
     direction,
@@ -47,7 +54,9 @@ export function evaluateTechnicalStrategies(
   executionCandles: Candle[],
   higherTimeframeCandles: Candle[],
   timeframe: 'M1' | 'M5',
-  instrumentType: InstrumentType
+  instrumentType: InstrumentType,
+  digits: number = 2,
+  tickSize?: number
 ): Signal[] {
   if (executionCandles.length < EMA_SLOW + 2 || higherTimeframeCandles.length < EMA_SLOW + 2) return [];
   const intervalMs = timeframe === 'M1' ? 60_000 : 300_000;
@@ -104,7 +113,9 @@ export function evaluateTechnicalStrategies(
       [
         `${EMA_FAST}-EMA pullback reclaimed in the direction of the ${EMA_SLOW}-EMA trend.`,
         higherTrend === trendDirection ? 'Higher-timeframe trend agrees.' : 'Synthetic instrument: higher-timeframe alignment is not required.',
-      ]
+      ],
+      digits,
+      tickSize
     ));
   }
 
@@ -127,7 +138,9 @@ export function evaluateTechnicalStrategies(
         [
           `Closed candle broke the previous 20-bar ${breakoutDirection === 'BUY' ? 'high' : 'low'} with a body at least 0.8 ATR.`,
           higherTrend === breakoutDirection ? 'Higher-timeframe trend agrees.' : 'Breakout is counter to or not confirmed by higher-timeframe trend.',
-        ]
+        ],
+        digits,
+        tickSize
       ));
     }
   }

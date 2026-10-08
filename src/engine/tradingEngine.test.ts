@@ -160,17 +160,29 @@ describe('TradingEngine Store Architecture', () => {
     const candlesM15 = candles(100, 15 * 60_000);
     const candlesH1 = candles(100, 60 * 60_000);
 
-    engine.syncMt5Snapshot({
+    const snapshot = {
       account: { login: 1, server: 'Demo', balance: 100, equity: 100, margin_free: 100 },
-      positions: [],
+      positions: [{
+        ticket: 7,
+        symbol: 'XAUUSD.a',
+        type: 'BUY' as const,
+        volume: 0.01,
+        price_open: 2000,
+        sl: 1999,
+        tp: 2002,
+        profit: 0,
+        magic: 1,
+        comment: 'broker position',
+        time: '12:00',
+      }],
       symbol: 'XAUUSD',
       bid: 2000,
       ask: 2000.2,
       spread: 20,
-      accountMode: 'demo',
+      accountMode: 'demo' as const,
       tradingHalted: false,
       autoTrade: true,
-      instrumentType: 'standard',
+      instrumentType: 'standard' as const,
       symbolSpec: {
         point: 0.01,
         tickSize: 0.01,
@@ -186,7 +198,8 @@ describe('TradingEngine Store Architecture', () => {
       candlesM5,
       candlesM15,
       candlesH1,
-    });
+    };
+    engine.syncMt5Snapshot(snapshot);
 
     const market = engine.getMarketSnapshot();
     expect(market.brokerMarketData).toBe(true);
@@ -194,6 +207,11 @@ describe('TradingEngine Store Architecture', () => {
     expect(market.candlesM5).toBe(candlesM5);
     expect(market.accountMode).toBe('demo');
     expect(engine.autoTrade).toBe(true);
+    expect(engine.positions[0].symbol).toBe('XAUUSD.a');
+
+    engine.syncMt5Snapshot({ ...snapshot, symbol: 'XAUUSD.a', positions: [] });
+    expect(engine.getTickerSnapshot().symbol).toBe('XAUUSD.a');
+    expect(engine.getEntryBlockReason('BUY', null)).toContain('not an exact supported instrument');
   });
 
   it('generates ranked technical signals for a broker-named synthetic symbol', () => {
@@ -246,11 +264,11 @@ describe('TradingEngine Store Architecture', () => {
     const today = new Date().toISOString();
     // Simulate 5 closed trades today
     engine.closedTrades = [
-      { ticket: 1, type: 'BUY', volume: 0.01, price_open: 2000, price_close: 2005, sl: 1995, tp: 2010, profit: 5, pips: 50, closedAt: today, reason: 'TP' },
-      { ticket: 2, type: 'BUY', volume: 0.01, price_open: 2000, price_close: 2005, sl: 1995, tp: 2010, profit: 5, pips: 50, closedAt: today, reason: 'TP' },
-      { ticket: 3, type: 'BUY', volume: 0.01, price_open: 2000, price_close: 2005, sl: 1995, tp: 2010, profit: 5, pips: 50, closedAt: today, reason: 'TP' },
-      { ticket: 4, type: 'BUY', volume: 0.01, price_open: 2000, price_close: 2005, sl: 1995, tp: 2010, profit: 5, pips: 50, closedAt: today, reason: 'TP' },
-      { ticket: 5, type: 'BUY', volume: 0.01, price_open: 2000, price_close: 2005, sl: 1995, tp: 2010, profit: 5, pips: 50, closedAt: today, reason: 'TP' },
+      { ticket: 1, symbol: 'XAUUSD', openTime: today, closeTime: '12:00:00', type: 'BUY', volume: 0.01, openPrice: 2000, closePrice: 2005, profit: 5, pips: 50, closedAt: today, reason: 'TP', comment: 'test' },
+      { ticket: 2, symbol: 'XAUUSD', openTime: today, closeTime: '12:00:00', type: 'BUY', volume: 0.01, openPrice: 2000, closePrice: 2005, profit: 5, pips: 50, closedAt: today, reason: 'TP', comment: 'test' },
+      { ticket: 3, symbol: 'XAUUSD', openTime: today, closeTime: '12:00:00', type: 'BUY', volume: 0.01, openPrice: 2000, closePrice: 2005, profit: 5, pips: 50, closedAt: today, reason: 'TP', comment: 'test' },
+      { ticket: 4, symbol: 'XAUUSD', openTime: today, closeTime: '12:00:00', type: 'BUY', volume: 0.01, openPrice: 2000, closePrice: 2005, profit: 5, pips: 50, closedAt: today, reason: 'TP', comment: 'test' },
+      { ticket: 5, symbol: 'XAUUSD', openTime: today, closeTime: '12:00:00', type: 'BUY', volume: 0.01, openPrice: 2000, closePrice: 2005, profit: 5, pips: 50, closedAt: today, reason: 'TP', comment: 'test' },
     ];
 
     const lowScoreSignal = {

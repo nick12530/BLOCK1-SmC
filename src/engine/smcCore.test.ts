@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { evaluateConfluence, hasRecentCandleGap, MarketStructureEngine, sessionFilter } from './smcCore';
+import { calculateATR, detectFVGs, evaluateConfluence, hasRecentCandleGap, MarketStructureEngine, sessionFilter } from './smcCore';
 import { Candle } from '../types/smc';
 import { isWithinConfiguredNewsBlackout } from './riskConfig';
 
@@ -15,6 +15,44 @@ const rangingCandles = (count: number): Candle[] =>
   }));
 
 describe('SMC signal filters', () => {
+  it('seeds Wilder ATR with a full period of true ranges', () => {
+    const candles = Array.from({ length: 15 }, (_, index) => ({
+      time: index * 60_000,
+      timeStr: '12:00',
+      open: 1.1,
+      high: 1.2,
+      low: 1.0,
+      close: 1.1,
+      volume: 100,
+    }));
+
+    const atr = calculateATR(candles, 14);
+
+    expect(atr[12]).toBeNaN();
+    expect(atr[13]).toBeCloseTo(0.2);
+    expect(atr[14]).toBeCloseTo(0.2);
+  });
+
+  it('preserves broker precision in SMC levels for FX symbols', () => {
+    const candles: Candle[] = Array.from({ length: 20 }, (_, index) => ({
+      time: Date.now() - (20 - index) * 60_000,
+      timeStr: '12:00',
+      open: 1.08401,
+      high: 1.0842,
+      low: 1.0838,
+      close: 1.0841,
+      volume: 100,
+    }));
+    candles[10] = { ...candles[10], high: 1.08423, low: 1.08377 };
+    candles[12] = { ...candles[12], high: 1.08435, low: 1.08425 };
+    const atr = Array(candles.length).fill(0.0004);
+
+    const zones = detectFVGs(candles, atr, 0.01);
+
+    expect(zones[0].bottom).toBe(1.08423);
+    expect(zones[0].top).toBe(1.08425);
+  });
+
   it('does not create a trade signal in a ranging market', () => {
     expect(evaluateConfluence(rangingCandles(100), rangingCandles(100))).toBeNull();
   });

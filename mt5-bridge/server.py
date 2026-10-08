@@ -256,6 +256,7 @@ def read_positions() -> list[dict]:
     return [
         {
             "ticket": int(position.ticket),
+            "symbol": str(position.symbol),
             "type": "BUY" if position.type == mt5.POSITION_TYPE_BUY else "SELL",
             "volume": float(position.volume),
             "price_open": float(position.price_open),

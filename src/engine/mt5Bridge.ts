@@ -11,6 +11,7 @@ export interface BridgeAccountSnapshot {
   };
   positions: Array<{
     ticket: number;
+    symbol?: string;
     type: TradeDirection;
     volume: number;
     price_open: number;
@@ -54,8 +55,10 @@ export class MT5BridgeConnector {
   private isConnected = false;
   private accountMode: BridgeStatus['mode'] = 'standalone';
   private expectedAccount: { login: number; server: string } | null = null;
-  private pollInterval: ReturnType<typeof setInterval> | null = null;
   private historyPollInterval: ReturnType<typeof setInterval> | null = null;
+  private accountPollTimeout: ReturnType<typeof setTimeout> | null = null;
+  private pollingEnabled = false;
+  private accountPollInFlight = false;
   private onDataCallback: ((data: BridgeAccountSnapshot) => void) | null = null;
   private onClosedTradesCallback: ((trades: ClosedTrade[]) => void) | null = null;
   private lastPing: number | null = null;
@@ -275,27 +278,39 @@ export class MT5BridgeConnector {
 
   private startPolling() {
     this.stopPolling();
-    this.pollInterval = setInterval(() => {
-      void this.refreshAccount();
-    }, 2000);
+    this.pollingEnabled = true;
+    this.scheduleAccountPoll(0);
     this.historyPollInterval = setInterval(() => {
       void this.refreshClosedTrades();
     }, 30_000);
   }
 
   private stopPolling() {
-    if (this.pollInterval) clearInterval(this.pollInterval);
-    this.pollInterval = null;
+    this.pollingEnabled = false;
+    if (this.accountPollTimeout) clearTimeout(this.accountPollTimeout);
+    this.accountPollTimeout = null;
     if (this.historyPollInterval) clearInterval(this.historyPollInterval);
     this.historyPollInterval = null;
   }
 
+  private scheduleAccountPoll(delayMs: number) {
+    if (!this.pollingEnabled || this.accountPollTimeout) return;
+    this.accountPollTimeout = setTimeout(() => {
+      this.accountPollTimeout = null;
+      void this.refreshAccount();
+    }, delayMs);
+  }
+
   private async refreshAccount() {
+    if (!this.pollingEnabled || this.accountPollInFlight) return;
+    this.accountPollInFlight = true;
+    let failed = false;
     try {
       const snapshot = await this.request<BridgeAccountSnapshot>(
         `/api/account?symbol=${encodeURIComponent(this.symbol)}`,
         {}
       );
+      if (!this.pollingEnabled) return;
       if (
         !this.expectedAccount ||
         snapshot.account.login !== this.expectedAccount.login ||
@@ -303,15 +318,25 @@ export class MT5BridgeConnector {
       ) {
         this.isConnected = false;
         this.accountMode = 'unknown';
-        this.stopPolling();
+        this.pollingEnabled = false;
         throw new Error('MT5 terminal account changed. Trading is paused; verify and reconnect to the intended account.');
       }
       this.lastPing = Date.now();
+      this.isConnected = true;
+      this.accountMode = snapshot.accountMode;
+      this.consecutiveErrors = 0;
       this.onDataCallback?.({ ...snapshot, instrumentType: this.instrumentType });
     } catch (error) {
+      failed = true;
       this.isConnected = false;
-      this.stopPolling();
-      console.error('[MT5 Bridge] Account polling stopped:', error);
+      this.consecutiveErrors += 1;
+      console.error(`[MT5 Bridge] Account sync failed (attempt ${this.consecutiveErrors}); retrying:`, error);
+    } finally {
+      this.accountPollInFlight = false;
+      if (this.pollingEnabled) {
+        const retryDelay = Math.min(30_000, 2_000 * (2 ** Math.min(this.consecutiveErrors, 4)));
+        this.scheduleAccountPoll(failed ? retryDelay : 2_000);
+      }
     }
   }
 
@@ -329,19 +354,27 @@ export class MT5BridgeConnector {
   }
 
   private async request<T>(path: string, init: RequestInit): Promise<T> {
-    const response = await fetch(`${this.serverUrl}${path}`, {
-      ...init,
-      headers: {
-        'Content-Type': 'application/json',
-        ...init.headers,
-      },
-    });
-    const data = (await response.json()) as T | { detail?: string };
-    if (!response.ok) {
-      const detail = (data as { detail?: string }).detail;
-      throw new Error(detail || `MT5 bridge request failed (${response.status}).`);
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 8_000);
+    try {
+      const response = await fetch(`${this.serverUrl}${path}`, {
+        ...init,
+        cache: 'no-store',
+        signal: controller.signal,
+        headers: {
+          'Content-Type': 'application/json',
+          ...init.headers,
+        },
+      });
+      const data = (await response.json()) as T | { detail?: string };
+      if (!response.ok) {
+        const detail = (data as { detail?: string }).detail;
+        throw new Error(detail || `MT5 bridge request failed (${response.status}).`);
+      }
+      return data as T;
+    } finally {
+      clearTimeout(timeout);
     }
-    return data as T;
   }
 }
 

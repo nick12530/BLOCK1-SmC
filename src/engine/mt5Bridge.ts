@@ -81,6 +81,15 @@ export class MT5BridgeConnector {
     return this.symbol;
   }
 
+  setSymbol(newSymbol: string) {
+    if (!newSymbol) return;
+    this.symbol = newSymbol.trim();
+    if (this.isConnected) {
+      void this.refreshAccount();
+      void this.refreshClosedTrades();
+    }
+  }
+
   async connectAccount(credentials: {
     baseUrl: string;
     symbol: string;
@@ -138,6 +147,7 @@ export class MT5BridgeConnector {
     instrumentType: InstrumentType;
     signalTimeframe: 'M1' | 'M5';
     signalTimestamp: string;
+    magic?: number;
   }): Promise<{
     ok: true;
     ticket: number;

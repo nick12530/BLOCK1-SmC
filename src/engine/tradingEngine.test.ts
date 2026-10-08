@@ -74,6 +74,7 @@ describe('TradingEngine Store Architecture', () => {
   beforeEach(() => {
     engine = new TradingEngine();
     engine.stopEngineLoops(); // stop background loops during unit tests
+    engine.bypassNewsBlackout = true;
   });
 
   it('(a) same-data snapshot returns identical referential reference', () => {

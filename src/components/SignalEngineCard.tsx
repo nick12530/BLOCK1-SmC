@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import { Signal, TradeDirection } from '../types/smc';
 import { buildSignalRationale } from '../engine/tradeJournal';
+import { getInstrumentConfig } from '../engine/instrumentConfig';
 
 interface SignalEngineCardProps {
   onExecuteSignal?: (customVolume?: number, positionCount?: number, signal?: Signal) => void | Promise<void>;
@@ -58,14 +59,28 @@ export const SignalEngineCard: React.FC<SignalEngineCardProps> = React.memo(({ o
   const rewardPts = rawSig ? Math.abs(rawSig.tp - rawSig.entry) : 0;
 
   const tradeMetrics = useMemo(() => {
-    const totalLots = Number(((riskLimitedLotSize ?? 0) * positionCount).toFixed(2));
+    const config = getInstrumentConfig(ticker.symbol);
+    const totalLots = Number(((riskLimitedLotSize ?? lotSize) * positionCount).toFixed(2));
     const spec = market.symbolSpec;
-    const riskDollar = spec
-      ? Number((riskPts / spec.tickSize * spec.tickValue * totalLots).toFixed(2))
-      : 0;
-    const rewardDollar = spec
-      ? Number((rewardPts / spec.tickSize * spec.tickValue * totalLots).toFixed(2))
-      : 0;
+    let riskDollar = 0;
+    let rewardDollar = 0;
+
+    if (spec && spec.tickSize > 0 && spec.tickValue > 0) {
+      riskDollar = Number((riskPts / spec.tickSize * spec.tickValue * totalLots).toFixed(2));
+      rewardDollar = Number((rewardPts / spec.tickSize * spec.tickValue * totalLots).toFixed(2));
+    } else {
+      if (config.category === 'metals') {
+        riskDollar = Number((riskPts * totalLots * config.contractSize).toFixed(2));
+        rewardDollar = Number((rewardPts * totalLots * config.contractSize).toFixed(2));
+      } else if (ticker.symbol === 'USDJPY') {
+        riskDollar = Number(((riskPts * totalLots * config.contractSize) / Math.max(1, currentSpot || 150)).toFixed(2));
+        rewardDollar = Number(((rewardPts * totalLots * config.contractSize) / Math.max(1, currentSpot || 150)).toFixed(2));
+      } else {
+        riskDollar = Number((riskPts * totalLots * config.contractSize).toFixed(2));
+        rewardDollar = Number((rewardPts * totalLots * config.contractSize).toFixed(2));
+      }
+    }
+
     const rrRatio = riskPts > 0 ? (rewardPts / riskPts).toFixed(1) : '—';
 
     return {
@@ -74,7 +89,7 @@ export const SignalEngineCard: React.FC<SignalEngineCardProps> = React.memo(({ o
       rewardDollar,
       rrRatio,
     };
-  }, [riskPts, rewardPts, lotSize, positionCount, riskLimitedLotSize, market.symbolSpec]);
+  }, [riskPts, rewardPts, lotSize, positionCount, riskLimitedLotSize, market.symbolSpec, ticker.symbol, currentSpot]);
 
   const handleAdjustLot = (delta: number) => {
     setLotSize((prev) => {

@@ -7,7 +7,15 @@
 
 import React, { Suspense, lazy, useState, useCallback, useEffect } from 'react';
 import { useTheme } from './hooks/useTheme';
-import { useTicker, useMarket, usePositions, useEngine, useScenario } from './hooks/useTradingStore';
+import {
+  useTicker,
+  useMarket,
+  usePositions,
+  useEngine,
+  useScenario,
+  useScannerAnalyses,
+  useBestOpportunity,
+} from './hooks/useTradingStore';
 import { tradingEngine } from './engine/tradingEngine';
 
 import { HeaderView } from './components/HeaderView';
@@ -15,6 +23,8 @@ import { KillSwitchBanner } from './components/KillSwitchBanner';
 import { WorkspaceErrorBoundary } from './components/ErrorBoundary';
 import { ConfirmDialog } from './components/ConfirmDialog';
 
+import { MultiPairScannerPanel } from './components/MultiPairScannerPanel';
+import { BestOpportunityCard } from './components/BestOpportunityCard';
 import { SignalEngineCard } from './components/SignalEngineCard';
 import { DealingRangeZonesCard } from './components/DealingRangeZonesCard';
 import { CompoundingLadderCard } from './components/CompoundingLadderCard';
@@ -29,6 +39,9 @@ import { SignalToastNotification } from './components/SignalToastNotification';
 import { mt5Bridge } from './engine/mt5Bridge';
 import { RISK_CONFIG } from './engine/riskConfig';
 import type { Signal } from './types/smc';
+import type { SupportedSymbol } from './engine/instrumentConfig';
+import { getInstrumentConfig } from './engine/instrumentConfig';
+import type { PairAnalysis } from './engine/multiPairScanner';
 import {
   buildSignalRationale,
   findCorrespondingOrderBlock,
@@ -66,6 +79,12 @@ export default function App() {
   const positionsState = usePositions();
   const engine = useEngine();
   const scenario = useScenario();
+  const scannerAnalyses = useScannerAnalyses();
+  const bestOpportunity = useBestOpportunity();
+
+  const handleSelectSymbol = useCallback((symbol: SupportedSymbol) => {
+    tradingEngine.switchSymbol(symbol);
+  }, []);
 
   // Discriminated modal state (Priority 4, Item 12)
   const [activeModal, setActiveModal] = useState<
@@ -227,6 +246,18 @@ export default function App() {
     [ticker.spread, positionsState.positions.length, engine.kill_switch]
   );
 
+  const handleExecuteAnalysis = useCallback(
+    (analysis: PairAnalysis) => {
+      if (analysis.symbol !== ticker.symbol) {
+        tradingEngine.switchSymbol(analysis.symbol);
+      }
+      if (analysis.signal) {
+        void handleExecuteSignal(analysis.safeLotSize ?? undefined, 1, analysis.signal);
+      }
+    },
+    [ticker.symbol, handleExecuteSignal]
+  );
+
   // Kill switch toggle with disarm confirm (Priority 3, Item 8c)
   const handleToggleKillSwitchPrompt = useCallback(() => {
     if (engine.kill_switch) {
@@ -281,6 +312,27 @@ export default function App() {
             />
           </section>
 
+          {/* 1. Best Opportunity Podium Banner (Section 14) */}
+          {bestOpportunity && (
+            <div className="lg:col-span-12">
+              <BestOpportunityCard
+                rankedAnalyses={scannerAnalyses}
+                onSelectSymbol={handleSelectSymbol}
+                onExecuteTrade={handleExecuteAnalysis}
+              />
+            </div>
+          )}
+
+          {/* 2. Unified Multi-Pair Market Scanner Panel (Section 1 & 13) */}
+          <section aria-label="Multi-pair scanner" className="space-y-3 lg:col-span-12">
+            <MultiPairScannerPanel
+              scannerAnalyses={scannerAnalyses}
+              activeSymbol={ticker.symbol}
+              onSelectSymbol={handleSelectSymbol}
+              onExecuteTrade={handleExecuteAnalysis}
+            />
+          </section>
+
           <section aria-label="Trading parameters" className="space-y-3 lg:col-span-4">
             <div>
               <h2 className="text-base font-semibold text-slate-900 dark:text-zinc-100">Trade parameters</h2>
@@ -304,7 +356,7 @@ export default function App() {
             </div>
             <TradingViewWidget
               isDark={isDark}
-              symbol={ticker.symbol === 'XAUUSD' ? 'OANDA:XAUUSD' : ticker.symbol}
+              symbol={getInstrumentConfig(ticker.symbol).tvSymbol}
               interval="1"
               height={460}
               onExpand={() => setActiveModal('tradingview')}

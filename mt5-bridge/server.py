@@ -189,6 +189,7 @@ class TradeRequest(BaseModel):
     poiKey: str = Field(min_length=1, max_length=160)
     signalTimeframe: Literal["M1", "M5"]
     signalTimestamp: str = Field(min_length=1, max_length=40)
+    magic: int | None = None
 
 
 class TradingControlRequest(BaseModel):
@@ -659,7 +660,12 @@ def place_trade(payload: TradeRequest, request: Request) -> dict:
         "sl": payload.sl,
         "tp": payload.tp,
         "deviation": 20,
-        "magic": 20261001,
+        "magic": payload.magic or {
+            "EURUSD": 10001,
+            "USDJPY": 10002,
+            "GBPUSD": 10003,
+            "XAUUSD": 20261001,
+        }.get(symbol.upper(), 20261001),
         "comment": f"SMC: {rationale_comment}" if rationale_comment else "SMC dashboard",
         "type_time": mt5.ORDER_TIME_GTC,
         "type_filling": filling,

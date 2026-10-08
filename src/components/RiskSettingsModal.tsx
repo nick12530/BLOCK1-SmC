@@ -17,6 +17,7 @@ export const RiskSettingsModal: React.FC<RiskSettingsModalProps> = ({
 }) => {
   const [balanceInput, setBalanceInput] = useState<number>(snapshot.balance);
   const [autoRr, setAutoRr] = useState<number>(tradingEngine.account.auto_rr);
+  const [minScore, setMinScore] = useState<number>(tradingEngine.minScoreThreshold || 75);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -33,12 +34,13 @@ export const RiskSettingsModal: React.FC<RiskSettingsModalProps> = ({
     tradingEngine.account.max_daily_loss_pct = RISK_CONFIG.maxDailyLossPercent;
     tradingEngine.account.risk_pct = RISK_CONFIG.riskPercentPerTrade;
     tradingEngine.account.auto_rr = autoRr;
+    tradingEngine.setMinScoreThreshold(minScore);
     if (!tradingEngine.mt5Account.connected) {
       tradingEngine.account.balance = balanceInput;
       tradingEngine.account.equity = balanceInput;
       tradingEngine.account.daily_start_balance = balanceInput;
     }
-    tradingEngine.slog(`Risk parameters updated: Max daily loss ${RISK_CONFIG.maxDailyLossPercent}%, Risk ${RISK_CONFIG.riskPercentPerTrade}%`, 'info');
+    tradingEngine.slog(`Risk parameters updated: Score threshold ${minScore}/100, Max daily loss ${RISK_CONFIG.maxDailyLossPercent}%, Risk ${RISK_CONFIG.riskPercentPerTrade}%`, 'info');
     tradingEngine.notify();
     onClose();
   };
@@ -88,22 +90,46 @@ export const RiskSettingsModal: React.FC<RiskSettingsModalProps> = ({
               disabled={tradingEngine.mt5Account.connected}
               className="w-full bg-slate-50 dark:bg-[#0c1017] border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-slate-900 dark:text-white font-semibold focus:outline-none focus:border-blue-500"
             />
-            {!tradingEngine.mt5Account.connected && <div className="grid grid-cols-4 gap-1.5 mt-2">
-              {[10000, 25000, 50000, 100000].map((b) => (
-                <button
-                  key={b}
-                  type="button"
-                  onClick={() => setPresetBalance(b)}
-                  className={`py-1.5 rounded-lg border text-[11px] font-semibold transition-colors ${
-                    balanceInput === b
-                      ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900'
-                      : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700'
-                  }`}
-                >
-                  ${(b / 1000).toFixed(0)}k
-                </button>
-              ))}
-            </div>}
+            {!tradingEngine.mt5Account.connected && (
+              <div className="grid grid-cols-6 gap-1.5 mt-2">
+                {[10, 25, 50, 100, 500, 1000].map((b) => (
+                  <button
+                    key={b}
+                    type="button"
+                    onClick={() => setPresetBalance(b)}
+                    className={`py-1.5 rounded-lg border text-[10px] font-semibold transition-colors cursor-pointer ${
+                      balanceInput === b
+                        ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900 border-transparent'
+                        : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700 hover:border-slate-300'
+                    }`}
+                  >
+                    ${b}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Section 3: Confluence Score Execution Threshold */}
+          <div>
+            <div className="flex justify-between text-slate-500 dark:text-slate-400 mb-1">
+              <span>Minimum Confluence Score Threshold</span>
+              <span className="text-sky-600 dark:text-sky-400 font-bold font-mono">{minScore} / 100</span>
+            </div>
+            <input
+              type="range"
+              min="50"
+              max="95"
+              step="5"
+              value={minScore}
+              onChange={(e) => setMinScore(Number(e.target.value))}
+              className="w-full h-2 bg-slate-200 dark:bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-sky-500"
+            />
+            <div className="flex justify-between text-[10px] text-zinc-400 font-mono mt-1">
+              <span>50 (Moderate)</span>
+              <span>75 (Institutional Default)</span>
+              <span>95 (Ultra-Strict)</span>
+            </div>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
@@ -115,6 +141,19 @@ export const RiskSettingsModal: React.FC<RiskSettingsModalProps> = ({
               <div className="text-[10px] uppercase text-slate-500 dark:text-zinc-400">Max risk per order</div>
               <div className="mt-1 text-lg font-bold text-emerald-600 dark:text-emerald-300">{RISK_CONFIG.riskPercentPerTrade}%</div>
             </div>
+          </div>
+
+          {/* Small Account Protection Rules Summary */}
+          <div className="bg-sky-50/60 dark:bg-sky-950/20 border border-sky-200 dark:border-sky-900/40 p-3 rounded-xl space-y-1.5 text-[11px] text-slate-700 dark:text-zinc-300 font-sans">
+            <div className="font-bold text-sky-800 dark:text-sky-300 flex items-center gap-1.5">
+              <span>Small Account ($10) Safety Engine</span>
+            </div>
+            <ul className="list-disc list-inside space-y-0.5 text-[10px] text-slate-600 dark:text-zinc-400">
+              <li>Max simultaneous open trades: 1</li>
+              <li>Daily limit: 5 trades max / day (3 trades max / pair)</li>
+              <li>Rejects micro-lot if risk exceeds budget: <code>TRADE_REJECTED: MINIMUM_LOT_EXCEEDS_RISK</code></li>
+              <li>Zero Martingale, zero averaging, and USD correlation exposure protection enabled</li>
+            </ul>
           </div>
 
           {/* Auto R:R Target */}

@@ -16,6 +16,7 @@ import {
   Server,
   Wallet,
   ShieldCheck,
+  Clock,
 } from 'lucide-react';
 
 interface HeaderViewProps {
@@ -60,18 +61,26 @@ export const HeaderView: React.FC<HeaderViewProps> = React.memo(({
   return (
     <header className="relative w-full border-b border-slate-200/90 dark:border-[#1a3040] bg-white/95 dark:bg-[#0d1823]/95 backdrop-blur-md px-3 sm:px-6 py-2.5 font-mono text-xs transition-colors shadow-xs">
       <div className="max-w-7xl mx-auto flex items-center justify-between gap-3 flex-wrap sm:flex-nowrap">
-        {/* Left: Brand Identity & Session Schedule */}
+        {/* Left: Brand Identity, Dynamic Symbol & Dual Session Times */}
         <div className="flex items-center gap-2.5 sm:gap-3 shrink-0">
           <div className="flex items-center gap-1.5">
             <span className="font-black text-sm sm:text-base tracking-tight text-slate-900 dark:text-white uppercase font-sans">
-              GOLD
+              {ticker.symbol === 'XAUUSD' ? 'GOLD' : 'FOREX'}
             </span>
-            <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 dark:bg-zinc-800 text-slate-700 dark:text-zinc-300 font-bold border border-slate-200 dark:border-zinc-700">
-              XAUUSD
+            <span className="text-[10px] px-1.5 py-0.5 rounded bg-sky-500/10 dark:bg-sky-500/20 text-sky-600 dark:text-sky-300 font-bold border border-sky-500/20">
+              {ticker.symbol}
             </span>
           </div>
 
           <div className="h-4 w-px bg-slate-200 dark:bg-zinc-800" />
+
+          {/* Dual Clock: Server Time & Kenya/EAT Time (Section 9) */}
+          <div className="hidden lg:flex items-center gap-2 text-[10px] px-2 py-0.5 rounded-lg bg-slate-100 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-slate-600 dark:text-zinc-300">
+            <Clock className="w-3 h-3 text-sky-500" />
+            <span>{ticker.brokerTimeStr || '00:00 Server'}</span>
+            <span className="text-zinc-400">·</span>
+            <span className="text-emerald-600 dark:text-emerald-400 font-bold">{ticker.kenyaTimeStr || '00:00 EAT'}</span>
+          </div>
 
           <span className={`flex items-center gap-1.5 text-[10px] font-bold px-2 py-0.5 rounded-full border ${
             mt5?.connected

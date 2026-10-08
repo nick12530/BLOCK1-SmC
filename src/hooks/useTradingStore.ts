@@ -13,6 +13,8 @@ import {
   EventsState,
   ClosedTrade,
 } from '../types/smc';
+import type { PairAnalysis } from '../engine/multiPairScanner';
+import type { SupportedSymbol } from '../engine/instrumentConfig';
 
 export function useTicker(): TickerState {
   const subscribe = useCallback((cb: () => void) => tradingEngine.on('ticker', cb), []);
@@ -55,3 +57,22 @@ export function useClosedTrades(): ClosedTrade[] {
   const getSnapshot = useCallback(() => tradingEngine.getClosedTradesSnapshot(), []);
   return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 }
+
+export function useScannerAnalyses(): PairAnalysis[] {
+  const subscribe = useCallback((cb: () => void) => tradingEngine.on('scanner', cb), []);
+  const getSnapshot = useCallback(() => tradingEngine.getScannerAnalyses(), []);
+  return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+}
+
+export function useBestOpportunity(): PairAnalysis | null {
+  const subscribe = useCallback((cb: () => void) => tradingEngine.on('scanner', cb), []);
+  const getSnapshot = useCallback(() => tradingEngine.getBestOpportunity(), []);
+  return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+}
+
+export function useActiveSymbol(): SupportedSymbol {
+  const subscribe = useCallback((cb: () => void) => tradingEngine.on('ticker', cb), []);
+  const getSnapshot = useCallback(() => tradingEngine.activeSymbol, []);
+  return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+}
+

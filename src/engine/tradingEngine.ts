@@ -52,6 +52,16 @@ import {
   TradeRationales,
   TradeOrderBlocks,
 } from './tradeJournal';
+import { INSTRUMENTS, SUPPORTED_SYMBOLS, SupportedSymbol, getInstrumentConfig } from './instrumentConfig';
+import { getGlobalSessionStatus } from './sessionTimezones';
+import {
+  PairAnalysis,
+  analyzeInstrument,
+  rankOpportunities,
+  checkCorrelationExposure,
+  calculateSmallAccountPositionSize,
+} from './multiPairScanner';
+import { generatePairCandles } from './dataFeed';
 
 const MAGIC = 20261001;
 export const MAX_SPREAD_POINTS = 40; // 40 points = 4.0 pips on gold
@@ -72,14 +82,35 @@ export class TradingEngine {
   spread: number = 18; // 18 points = 1.8 pips
   lastPrice: number = 4188.5;
 
+  activeSymbol: SupportedSymbol = 'XAUUSD';
+  scannerAnalyses: PairAnalysis[] = [];
+  bestOpportunity: PairAnalysis | null = null;
+  pairData: Record<
+    SupportedSymbol,
+    {
+      candlesM1: Candle[];
+      candlesM5: Candle[];
+      candlesM15: Candle[];
+      candlesH1: Candle[];
+      bid: number;
+      ask: number;
+      spread: number;
+    }
+  > = {
+    XAUUSD: { candlesM1: [], candlesM5: [], candlesM15: [], candlesH1: [], bid: 4188.50, ask: 4188.68, spread: 18 },
+    EURUSD: { candlesM1: [], candlesM5: [], candlesM15: [], candlesH1: [], bid: 1.08750, ask: 1.08758, spread: 8 },
+    USDJPY: { candlesM1: [], candlesM5: [], candlesM15: [], candlesH1: [], bid: 153.850, ask: 153.862, spread: 12 },
+    GBPUSD: { candlesM1: [], candlesM5: [], candlesM15: [], candlesH1: [], bid: 1.29650, ask: 1.29662, spread: 12 },
+  };
+
   killSwitch: boolean = false;
   autoTrade: boolean = false;
   autoBeEnabled: boolean = true;
   newsBlackout: boolean = false;
+  bypassNewsBlackout: boolean = false;
   connected: boolean = true;
   simulateWeekendMode: boolean = false;
   instrumentType: InstrumentType = 'standard';
-  private activeSymbol = 'XAUUSD';
   private hasBrokerMarketData = false;
   private symbolSpec: SymbolTradingSpec | null = null;
    private brokerAccountMode: 'demo' | 'live' | 'contest' | 'unknown' | null = null;
@@ -129,6 +160,8 @@ export class TradingEngine {
   private tradeRationales: TradeRationales = {};
   private tradeOrderBlocks: TradeOrderBlocks = {};
 
+  minScoreThreshold: number = 75;
+
   // Channel-specific listener registry (Priority 1)
   private channelListeners: Map<StoreChannel, Set<() => void>> = new Map([
     ['ticker', new Set()],
@@ -137,6 +170,7 @@ export class TradingEngine {
     ['engine', new Set()],
     ['events', new Set()],
     ['scenario', new Set()],
+    ['scanner', new Set()],
   ]);
 
   private tickIntervalId: ReturnType<typeof setInterval> | null = null;
@@ -155,7 +189,9 @@ export class TradingEngine {
     this.closedTrades = readStoredClosedTrades();
     this.tradeRationales = readTradeRationales();
     this.tradeOrderBlocks = readTradeOrderBlocks();
+    this.initPairData();
     this.resetWithScenario('london_bullish_fvg');
+    this.refreshScanner();
     this.startEngineLoops();
     this.syncLiveMarketData();
   }
@@ -228,7 +264,8 @@ export class TradingEngine {
     this.lastPrice = (snapshot.bid + snapshot.ask) / 2;
     this.spread = snapshot.spread;
     this.instrumentType = snapshot.instrumentType;
-    this.activeSymbol = snapshot.symbol;
+    const symUpper = (snapshot.symbol || '').toUpperCase().trim();
+    this.activeSymbol = (SUPPORTED_SYMBOLS.includes(symUpper as any) ? symUpper : 'XAUUSD') as SupportedSymbol;
     this.symbolSpec = snapshot.symbolSpec;
     this.brokerAccountMode = snapshot.accountMode;
     this.candlesM1 = snapshot.candlesM1;
@@ -437,26 +474,31 @@ export class TradingEngine {
 
   getTickerSnapshot(): TickerState {
     if (!this._cachedTicker) {
+      const config = getInstrumentConfig(this.activeSymbol);
       const allCloses = this.candlesM15.map((c) => c.close);
-      const high24h = Math.max(...this.candlesM15.map((c) => c.high));
-      const low24h = Math.min(...this.candlesM15.map((c) => c.low));
+      const high24h = this.candlesM15.length ? Math.max(...this.candlesM15.map((c) => c.high)) : this.bid;
+      const low24h = this.candlesM15.length ? Math.min(...this.candlesM15.map((c) => c.low)) : this.bid;
       const open24h = this.candlesM15[0]?.open || this.bid;
-      const change24h = Number((this.bid - open24h).toFixed(2));
+      const change24h = Number((this.bid - open24h).toFixed(config.digits));
       const change24hPct = Number(((change24h / open24h) * 100).toFixed(2));
+      const globalSessions = getGlobalSessionStatus(new Date());
 
       this._cachedTicker = {
         time: new Date().toISOString().substr(11, 8) + ' UTC',
         symbol: this.activeSymbol,
-        bid: Number(this.bid.toFixed(2)),
-        ask: Number(this.ask.toFixed(2)),
+        displayName: config.displayName,
+        brokerTimeStr: globalSessions.brokerTimeStr,
+        kenyaTimeStr: globalSessions.kenyaTimeStr,
+        bid: Number(this.bid.toFixed(config.digits)),
+        ask: Number(this.ask.toFixed(config.digits)),
         spread: this.spread,
         equity: Number(this.account.equity.toFixed(2)),
         balance: Number(this.account.balance.toFixed(2)),
-        high24h: Number(high24h.toFixed(2)),
-        low24h: Number(low24h.toFixed(2)),
+        high24h: Number(high24h.toFixed(config.digits)),
+        low24h: Number(low24h.toFixed(config.digits)),
         change24h,
         change24hPct,
-        volume24h: '184.2K oz',
+        volume24h: config.category === 'metals' ? '184.2K oz' : '2.4M Lots',
       };
     }
     return this._cachedTicker;
@@ -576,6 +618,8 @@ export class TradingEngine {
         candlesH1: this.candlesH1,
         mtfAlignment,
         candlestickAnalysis,
+        scannerAnalyses: this.scannerAnalyses,
+        bestOpportunity: this.bestOpportunity,
       };
     }
     return this._cachedMarket;
@@ -772,6 +816,125 @@ export class TradingEngine {
     return this.simulateWeekendMode;
   }
 
+  initPairData() {
+    for (const sym of SUPPORTED_SYMBOLS) {
+      if (!this.pairData[sym].candlesM1.length) {
+        const generated = generatePairCandles(sym, 80);
+        this.pairData[sym] = {
+          candlesM1: generated.candlesM1,
+          candlesM5: generated.candlesM5,
+          candlesM15: generated.candlesM15,
+          candlesH1: generated.candlesH1,
+          bid: generated.currentBid,
+          ask: generated.currentAsk,
+          spread: generated.spreadPoints,
+        };
+      }
+    }
+  }
+
+  getScannerAnalyses(): PairAnalysis[] {
+    if (!this.scannerAnalyses.length) {
+      this.refreshScanner();
+    }
+    return this.scannerAnalyses;
+  }
+
+  getBestOpportunity(): PairAnalysis | null {
+    if (!this.bestOpportunity && !this.scannerAnalyses.length) {
+      this.refreshScanner();
+    }
+    return this.bestOpportunity;
+  }
+
+  setMinScoreThreshold(threshold: number) {
+    this.minScoreThreshold = Math.max(50, Math.min(95, threshold));
+    this.refreshScanner();
+    this.slog(`Confluence Execution Threshold updated to ${this.minScoreThreshold}/100`, 'info');
+  }
+
+  refreshScanner() {
+    this.initPairData();
+    const analyses: PairAnalysis[] = [];
+    const events = this.getEventsSnapshot().economicEvents;
+
+    for (const sym of SUPPORTED_SYMBOLS) {
+      const data = this.pairData[sym];
+      const isCurrent = this.activeSymbol === sym;
+      const cM1 = isCurrent && this.candlesM1.length ? this.candlesM1 : data.candlesM1;
+      const cM5 = isCurrent && this.candlesM5.length ? this.candlesM5 : data.candlesM5;
+      const cM15 = isCurrent && this.candlesM15.length ? this.candlesM15 : data.candlesM15;
+      const cH1 = isCurrent && this.candlesH1.length ? this.candlesH1 : data.candlesH1;
+      const curBid = isCurrent ? this.bid : data.bid;
+      const curAsk = isCurrent ? this.ask : data.ask;
+      const curSpread = isCurrent ? this.spread : data.spread;
+
+      const analysis = analyzeInstrument(
+        sym,
+        cM1,
+        cM5,
+        cM15,
+        cH1,
+        curBid,
+        curAsk,
+        curSpread,
+        this.account.equity,
+        this.account.risk_pct,
+        this.positions,
+        events
+      );
+      analyses.push(analysis);
+    }
+
+    const ranked = rankOpportunities(analyses);
+    this.scannerAnalyses = ranked;
+    this.bestOpportunity = ranked[0] || null;
+    this.emit('scanner');
+  }
+
+  switchSymbol(newSymbol: SupportedSymbol) {
+    if (!SUPPORTED_SYMBOLS.includes(newSymbol)) return;
+    if (this.activeSymbol === newSymbol) return;
+
+    // Cache current state back to pairData
+    this.pairData[this.activeSymbol] = {
+      candlesM1: this.candlesM1,
+      candlesM5: this.candlesM5,
+      candlesM15: this.candlesM15,
+      candlesH1: this.candlesH1,
+      bid: this.bid,
+      ask: this.ask,
+      spread: this.spread,
+    };
+
+    this.activeSymbol = newSymbol;
+    const targetData = this.pairData[newSymbol];
+    const config = getInstrumentConfig(newSymbol);
+
+    this.candlesM1 = targetData.candlesM1;
+    this.candlesM5 = targetData.candlesM5;
+    this.candlesM15 = targetData.candlesM15;
+    this.candlesH1 = targetData.candlesH1;
+    this.bid = targetData.bid;
+    this.ask = targetData.ask;
+    this.spread = targetData.spread;
+    this.lastPrice = this.bid;
+
+    if (this.mt5Account.connected) {
+      mt5Bridge.setSymbol(newSymbol);
+    }
+
+    this.slog(`Active workstation switched to ${newSymbol} (${config.displayName})`, 'info');
+
+    this.invalidateTicker();
+    this.invalidateMarket();
+    this.invalidateEngine();
+    this.refreshScanner();
+    this.emit('ticker');
+    this.emit('market');
+    this.emit('engine');
+  }
+
   getEventsSnapshot(): EventsState {
     if (!this._cachedEvents) {
       this._cachedEvents = {
@@ -806,19 +969,45 @@ export class TradingEngine {
     const now = Date.now();
     this.entryHistory = this.entryHistory.filter((entry) => now - entry.at < 60 * 60_000);
     if (this.killSwitch) return 'Kill switch is armed.';
-    if (this.instrumentType === 'standard' && this.newsBlackout) return 'News blackout is enabled.';
-    if (this.instrumentType === 'standard' && isWithinConfiguredNewsBlackout(new Date(now))) return 'Configured high-impact news blackout window is active.';
     if (this.account.daily_loss_hit || this.account.daily_drawdown_pct >= this.account.max_daily_loss_pct) {
       return 'Daily loss limit reached.';
     }
-    if (this.spread > this.getMaxSpreadPoints()) return `Spread too wide (${this.spread} points; maximum ${this.getMaxSpreadPoints()}).`;
-    if (this.positions.length >= RISK_CONFIG.maxOpenPositions) return 'Maximum open-position limit reached.';
-    if (this.entryHistory.length >= RISK_CONFIG.maxTradesPerHour) return 'Hourly trade limit reached.';
 
-    const consecutiveLosses = this.closedTrades.slice(0, RISK_CONFIG.maxConsecutiveLosses)
-      .every((trade) => trade.profit <= 0);
-    if (this.closedTrades.length >= RISK_CONFIG.maxConsecutiveLosses && consecutiveLosses) {
-      return 'Consecutive-loss circuit breaker reached.';
+    // Small account maximum simultaneous positions limit (Section 7)
+    const maxSimultaneousTrades = this.account.balance <= 100 ? 1 : RISK_CONFIG.maxOpenPositions;
+    if (this.positions.length >= maxSimultaneousTrades) {
+      return `TRADE_REJECTED: MAX_SIMULTANEOUS_TRADES_REACHED (Account limited to ${maxSimultaneousTrades} open position)`;
+    }
+
+    // Daily trade count limits (Section 7: 5 total, 3 per pair)
+    const today = new Date().toISOString().slice(0, 10);
+    const todayClosedTrades = this.closedTrades.filter((t) => (t.closedAt || '').startsWith(today));
+    if (todayClosedTrades.length >= 5) {
+      return 'TRADE_REJECTED: DAILY_TRADE_LIMIT_REACHED (Maximum 5 trades per day limit reached)';
+    }
+    const pairTodayTrades = todayClosedTrades.filter((t) => (t.symbol || t.comment || '').includes(this.activeSymbol));
+    if (pairTodayTrades.length >= 3) {
+      return `TRADE_REJECTED: PAIR_DAILY_LIMIT_REACHED (Maximum 3 trades per day reached for ${this.activeSymbol})`;
+    }
+
+    // Correlation & combined USD exposure protection (Section 8)
+    const correlationCheck = checkCorrelationExposure(this.activeSymbol, direction, this.positions, 1);
+    if (!correlationCheck.allowed) {
+      return correlationCheck.reason || 'TRADE_REJECTED: CORRELATION_LIMIT_EXCEEDED';
+    }
+
+    // Minimum lot risk calculation (Section 7: TRADE_REJECTED: MINIMUM_LOT_EXCEEDS_RISK)
+    if (signal) {
+      const stopDist = Math.abs(signal.entry - signal.sl);
+      const sizing = calculateSmallAccountPositionSize(this.account.equity, this.account.risk_pct, stopDist, this.activeSymbol);
+      if (sizing.rejectionReason) {
+        return sizing.rejectionReason;
+      }
+    }
+
+    const config = getInstrumentConfig(this.activeSymbol);
+    if (this.spread > config.maxSpreadPoints) {
+      return `TRADE_REJECTED: SPREAD_TOO_WIDE (${this.spread} points; maximum ${config.maxSpreadPoints} for ${this.activeSymbol}).`;
     }
 
     const lastDirectionEntry = [...this.entryHistory].reverse().find((entry) => entry.direction === direction);
@@ -832,16 +1021,23 @@ export class TradingEngine {
     ) {
       return 'This SMC point of interest was traded recently.';
     }
+    if (this.entryHistory.length >= RISK_CONFIG.maxTradesPerHour) return 'Hourly trade limit reached.';
+
+    const consecutiveLosses = this.closedTrades.slice(0, RISK_CONFIG.maxConsecutiveLosses)
+      .every((trade) => trade.profit <= 0);
+    if (this.closedTrades.length >= RISK_CONFIG.maxConsecutiveLosses && consecutiveLosses) {
+      return 'Consecutive-loss circuit breaker reached.';
+    }
+
+    if (this.instrumentType === 'standard' && this.newsBlackout) return 'News blackout is enabled.';
+    if (this.instrumentType === 'standard' && !this.bypassNewsBlackout && isWithinConfiguredNewsBlackout(new Date(now))) {
+      return 'Configured high-impact news blackout window is active.';
+    }
     return null;
   }
 
   getMaxSpreadPoints(): number {
-    if (this.instrumentType !== 'synthetic' || !this.symbolSpec?.point || this.candlesM1.length < 15) {
-      return MAX_SPREAD_POINTS;
-    }
-    const atr = calculateATR(this.candlesM1).at(-1);
-    if (!Number.isFinite(atr) || !atr) return MAX_SPREAD_POINTS;
-    return Math.max(1, Math.floor((atr * 0.15) / this.symbolSpec.point));
+    return getInstrumentConfig(this.activeSymbol).maxSpreadPoints;
   }
 
   recordAcceptedEntry(direction: TradeDirection, signal = this.getMarketSnapshot().signal) {
@@ -991,11 +1187,12 @@ export class TradingEngine {
       }
     }
 
-    const noise = (Math.random() - 0.48) * 0.26;
-    const drift = momentum + noise;
-    this.bid = Number(Math.max(1000, this.bid + drift).toFixed(2));
-    this.spread = Math.floor(16 + Math.random() * 4); // 16-20 pts tight institutional spread
-    this.ask = Number((this.bid + this.spread * 0.01).toFixed(2));
+    const config = getInstrumentConfig(this.activeSymbol);
+    const noise = (Math.random() - 0.48) * config.pointSize * 4;
+    const drift = momentum * config.pointSize * 10 + noise;
+    this.bid = Number(Math.max(config.pointSize * 100, this.bid + drift).toFixed(config.digits));
+    this.spread = Math.floor(config.minSpread + Math.random() * 3);
+    this.ask = Number((this.bid + this.spread * config.pointSize).toFixed(config.digits));
 
     // Progress latest M15 candle with real price updates
     if (this.candlesM15.length > 0) {
@@ -1005,27 +1202,53 @@ export class TradingEngine {
       if (this.bid < lastC.low) lastC.low = this.bid;
     }
 
+    // Advance background micro ticks for inactive pairs in pairData
+    for (const sym of SUPPORTED_SYMBOLS) {
+      if (sym === this.activeSymbol) continue;
+      const p = this.pairData[sym];
+      const cfg = getInstrumentConfig(sym);
+      const microNoise = (Math.random() - 0.49) * cfg.pointSize * 3;
+      p.bid = Number((p.bid + microNoise).toFixed(cfg.digits));
+      p.ask = Number((p.bid + p.spread * cfg.pointSize).toFixed(cfg.digits));
+      if (p.candlesM1.length > 0) {
+        const lastBar = p.candlesM1[p.candlesM1.length - 1];
+        lastBar.close = p.bid;
+        if (p.bid > lastBar.high) lastBar.high = p.bid;
+        if (p.bid < lastBar.low) lastBar.low = p.bid;
+      }
+    }
+
     // Update positions PnL safely
     let floatingPnl = 0;
     const toClose: { ticket: number; reason: 'TP' | 'SL' }[] = [];
 
     if (this.positions.length > 0) {
       this.positions = this.positions.map((p) => {
+        const posSym = (p.symbol || this.activeSymbol) as SupportedSymbol;
+        const cfg = getInstrumentConfig(posSym);
         const curPrice = p.type === 'BUY' ? this.bid : this.ask;
         const pts = p.type === 'BUY' ? curPrice - p.price_open : p.price_open - curPrice;
-        const profit = Number((pts * p.volume * 100).toFixed(2));
-        const pips = Number((pts * 10).toFixed(1));
+        const pips = Number((pts / cfg.pipSize).toFixed(1));
+        let profit = 0;
+        if (cfg.category === 'metals') {
+          profit = Number((pts * p.volume * cfg.contractSize).toFixed(2));
+        } else if (posSym === 'USDJPY') {
+          profit = Number(((pts * p.volume * cfg.contractSize) / Math.max(1, curPrice)).toFixed(2));
+        } else {
+          profit = Number((pts * p.volume * cfg.contractSize).toFixed(2));
+        }
         floatingPnl += profit;
 
         let currentSl = p.sl;
         let beLocked = p.beLocked;
         let trailLocked = p.trailLocked;
 
-        // Auto Break-Even (BE) Lock: when trade reaches 1:1 RR (+2.0 points), move SL to entry + 0.3 pts
-        if (this.autoBeEnabled && !beLocked && pts >= 2.0) {
+        // Auto Break-Even (BE) Lock: when trade reaches 1:1 RR, move SL to entry
+        const beBuffer = cfg.pipSize * 3;
+        if (this.autoBeEnabled && !beLocked && pts >= cfg.pipSize * 15) {
           beLocked = true;
-          currentSl = Number((p.type === 'BUY' ? p.price_open + 0.3 : p.price_open - 0.3).toFixed(2));
-          this.slog(`🛡️ ZERO-RISK BE LOCK: SL moved to $${currentSl.toFixed(2)} (#${p.ticket}) · Trade cannot lose!`, 'trade');
+          currentSl = Number((p.type === 'BUY' ? p.price_open + beBuffer : p.price_open - beBuffer).toFixed(cfg.digits));
+          this.slog(`🛡️ ZERO-RISK BE LOCK: SL moved to $${currentSl.toFixed(cfg.digits)} (#${p.ticket}) · Trade cannot lose!`, 'trade');
         }
 
         // Tier-2 Profit Shield Lock: when trade reaches 75% of target, lock 50% profit
@@ -1033,8 +1256,8 @@ export class TradingEngine {
         if (this.autoBeEnabled && !trailLocked && targetPts > 0 && pts >= targetPts * 0.75) {
           trailLocked = true;
           const lockedProfitPts = targetPts * 0.5;
-          currentSl = Number((p.type === 'BUY' ? p.price_open + lockedProfitPts : p.price_open - lockedProfitPts).toFixed(2));
-          this.slog(`🎯 TIER-2 PROFIT SHIELD: Locked $${(lockedProfitPts * p.volume * 100).toFixed(2)} profit floor (#${p.ticket})!`, 'trade');
+          currentSl = Number((p.type === 'BUY' ? p.price_open + lockedProfitPts : p.price_open - lockedProfitPts).toFixed(cfg.digits));
+          this.slog(`🎯 TIER-2 PROFIT SHIELD: Locked $${profit.toFixed(2)} profit floor (#${p.ticket})!`, 'trade');
         }
 
         // Check SL / TP
@@ -1085,6 +1308,9 @@ export class TradingEngine {
 
     // Periodically re-evaluate market dynamics on live tick progression
     this.tickCount++;
+    if (this.tickCount % 2 === 0) {
+      this.refreshScanner();
+    }
     if (this.tickCount % 6 === 0) {
       this.invalidateMarket();
       this.emit('market');
@@ -1143,8 +1369,9 @@ export class TradingEngine {
     }
 
     const market = this.getMarketSnapshot();
+    const minConfluence = this.minScoreThreshold / 20;
     const sig = market.signals.find((candidate) =>
-      candidate.score >= (candidate.strategy === 'SMC POI Retest' ? SCORE_THRESHOLD : 3.8)
+      candidate.score >= (candidate.strategy === 'SMC POI Retest' ? minConfluence : 3.8)
     );
     if (sig) {
       if (!market.brokerMarketData) {
@@ -1159,17 +1386,18 @@ export class TradingEngine {
       }
 
       const rationale = buildSignalRationale(sig);
-      this.slog(`Auto-Trader approved: ${sig.timeframe} ${sig.direction} score ${sig.score} · ${rationale}`, 'signal');
+      this.slog(`Auto-Trader approved: ${this.activeSymbol} ${sig.timeframe} ${sig.direction} score ${sig.score} · ${rationale}`, 'signal');
       if (this.mt5Account.connected) {
         if (!mt5Bridge.getStatus().connected) {
           this.slog('MT5 auto-order blocked: local bridge is offline.', 'error');
           return;
         }
         try {
+          const config = getInstrumentConfig(this.activeSymbol);
           const result = await mt5Bridge.sendTrade({
             direction: sig.direction,
             volume,
-            symbol: mt5Bridge.getSymbol(),
+            symbol: mt5Bridge.getSymbol() || this.activeSymbol,
             sl: sig.sl,
             tp: sig.tp,
             rationale,
@@ -1178,6 +1406,7 @@ export class TradingEngine {
             instrumentType: this.instrumentType,
             signalTimeframe: sig.timeframe === 'M1' ? 'M1' : 'M5',
             signalTimestamp: sig.timestamp,
+            magic: config.magicNumber,
           });
           this.recordMt5Rationale(
             result.ticket,
@@ -1244,18 +1473,20 @@ export class TradingEngine {
         ? 'Liquidity sweep into M5 Bullish Order Block (+OB) in Discount zone (<50% EQ). Confirmed FVG displacement with 1:2.0 RR target.'
         : 'Liquidity sweep into M5 Bearish Order Block (-OB) in Premium zone (>50% EQ). Confirmed FVG displacement with 1:2.0 RR target.');
 
+    const config = getInstrumentConfig(this.activeSymbol);
     const newPos: Position = {
       ticket,
+      symbol: this.activeSymbol,
       time: new Date().toISOString().substr(11, 8),
       type: direction,
       volume: riskVolume,
       price_open: openPrice,
-      sl,
-      tp,
+      sl: Number(sl.toFixed(config.digits)),
+      tp: Number(tp.toFixed(config.digits)),
       profit: 0.0,
       pips: 0.0,
-      magic: MAGIC,
-      comment,
+      magic: config.magicNumber,
+      comment: `${this.activeSymbol}:${comment}`,
       strategyRationale: rationale,
       strategyOrderBlock: findCorrespondingOrderBlock(
         direction,
@@ -1267,7 +1498,7 @@ export class TradingEngine {
     this.positions = [...this.positions, newPos];
     this.selectedTicket = ticket; // Automatically focus the newly entered trade on the chart!
     this.recordAcceptedEntry(direction, market.signal);
-    this.slog(`${comment} ${direction} ${riskVolume} @ ${openPrice} -> #${ticket}`, 'trade');
+    this.slog(`${this.activeSymbol} ${comment} ${direction} ${riskVolume} @ ${openPrice} -> #${ticket}`, 'trade');
 
     this.invalidatePositions();
     this.invalidateTicker();
@@ -1295,14 +1526,24 @@ export class TradingEngine {
       return;
     }
 
+    const posSym = (pos.symbol || this.activeSymbol) as SupportedSymbol;
+    const cfg = getInstrumentConfig(posSym);
     const closePrice = pos.type === 'BUY' ? this.bid : this.ask;
     const pts = pos.type === 'BUY' ? closePrice - pos.price_open : pos.price_open - closePrice;
-    const profit = Number((pts * pos.volume * 100).toFixed(2));
-    const pips = Number((pts * 10).toFixed(1));
+    const pips = Number((pts / cfg.pipSize).toFixed(1));
+    let profit = 0;
+    if (cfg.category === 'metals') {
+      profit = Number((pts * pos.volume * cfg.contractSize).toFixed(2));
+    } else if (posSym === 'USDJPY') {
+      profit = Number(((pts * pos.volume * cfg.contractSize) / Math.max(1, closePrice)).toFixed(2));
+    } else {
+      profit = Number((pts * pos.volume * cfg.contractSize).toFixed(2));
+    }
 
     const closedAt = new Date();
     const closed: ClosedTrade = {
       ticket: pos.ticket,
+      symbol: posSym,
       openTime: pos.time,
       closeTime: closedAt.toISOString().substr(11, 8),
       closedAt: closedAt.toISOString(),
@@ -1314,7 +1555,7 @@ export class TradingEngine {
       pips,
       reason,
       comment: pos.comment,
-      strategyRationale: pos.strategyRationale || 'SMC Order Block & Fair Value Gap Confluence execution',
+      strategyRationale: pos.strategyRationale || `${posSym} ${pos.type} SMC Order Block & Liquidity Pool confluence`,
       strategyOrderBlock: pos.strategyOrderBlock,
     };
 
@@ -1462,14 +1703,15 @@ export class TradingEngine {
         }
       | number
   ): { ok: boolean; error?: string; ticket?: number; price?: number } {
+    const config = getInstrumentConfig(this.activeSymbol);
     const market = this.getMarketSnapshot();
     const defaultSig = market.signal;
-    const defaultVol = this.account.balance <= 50 ? 0.01 : 0.02;
+    const defaultVol = 0.01;
 
     let direction: TradeDirection = defaultSig?.direction || (market.bias === 'bearish' ? 'SELL' : 'BUY');
     let vol = defaultVol;
-    let sl = defaultSig ? defaultSig.sl : (direction === 'BUY' ? this.bid - 4.0 : this.bid + 4.0);
-    let tp = defaultSig ? defaultSig.tp : (direction === 'BUY' ? this.bid + 8.0 : this.bid - 8.0);
+    let sl = defaultSig ? defaultSig.sl : (direction === 'BUY' ? this.bid - config.pipSize * 20 : this.bid + config.pipSize * 20);
+    let tp = defaultSig ? defaultSig.tp : (direction === 'BUY' ? this.bid + config.pipSize * 40 : this.bid - config.pipSize * 40);
     let comment = defaultSig ? `signal:${defaultSig.score}` : 'manual';
 
     if (typeof optionsOrVolume === 'number') {
@@ -1485,8 +1727,8 @@ export class TradingEngine {
     return this.sendMarket(
       direction,
       vol,
-      Number(sl.toFixed(2)),
-      Number(tp.toFixed(2)),
+      Number(sl.toFixed(config.digits)),
+      Number(tp.toFixed(config.digits)),
       comment
     );
   }

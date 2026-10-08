@@ -1,4 +1,5 @@
 import type { CandlestickAnalysis, CandlestickPatternMatch } from '../engine/candlestickPatterns';
+import type { PairAnalysis } from '../engine/multiPairScanner';
 
 export interface Candle {
   time: number; // Unix timestamp in seconds or ms
@@ -105,6 +106,7 @@ export interface Signal {
 
 export interface Position {
   ticket: number;
+  symbol?: string;
   time: string;
   type: TradeDirection;
   volume: number; // lots
@@ -123,6 +125,7 @@ export interface Position {
 
 export interface ClosedTrade {
   ticket: number;
+  symbol?: string;
   orderTicket?: number;
   positionTicket?: number;
   openTime: string;
@@ -150,7 +153,7 @@ export interface EngineLog {
 export interface EconomicEvent {
   id: string;
   time: string;
-  currency: 'USD' | 'EUR' | 'GBP';
+  currency: 'USD' | 'EUR' | 'GBP' | 'JPY';
   event: string;
   impact: 'high' | 'medium' | 'low';
   forecast: string;
@@ -182,6 +185,9 @@ export interface Scenario {
 export interface TickerState {
   time: string;
   symbol: string;
+  displayName?: string;
+  brokerTimeStr?: string;
+  kenyaTimeStr?: string;
   bid: number;
   ask: number;
   spread: number;
@@ -195,6 +201,7 @@ export interface TickerState {
 }
 
 export interface MarketState {
+  activeSymbol?: string;
   bias: 'bullish' | 'bearish' | 'ranging';
   bos: StructureEvent | null;
   choch: StructureEvent | null;
@@ -214,6 +221,8 @@ export interface MarketState {
   candlesH1: Candle[];
   mtfAlignment: MultiTimeframeAlignment[];
   candlestickAnalysis?: CandlestickAnalysis;
+  scannerAnalyses?: PairAnalysis[];
+  bestOpportunity?: PairAnalysis | null;
 }
 
 export interface SymbolTradingSpec {
@@ -301,4 +310,4 @@ export interface TerminalSnapshot extends TickerState, MarketState, EngineState 
   economicEvents: EconomicEvent[];
 }
 
-export type StoreChannel = 'ticker' | 'market' | 'positions' | 'engine' | 'events' | 'scenario';
+export type StoreChannel = 'ticker' | 'market' | 'positions' | 'engine' | 'events' | 'scenario' | 'scanner';

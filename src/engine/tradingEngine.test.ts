@@ -51,6 +51,23 @@ const candles = (count: number, intervalMs: number): Candle[] =>
     volume: 100,
   }));
 
+const flatCandles = (count: number, intervalMs: number, breakout = false): Candle[] => {
+  const now = Date.now();
+  return Array.from({ length: count }, (_, index) => {
+    const isBreakout = breakout && index === count - 1;
+    const close = isBreakout ? 103 : 100 + (index % 2 ? 0.02 : -0.02);
+    return {
+      time: now - (count - index) * intervalMs,
+      timeStr: '12:00',
+      open: isBreakout ? 100 : close - (index % 2 ? 0.01 : -0.01),
+      high: isBreakout ? 103.2 : 100.2,
+      low: isBreakout ? 99.9 : 99.8,
+      close,
+      volume: 100,
+    };
+  });
+};
+
 describe('TradingEngine Store Architecture', () => {
   let engine: TradingEngine;
 
@@ -151,7 +168,10 @@ describe('TradingEngine Store Architecture', () => {
       spread: 20,
       accountMode: 'demo',
       tradingHalted: false,
+      autoTrade: true,
+      instrumentType: 'standard',
       symbolSpec: {
+        point: 0.01,
         tickSize: 0.01,
         tickValue: 1,
         contractSize: 100,
@@ -172,6 +192,42 @@ describe('TradingEngine Store Architecture', () => {
     expect(market.candlesM1).toBe(candlesM1);
     expect(market.candlesM5).toBe(candlesM5);
     expect(market.accountMode).toBe('demo');
+    expect(engine.autoTrade).toBe(true);
+  });
+
+  it('generates ranked technical signals for a broker-named synthetic symbol', () => {
+    engine.syncMt5Snapshot({
+      account: { login: 1, server: 'Demo', balance: 10, equity: 10, margin_free: 10 },
+      positions: [],
+      symbol: 'Volatility 75 Index',
+      bid: 100,
+      ask: 100.1,
+      spread: 1,
+      accountMode: 'demo',
+      tradingHalted: false,
+      autoTrade: false,
+      instrumentType: 'synthetic',
+      symbolSpec: {
+        point: 0.01,
+        tickSize: 0.01,
+        tickValue: 0.01,
+        contractSize: 1,
+        volumeMin: 0.01,
+        volumeMax: 100,
+        volumeStep: 0.01,
+        tradeStopsLevel: 0,
+        tradeFreezeLevel: 0,
+      },
+      candlesM1: flatCandles(80, 60_000, true),
+      candlesM5: flatCandles(80, 5 * 60_000, true),
+      candlesM15: flatCandles(80, 15 * 60_000),
+      candlesH1: flatCandles(80, 60 * 60_000),
+    });
+
+    const market = engine.getMarketSnapshot();
+    expect(market.instrumentType).toBe('synthetic');
+    expect(market.signals.some((signal) => signal.strategy === 'Volatility Breakout')).toBe(true);
+    expect(market.signal).toBe(market.signals[0]);
   });
 
   it('blocks entries at the exact daily loss threshold and during direction cooldown', () => {

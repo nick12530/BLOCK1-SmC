@@ -74,6 +74,7 @@ export interface TriggerPattern {
 }
 
 export type TradeDirection = 'BUY' | 'SELL';
+export type InstrumentType = 'standard' | 'synthetic';
 
 export interface HumanSignalExplanation {
   headline: string;
@@ -85,6 +86,7 @@ export interface HumanSignalExplanation {
 }
 
 export interface Signal {
+  strategy?: 'SMC POI Retest' | 'Trend Pullback' | 'Volatility Breakout';
   direction: TradeDirection;
   timeframe: 'M1' | 'M5' | 'M15';
   score: number;
@@ -199,6 +201,8 @@ export interface MarketState {
   dealing_range: DealingRange | null;
   price_pos: number | null; // 0 to 1
   signal: Signal | null;
+  signals: Signal[];
+  instrumentType: InstrumentType;
   zones: Zone[];
   history: number[];
   brokerMarketData: boolean;
@@ -213,6 +217,7 @@ export interface MarketState {
 }
 
 export interface SymbolTradingSpec {
+  point: number;
   tickSize: number;
   tickValue: number;
   contractSize: number;

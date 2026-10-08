@@ -18,7 +18,7 @@ export const SCENARIOS: MarketScenario[] = [
   {
     id: 'london_bullish_fvg',
     name: 'London Open: Bullish BOS & Discount FVG Tap',
-    description: 'H1 Bullish structure + BOS confirmed. Price pulls back into M15 Discount FVG in London Kill Zone, generating a 5.0+ confluence BUY signal.',
+    description: 'H1 Bullish structure + BOS confirmed. Price pulls back into M15 Discount FVG during the London session, generating a 5.0+ confluence BUY signal.',
     targetBias: 'bullish',
     expectedSignal: 'BUY',
   },
@@ -32,7 +32,7 @@ export const SCENARIOS: MarketScenario[] = [
   {
     id: 'asian_consolidation',
     name: 'Asian Session: Ranging Equilibrium & Low Volatility',
-    description: 'Market structure is ranging with no clear directional bias. Filters prevent overtrading by keeping confluence score below the 4.0 threshold.',
+    description: 'Market structure is ranging with no clear directional bias. Filters prevent overtrading by keeping confluence score below the 5.0 threshold.',
     targetBias: 'ranging',
     expectedSignal: 'NONE',
   },

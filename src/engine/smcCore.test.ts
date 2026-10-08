@@ -26,11 +26,25 @@ describe('SMC signal filters', () => {
       expect(hasRecentCandleGap(bars, 60_000)).toBe(true);
     });
 
-    it('keeps London and New York kill zones aligned through daylight-saving changes', () => {
+    it('keeps London and New York sessions aligned through daylight-saving changes', () => {
       expect(sessionFilter(Date.parse('2026-01-12T08:30:00Z')).activeSessionName).toBe('London Kill Zone');
       expect(sessionFilter(Date.parse('2026-07-13T07:30:00Z')).activeSessionName).toBe('London Kill Zone');
       expect(sessionFilter(Date.parse('2026-01-12T13:30:00Z')).new_york).toBe(true);
       expect(sessionFilter(Date.parse('2026-07-13T12:30:00Z')).new_york).toBe(true);
+    });
+
+    it('allows entries throughout London and New York sessions, not only their kill zones', () => {
+      const laterLondon = sessionFilter(Date.parse('2026-07-13T12:30:00Z'));
+      const laterNewYork = sessionFilter(Date.parse('2026-07-13T16:30:00Z'));
+      const outsideSessions = sessionFilter(Date.parse('2026-07-13T22:00:00Z'));
+
+      expect(laterLondon.london).toBe(true);
+      expect(laterLondon.tradable).toBe(true);
+      expect(laterLondon.activeSessionName).toBe('London / NY Overlap');
+      expect(laterNewYork.new_york).toBe(true);
+      expect(laterNewYork.tradable).toBe(true);
+      expect(laterNewYork.activeSessionName).toBe('New York Session');
+      expect(outsideSessions.tradable).toBe(false);
     });
 
     it('applies configured news blackout times using New York daylight-saving rules', () => {

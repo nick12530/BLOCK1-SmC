@@ -120,8 +120,9 @@ export const SignalToastNotification: React.FC = () => {
             sl: signal.sl,
             tp: signal.tp,
             rationale,
-            clientOrderId: `${signal.timeframe}:${signal.direction}:${signal.timestamp}:${signal.entry.toFixed(2)}`,
+            clientOrderId: `${signal.strategy}:${signal.timeframe}:${signal.direction}:${signal.timestamp}:${signal.entry.toFixed(8)}`,
             poiKey: tradingEngine.getSignalPoiKey(signal.direction, signal.entry),
+            instrumentType: tradingEngine.instrumentType,
             signalTimeframe: signal.timeframe === 'M1' ? 'M1' : 'M5',
             signalTimestamp: signal.timestamp,
           });

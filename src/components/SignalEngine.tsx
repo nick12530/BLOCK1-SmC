@@ -175,7 +175,7 @@ export const SignalEngine: React.FC<SignalEngineProps> = ({ snapshot, onTradeSig
           <AlertCircle className="w-5 h-5 text-[#6b7a90]" />
           <div className="text-xs text-[#94a3b8] font-medium">No active institutional setup</div>
           <div className="text-[11px] text-[#6b7a90] max-w-[240px]">
-            Waiting for HTF structural alignment, FVG/OB POI retest, and kill zone confluence (Score ≥ 4.0).
+            Waiting for a 5.0+ setup with HTF alignment, FVG/OB POI retest, matching candle confirmation, and an active London or New York session.
           </div>
           <button
             disabled

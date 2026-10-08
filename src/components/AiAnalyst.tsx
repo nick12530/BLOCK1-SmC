@@ -25,7 +25,7 @@ Analyze the current live market state:
 - Current Dealing Position: ${snapshot.price_pos !== null ? (snapshot.price_pos < 0.5 ? 'DISCOUNT (< EQ)' : 'PREMIUM (> EQ)') : 'Unknown'}
 - Unmitigated Zones: ${snapshot.zones.map((z) => `${z.kind} ${z.bullish ? 'Demand' : 'Supply'} (${z.bottom}-${z.top}) with ${z.tests} tests`).join('; ')}
 - Institutional Session: ${snapshot.session.activeSessionName} (Tradable: ${snapshot.session.tradable})
-- Active Signal: ${snapshot.signal ? `${snapshot.signal.direction} with confluence score ${snapshot.signal.score} (SL: ${snapshot.signal.sl}, TP: ${snapshot.signal.tp})` : 'No active setup above 4.0 threshold'}
+- Active Signal: ${snapshot.signal ? `${snapshot.signal.direction} with confluence score ${snapshot.signal.score} (SL: ${snapshot.signal.sl}, TP: ${snapshot.signal.tp})` : 'No active setup above 5.0 threshold'}
 
 Provide an ultra-concise, institutional trading brief in 3 short bullet sections:
 1. Institutional Order Flow & Liquidity

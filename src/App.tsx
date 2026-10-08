@@ -8,7 +8,7 @@
 import React, { Suspense, lazy, useState, useCallback, useEffect } from 'react';
 import { useTheme } from './hooks/useTheme';
 import { useTicker, useMarket, usePositions, useEngine, useScenario } from './hooks/useTradingStore';
-import { tradingEngine, MAX_SPREAD_POINTS } from './engine/tradingEngine';
+import { tradingEngine } from './engine/tradingEngine';
 
 import { HeaderView } from './components/HeaderView';
 import { KillSwitchBanner } from './components/KillSwitchBanner';
@@ -28,6 +28,7 @@ import { FooterView } from './components/FooterView';
 import { SignalToastNotification } from './components/SignalToastNotification';
 import { mt5Bridge } from './engine/mt5Bridge';
 import { RISK_CONFIG } from './engine/riskConfig';
+import type { Signal } from './types/smc';
 import {
   buildSignalRationale,
   findCorrespondingOrderBlock,
@@ -88,8 +89,8 @@ export default function App() {
 
   // Execute signal with multiple position support (up to 10)
   const handleExecuteSignal = useCallback(
-    async (customVolume?: number, positionCount: number = 1) => {
-      const signal = tradingEngine.getMarketSnapshot().signal;
+    async (customVolume?: number, positionCount: number = 1, selectedSignal?: Signal) => {
+      const signal = selectedSignal ?? tradingEngine.getMarketSnapshot().signal;
       if (!signal) {
         setConfirmDialog({
           title: 'No confirmed setup',
@@ -132,10 +133,11 @@ export default function App() {
         return;
       }
 
-      if (ticker.spread > MAX_SPREAD_POINTS) {
+      const maxSpreadPoints = tradingEngine.getMaxSpreadPoints();
+      if (ticker.spread > maxSpreadPoints) {
         setConfirmDialog({
           title: 'High Spread Warning',
-          message: `Execution paused: Current spread is ${ticker.spread} points (Max allowed: ${MAX_SPREAD_POINTS} points). Protect your account from execution slippage.`,
+          message: `Execution paused: Current spread is ${ticker.spread} points (maximum: ${maxSpreadPoints}). Protect your account from execution slippage.`,
           confirmLabel: 'Dismiss',
           isDestructive: false,
           onConfirm: () => setConfirmDialog(null),
@@ -180,8 +182,9 @@ export default function App() {
               sl: signal.sl,
               tp: signal.tp,
               rationale,
-              clientOrderId: `${signal.timeframe}:${signal.direction}:${signal.timestamp}:${signal.entry.toFixed(2)}`,
+              clientOrderId: `${signal.strategy}:${signal.timeframe}:${signal.direction}:${signal.timestamp}:${signal.entry.toFixed(8)}`,
               poiKey: tradingEngine.getSignalPoiKey(signal.direction, signal.entry),
+              instrumentType: tradingEngine.instrumentType,
               signalTimeframe: signal.timeframe === 'M1' ? 'M1' : 'M5',
               signalTimestamp: signal.timestamp,
             });
@@ -261,11 +264,13 @@ export default function App() {
       />
 
       {/* 3. Main Workspace wrapped in ErrorBoundary (Priority 3, Item 6) */}
-      <main className="flex-1 max-w-screen-2xl w-full mx-auto px-3 py-4 sm:px-6 sm:py-6 lg:px-8 space-y-6">
+      <main className="mx-auto grid w-full max-w-[1920px] flex-1 grid-cols-1 items-start gap-5 px-3 py-4 sm:px-6 sm:py-6 lg:grid-cols-12 lg:gap-6 lg:px-8">
         <WorkspaceErrorBoundary>
-          <WeekendMarketBanner onOpenMt5Modal={() => setActiveModal('bridge')} />
+          <div className="lg:col-span-12">
+            <WeekendMarketBanner onOpenMt5Modal={() => setActiveModal('bridge')} />
+          </div>
 
-          <section aria-label="System controls" className="space-y-3">
+          <section aria-label="System controls" className="space-y-3 lg:col-span-12">
             <div>
               <h2 className="text-base font-semibold text-slate-900 dark:text-zinc-100">System controls</h2>
               <p className="mt-1 text-xs sm:text-sm text-slate-500 dark:text-zinc-400">Connection, automation, alerts, and safeguards</p>
@@ -276,7 +281,7 @@ export default function App() {
             />
           </section>
 
-          <section aria-label="Trading parameters" className="space-y-3">
+          <section aria-label="Trading parameters" className="space-y-3 lg:col-span-4">
             <div>
               <h2 className="text-base font-semibold text-slate-900 dark:text-zinc-100">Trade parameters</h2>
               <p className="mt-1 text-xs sm:text-sm text-slate-500 dark:text-zinc-400">Position sizing and break-even preferences</p>
@@ -284,7 +289,7 @@ export default function App() {
             <CompoundingLadderCard />
           </section>
 
-          <section aria-label="Trade signals" className="space-y-3">
+          <section aria-label="Trade signals" className="space-y-3 lg:col-span-8">
             <div>
               <h2 className="text-base font-semibold text-slate-900 dark:text-zinc-100">Trade signals</h2>
               <p className="mt-1 text-xs sm:text-sm text-slate-500 dark:text-zinc-400">Only confirmed setups are eligible for execution</p>
@@ -292,14 +297,14 @@ export default function App() {
             <SignalEngineCard onExecuteSignal={handleExecuteSignal} />
           </section>
 
-          <section aria-label="FX chart" className="w-full space-y-3">
+          <section aria-label="FX chart" className="w-full space-y-3 lg:col-span-8">
             <div>
               <h2 className="text-base font-semibold text-slate-900 dark:text-zinc-100">Price &amp; structure</h2>
-              <p className="mt-1 text-xs sm:text-sm text-slate-500 dark:text-zinc-400">One price scale for broker candles, SMC zones, structure, and execution levels</p>
+              <p className="mt-1 text-xs sm:text-sm text-slate-500 dark:text-zinc-400">One price scale for the selected broker market, structure, and execution levels</p>
             </div>
             <TradingViewWidget
               isDark={isDark}
-              symbol="OANDA:XAUUSD"
+              symbol={ticker.symbol === 'XAUUSD' ? 'OANDA:XAUUSD' : ticker.symbol}
               interval="1"
               height={460}
               onExpand={() => setActiveModal('tradingview')}
@@ -307,7 +312,18 @@ export default function App() {
             />
           </section>
 
-          <section aria-label="Open positions" className="space-y-3">
+          <section aria-label="Market context" className="space-y-3 lg:col-span-4">
+            <div>
+              <h2 className="text-base font-semibold text-slate-900 dark:text-zinc-100">Market context</h2>
+              <p className="mt-1 text-xs sm:text-sm text-slate-500 dark:text-zinc-400">Dealing range, active zones, and order-block status</p>
+            </div>
+            <div className="flex flex-col gap-4">
+              <DealingRangeZonesCard />
+              <OrderBlocksProgressionCard />
+            </div>
+          </section>
+
+          <section aria-label="Open positions" className="space-y-3 lg:col-span-12">
             <div>
               <h2 className="text-base font-semibold text-slate-900 dark:text-zinc-100">Open positions</h2>
               <p className="mt-1 text-xs sm:text-sm text-slate-500 dark:text-zinc-400">Select an open trade to focus it and its order block on the chart</p>
@@ -323,23 +339,14 @@ export default function App() {
             />
           </section>
 
-          <section aria-label="Market context" className="space-y-3">
-            <div>
-              <h2 className="text-base font-semibold text-slate-900 dark:text-zinc-100">Market context</h2>
-              <p className="mt-1 text-xs sm:text-sm text-slate-500 dark:text-zinc-400">Dealing range, active zones, and order-block status</p>
-            </div>
-            <div className="flex flex-col gap-4">
-              <DealingRangeZonesCard />
-              <OrderBlocksProgressionCard />
-            </div>
-          </section>
-
-          <DailyPnLCalendarCard
-            onOpenJournal={(date) => {
-              setReportDate(date);
-              setActiveModal('daily_report');
-            }}
-          />
+          <div className="lg:col-span-12">
+            <DailyPnLCalendarCard
+              onOpenJournal={(date) => {
+                setReportDate(date);
+                setActiveModal('daily_report');
+              }}
+            />
+          </div>
         </WorkspaceErrorBoundary>
       </main>
 

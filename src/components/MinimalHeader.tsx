@@ -67,7 +67,7 @@ export const MinimalHeader: React.FC<MinimalHeaderProps> = ({
           </div>
         </div>
 
-        {/* Center: MT5 Port Status & Session Kill Zone */}
+        {/* Center: MT5 Port Status & Trading Session */}
         <div className="hidden md:flex items-center gap-2 text-xs font-mono">
           {/* MT5 Port Pill */}
           <button

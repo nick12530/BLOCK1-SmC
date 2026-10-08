@@ -11,10 +11,11 @@ import threading
 from functools import wraps
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal, cast
 from zoneinfo import ZoneInfo
 
-import MetaTrader5 as mt5
+import MetaTrader5 as mt5  # type: ignore[attr-defined]
+mt5 = cast(Any, mt5)
 from fastapi import FastAPI, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
@@ -64,6 +65,9 @@ def initialize_state_database() -> None:
         connection.execute(
             "INSERT OR IGNORE INTO control_state (state_key, state_value) VALUES ('trading_halted', 'false')"
         )
+        connection.execute(
+            "INSERT OR IGNORE INTO control_state (state_key, state_value) VALUES ('auto_trade', 'false')"
+        )
         columns = {row[1] for row in connection.execute("PRAGMA table_info(order_requests)")}
         if "poi_key" not in columns:
             connection.execute("ALTER TABLE order_requests ADD COLUMN poi_key TEXT NOT NULL DEFAULT ''")
@@ -95,10 +99,11 @@ def configured_news_blackout(now: datetime) -> bool:
     return any(window["start"] <= local_time < window["end"] for window in RISK_CONFIG["newsBlackoutWindows"])
 
 
-def get_symbol_spec(login: int, server: str, symbol: str, info: object) -> dict:
+def get_symbol_spec(login: int, server: str, symbol: str, info: Any) -> dict:
     key = (login, server, symbol)
     if key not in _symbol_spec_cache:
         spec = {
+            "point": float(info.point),
             "tickSize": float(info.trade_tick_size),
             "tickValue": float(info.trade_tick_value),
             "contractSize": float(info.trade_contract_size),
@@ -172,6 +177,7 @@ class ConnectRequest(BaseModel):
 
 class TradeRequest(BaseModel):
     direction: Literal["BUY", "SELL"]
+    instrumentType: Literal["standard", "synthetic"] = "standard"
     volume: float = Field(gt=0, le=100)
     symbol: str = Field(min_length=1, max_length=32)
     sl: float
@@ -187,6 +193,10 @@ class TradeRequest(BaseModel):
 
 class TradingControlRequest(BaseModel):
     tradingHalted: bool
+
+
+class AutoTradeControlRequest(BaseModel):
+    autoTrade: bool
 
 
 class CloseRequest(BaseModel):
@@ -288,6 +298,9 @@ def read_snapshot(symbol: str) -> dict:
         trading_halted = connection.execute(
             "SELECT state_value FROM control_state WHERE state_key = 'trading_halted'"
         ).fetchone()[0] == "true"
+        auto_trade = connection.execute(
+            "SELECT state_value FROM control_state WHERE state_key = 'auto_trade'"
+        ).fetchone()[0] == "true"
 
     def candles(timeframe: int) -> list[dict]:
         rates = mt5.copy_rates_from_pos(symbol, timeframe, 0, 100)
@@ -307,12 +320,13 @@ def read_snapshot(symbol: str) -> dict:
         ]
 
     return {
-        "account": account,
-        "positions": positions,
-        "symbol": symbol,
-        "accountMode": account_mode,
-        "tradingHalted": trading_halted,
-        "symbolSpec": symbol_spec,
+         "account": account,
+         "positions": positions,
+         "symbol": symbol,
+         "accountMode": account_mode,
+         "tradingHalted": trading_halted,
+         "autoTrade": auto_trade,
+         "symbolSpec": symbol_spec,
         "bid": float(tick.bid),
         "ask": float(tick.ask),
         "spread": round((tick.ask - tick.bid) / info.point),
@@ -323,11 +337,11 @@ def read_snapshot(symbol: str) -> dict:
     }
 
 
-def _deal_time(deal: object) -> datetime:
+def _deal_time(deal: Any) -> datetime:
     return datetime.fromtimestamp(int(deal.time), timezone.utc)
 
 
-def _deal_cost(deal: object) -> float:
+def _deal_cost(deal: Any) -> float:
     return (
         float(deal.profit)
         + float(deal.swap)
@@ -347,12 +361,12 @@ def read_closed_trades(days: int, symbol: str) -> list[dict]:
     if open_positions is None:
         raise HTTPException(status_code=503, detail=f"MT5 positions unavailable: {mt5.last_error()}")
     open_position_ids = {int(position.ticket) for position in open_positions}
-    deals_by_position: dict[int, list[object]] = {}
+    deals_by_position: dict[int, list[Any]] = {}
     for deal in deals:
         if str(deal.symbol) == symbol:
             deals_by_position.setdefault(int(deal.position_id), []).append(deal)
 
-    exits_by_position: dict[int, list[object]] = {}
+    exits_by_position: dict[int, list[Any]] = {}
     for position_id, position_deals in deals_by_position.items():
         if position_id in open_position_ids:
             continue
@@ -455,6 +469,17 @@ def set_trading_control(payload: TradingControlRequest, request: Request) -> dic
     return {"tradingHalted": payload.tradingHalted}
 
 
+@app.post("/api/auto-trade-control")
+def set_auto_trade_control(payload: AutoTradeControlRequest, request: Request) -> dict:
+    require_bridge_token(request)
+    with sqlite3.connect(STATE_DATABASE) as connection:
+        connection.execute(
+            "UPDATE control_state SET state_value = ? WHERE state_key = 'auto_trade'",
+            ("true" if payload.autoTrade else "false",),
+        )
+    return {"autoTrade": payload.autoTrade}
+
+
 @app.get("/api/history")
 def history(
     request: Request,
@@ -494,7 +519,7 @@ def place_trade(payload: TradeRequest, request: Request) -> dict:
         ).fetchone()[0] == "true"
     if trading_halted:
         raise HTTPException(status_code=423, detail="Central MT5 kill switch is armed.")
-    if configured_news_blackout(now):
+    if payload.instrumentType == "standard" and configured_news_blackout(now):
         raise HTTPException(status_code=423, detail="Configured high-impact news blackout window is active.")
 
     symbol = payload.symbol.strip()

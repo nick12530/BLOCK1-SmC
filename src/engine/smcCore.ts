@@ -292,7 +292,7 @@ export function detectOrderBlocks(
 }
 
 // ============================================================
-// 4. SESSION FILTER (UTC Kill Zones for XAUUSD)
+// 4. SESSION FILTER (London and New York sessions for XAUUSD)
 // ============================================================
 export function sessionFilter(dateOrTimestamp: Date | number): SessionInfo {
   const d = typeof dateOrTimestamp === 'number' ? new Date(dateOrTimestamp) : dateOrTimestamp;
@@ -321,7 +321,7 @@ export function sessionFilter(dateOrTimestamp: Date | number): SessionInfo {
   const asian = tokyoTime >= 0 && tokyoTime <= 540;
   const sydney = sydneyTime >= 420 && sydneyTime <= 960;
 
-  const tradable = londonKillZone || newYorkKillZone;
+  const tradable = london || newYork;
 
   let activeSessionName = 'Asian Session';
   if (london && newYork) activeSessionName = 'London / NY Overlap';
@@ -504,7 +504,7 @@ export function evaluateConfluence(
   const rejectionConfirmed = direction === 'BUY'
     ? lastCandle.close > lastCandle.open && lowerWick > body
     : lastCandle.close < lastCandle.open && upperWick > body;
-  if (!rejectionConfirmed || score < Math.max(minScoreThreshold, 5.0)) return null;
+  if (!rejectionConfirmed || score < minScoreThreshold) return null;
   const wickRatio = isBear
     ? `${((upperWick / range) * 100).toFixed(0)}% Upper Wick`
     : `${((lowerWick / range) * 100).toFixed(0)}% Lower Wick`;

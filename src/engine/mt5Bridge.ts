@@ -1,4 +1,4 @@
-import { Candle, ClosedTrade, TradeDirection } from '../types/smc';
+import { Candle, ClosedTrade, InstrumentType, TradeDirection } from '../types/smc';
 import type { SymbolRiskSpec } from './riskConfig';
 
 export interface BridgeAccountSnapshot {
@@ -22,8 +22,10 @@ export interface BridgeAccountSnapshot {
     time: string;
   }>;
   symbol: string;
+  instrumentType: InstrumentType;
   accountMode: 'demo' | 'live' | 'contest' | 'unknown';
   tradingHalted: boolean;
+  autoTrade: boolean;
   symbolSpec: SymbolRiskSpec;
   bid: number;
   ask: number;
@@ -48,6 +50,7 @@ const getDefaultServerUrl = () =>
 export class MT5BridgeConnector {
   private serverUrl = getDefaultServerUrl();
   private symbol = 'XAUUSD';
+  private instrumentType: InstrumentType = 'standard';
   private isConnected = false;
   private accountMode: BridgeStatus['mode'] = 'standalone';
   private expectedAccount: { login: number; server: string } | null = null;
@@ -81,9 +84,11 @@ export class MT5BridgeConnector {
   async connectAccount(credentials: {
     baseUrl: string;
     symbol: string;
+    instrumentType: InstrumentType;
   }): Promise<BridgeAccountSnapshot> {
     this.serverUrl = credentials.baseUrl.replace(/\/+$/, '');
     this.symbol = credentials.symbol.trim();
+    this.instrumentType = credentials.instrumentType;
     const snapshot = await this.request<BridgeAccountSnapshot>('/api/connect', {
       method: 'POST',
       body: JSON.stringify({ symbol: this.symbol }),
@@ -92,10 +97,11 @@ export class MT5BridgeConnector {
     this.accountMode = snapshot.accountMode;
     this.expectedAccount = { login: snapshot.account.login, server: snapshot.account.server };
     this.lastPing = Date.now();
-    this.onDataCallback?.(snapshot);
+    const instrumentSnapshot = { ...snapshot, instrumentType: this.instrumentType };
+    this.onDataCallback?.(instrumentSnapshot);
     this.startPolling();
     void this.refreshClosedTrades();
-    return snapshot;
+    return instrumentSnapshot;
   }
 
   async disconnectAccount(): Promise<void> {
@@ -106,14 +112,21 @@ export class MT5BridgeConnector {
     this.lastPing = null;
   }
 
-  async setTradingHalted(tradingHalted: boolean): Promise<void> {
-    await this.request<{ tradingHalted: boolean }>('/api/trading-control', {
-      method: 'POST',
-      body: JSON.stringify({ tradingHalted }),
-    });
-  }
+   async setTradingHalted(tradingHalted: boolean): Promise<void> {
+     await this.request<{ tradingHalted: boolean }>('/api/trading-control', {
+       method: 'POST',
+       body: JSON.stringify({ tradingHalted }),
+     });
+   }
 
-  async sendTrade(trade: {
+   async setAutoTrade(autoTrade: boolean): Promise<void> {
+     await this.request<{ autoTrade: boolean }>('/api/auto-trade-control', {
+       method: 'POST',
+       body: JSON.stringify({ autoTrade }),
+     });
+   }
+
+   async sendTrade(trade: {
     direction: TradeDirection;
     volume: number;
     symbol: string;
@@ -122,6 +135,7 @@ export class MT5BridgeConnector {
     rationale: string;
     clientOrderId: string;
     poiKey: string;
+    instrumentType: InstrumentType;
     signalTimeframe: 'M1' | 'M5';
     signalTimestamp: string;
   }): Promise<{
@@ -149,6 +163,7 @@ export class MT5BridgeConnector {
       symbol: BridgeAccountSnapshot['symbol'];
       accountMode: BridgeAccountSnapshot['accountMode'];
       tradingHalted: boolean;
+      autoTrade: boolean;
       symbolSpec: BridgeAccountSnapshot['symbolSpec'];
       bid: number;
       ask: number;
@@ -174,6 +189,8 @@ export class MT5BridgeConnector {
       symbol: response.symbol,
       accountMode: response.accountMode,
       tradingHalted: response.tradingHalted,
+      autoTrade: response.autoTrade,
+      instrumentType: trade.instrumentType,
       symbolSpec: response.symbolSpec,
       bid: response.bid,
       ask: response.ask,
@@ -202,7 +219,7 @@ export class MT5BridgeConnector {
     });
     this.lastPing = Date.now();
     this.accountMode = snapshot.accountMode;
-    this.onDataCallback?.(snapshot);
+    this.onDataCallback?.({ ...snapshot, instrumentType: this.instrumentType });
     void this.refreshClosedTrades();
   }
 
@@ -213,7 +230,7 @@ export class MT5BridgeConnector {
       body: JSON.stringify({ ticket, sl, tp, expectedLogin: this.expectedAccount.login, expectedServer: this.expectedAccount.server }),
     });
     this.lastPing = Date.now();
-    this.onDataCallback?.(snapshot);
+    this.onDataCallback?.({ ...snapshot, instrumentType: this.instrumentType });
   }
 
   private startPolling() {
@@ -250,7 +267,7 @@ export class MT5BridgeConnector {
         throw new Error('MT5 terminal account changed. Trading is paused; verify and reconnect to the intended account.');
       }
       this.lastPing = Date.now();
-      this.onDataCallback?.(snapshot);
+      this.onDataCallback?.({ ...snapshot, instrumentType: this.instrumentType });
     } catch (error) {
       this.isConnected = false;
       this.stopPolling();

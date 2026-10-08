@@ -42,8 +42,10 @@ export const TradingViewWidget: React.FC<TradingViewWidgetProps> = memo(({
     >
       <div className="px-3 sm:px-4 py-2.5 bg-slate-50/80 dark:bg-[#10202d] border-b border-slate-200 dark:border-[#1a3040] flex items-center justify-between flex-wrap gap-2">
         <div className="flex items-center gap-2">
-          <span className="font-bold text-slate-900 dark:text-white text-xs">XAUUSD</span>
-          <span className="text-[9px] font-semibold text-zinc-500 dark:text-zinc-400">BROKER-ALIGNED SMC</span>
+          <span className="font-bold text-slate-900 dark:text-white text-xs">
+            {symbol.includes(':') ? symbol.split(':').pop() : symbol}
+          </span>
+          <span className="text-[9px] font-semibold text-zinc-500 dark:text-zinc-400">BROKER MARKET STRUCTURE</span>
           <div className="flex items-center bg-slate-200/70 dark:bg-[#0c0e12] p-0.5 rounded-lg border border-slate-200 dark:border-[#222938]">
             {timeframes.map(({ value, label }) => (
               <button

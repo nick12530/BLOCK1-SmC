@@ -35,7 +35,7 @@ export const MinimalSignalCard: React.FC<MinimalSignalCardProps> = ({
                 </span>
               </div>
               <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 leading-relaxed max-w-xl">
-                Analyzing H1 market structure, order block mitigation, and discount/premium dealing ranges. High-conviction setups (Score ≥ 4.0) surface here instantly.
+                Analyzing H1 market structure, order block mitigation, and discount/premium dealing ranges. Qualified setups require a 5.0+ score, candle confirmation, and an active London or New York session.
               </p>
             </div>
           </div>
@@ -136,20 +136,20 @@ export const MinimalSignalCard: React.FC<MinimalSignalCardProps> = ({
           </div>
         </div>
 
-        {/* Right: 1-Click Action Button */}
-        <div className="shrink-0 flex items-center">
-          <button
-            onClick={onTradeSignal}
-            className={`w-full sm:w-auto px-7 py-4 rounded-xl font-bold font-mono text-sm tracking-wide transition-all shadow-md active:scale-[0.98] flex items-center justify-center gap-2 text-white ${
-              isBuy
-                ? 'bg-emerald-600 hover:bg-emerald-500 shadow-emerald-500/25'
-                : 'bg-rose-600 hover:bg-rose-500 shadow-rose-500/25'
-            }`}
-          >
-            <span>Execute {sig.direction} (0.05L)</span>
-            <ArrowRight className="w-4 h-4" />
-          </button>
-        </div>
+{/* Right: 1-Click Action Button */}
+          <div className="shrink-0 flex items-center gap-2">
+            <button
+              onClick={onTradeSignal}
+              className={`w-full sm:w-auto px-7 py-4 rounded-xl font-bold font-mono text-sm tracking-wide transition-all shadow-md active:scale-[0.98] flex items-center justify-center gap-2 text-white ${
+                isBuy
+                  ? 'bg-emerald-600 hover:bg-emerald-500 shadow-emerald-500/25'
+                  : 'bg-rose-600 hover:bg-rose-500 shadow-rose-500/25'
+              }`}
+            >
+              <span className="font-medium">Execute {sig.direction} (0.05L)</span>
+              <ArrowRight className="w-4 h-4" />
+            </button>
+          </div>
       </div>
     </div>
   );

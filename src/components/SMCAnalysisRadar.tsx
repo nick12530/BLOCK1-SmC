@@ -278,7 +278,7 @@ export const SMCAnalysisRadar: React.FC<SMCAnalysisRadarProps> = ({
                 {snapshot.zones.length} Unmitigated POIs
               </span>
               <span className="text-[11px] text-slate-500 mt-1 block">
-                London / NY Kill Zone filter active
+                Entries allowed during full London / NY sessions
               </span>
             </div>
           </div>

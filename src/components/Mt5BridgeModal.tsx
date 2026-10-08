@@ -3,6 +3,7 @@ import { AlertCircle, CheckCircle2, Copy, Server, X } from 'lucide-react';
 import { mt5Bridge } from '../engine/mt5Bridge';
 import { tradingEngine } from '../engine/tradingEngine';
 import { useMarket } from '../hooks/useTradingStore';
+import type { InstrumentType } from '../types/smc';
 
 interface Mt5BridgeModalProps {
   isOpen: boolean;
@@ -13,6 +14,7 @@ const SETUP_COMMAND = 'powershell -ExecutionPolicy Bypass -File .\\mt5-bridge\\s
 
 export const Mt5BridgeModal: React.FC<Mt5BridgeModalProps> = ({ isOpen, onClose }) => {
   const [symbol, setSymbol] = useState('XAUUSD');
+  const [instrumentType, setInstrumentType] = useState<InstrumentType>('standard');
   const [status, setStatus] = useState<'idle' | 'connecting' | 'connected' | 'error'>('idle');
   const [message, setMessage] = useState('');
   const [copied, setCopied] = useState(false);
@@ -50,6 +52,7 @@ export const Mt5BridgeModal: React.FC<Mt5BridgeModalProps> = ({ isOpen, onClose 
       const snapshot = await mt5Bridge.connectAccount({
         baseUrl: `${window.location.origin}/mt5-bridge`,
         symbol: symbol.trim(),
+        instrumentType,
       });
       tradingEngine.linkMt5Account(
         String(snapshot.account.login),
@@ -58,7 +61,7 @@ export const Mt5BridgeModal: React.FC<Mt5BridgeModalProps> = ({ isOpen, onClose 
         snapshot.account.equity
       );
       setStatus('connected');
-      setMessage(`Connected to ${snapshot.accountMode.toUpperCase()} account ${snapshot.account.login} on ${snapshot.account.server}.`);
+      setMessage(`Connected to ${snapshot.accountMode.toUpperCase()} account ${snapshot.account.login} on ${snapshot.account.server} · ${instrumentType === 'synthetic' ? 'synthetic volatility' : 'standard CFD / FX'}.`);
     } catch (error) {
       setStatus('error');
       setMessage(error instanceof Error ? error.message : 'Unable to connect to the MT5 bridge.');
@@ -173,11 +176,24 @@ export const Mt5BridgeModal: React.FC<Mt5BridgeModalProps> = ({ isOpen, onClose 
 
           <section className="rounded-xl border border-slate-200 p-4 dark:border-zinc-800">
             <label className="block text-sm font-medium text-slate-900 dark:text-zinc-100">
-              Broker gold symbol
+              Instrument type
+              <select
+                value={instrumentType}
+                onChange={(event) => setInstrumentType(event.target.value as InstrumentType)}
+                disabled={isConnected}
+                className="mt-2 min-h-11 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-950 outline-none focus:border-slate-500 dark:border-zinc-700 dark:bg-zinc-950 dark:text-white"
+              >
+                <option value="standard">Standard CFD / FX / metals / indices</option>
+                <option value="synthetic">Synthetic volatility index</option>
+              </select>
+            </label>
+            <label className="mt-4 block text-sm font-medium text-slate-900 dark:text-zinc-100">
+              Exact broker symbol
               <input
                 value={symbol}
                 onChange={(event) => setSymbol(event.target.value)}
-                placeholder="XAUUSD, XAUUSDm, GOLD"
+                disabled={isConnected}
+                placeholder="XAUUSD, EURUSD, Volatility 75 Index"
                 autoComplete="off"
                 className="mt-2 min-h-11 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 font-mono text-sm text-slate-950 outline-none transition-colors focus:border-slate-500 dark:border-zinc-700 dark:bg-zinc-950 dark:text-white dark:focus:border-zinc-400"
               />

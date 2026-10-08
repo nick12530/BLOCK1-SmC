@@ -10,6 +10,7 @@ import {
   ClosedTrade,
   AccountState,
   EngineLog,
+  InstrumentType,
   TerminalSnapshot,
   Signal,
   TickerState,
@@ -37,6 +38,7 @@ import {
 import { generateSeedMarketData, fetchLiveGoldCandles, DEFAULT_ECONOMIC_EVENTS } from './dataFeed';
 import { analyzeGoldCandlestickPatterns } from './candlestickPatterns';
 import { getGoldMarketSchedule, MarketScheduleStatus } from './marketHours';
+import { evaluateTechnicalStrategies } from './technicalStrategies';
 import { mt5Bridge } from './mt5Bridge';
 import {
   buildSignalRationale,
@@ -51,7 +53,6 @@ import {
   TradeOrderBlocks,
 } from './tradeJournal';
 
-const SYMBOL = 'XAUUSD';
 const MAGIC = 20261001;
 export const MAX_SPREAD_POINTS = 40; // 40 points = 4.0 pips on gold
 const AUTO_RR = 2.0;
@@ -77,12 +78,15 @@ export class TradingEngine {
   newsBlackout: boolean = false;
   connected: boolean = true;
   simulateWeekendMode: boolean = false;
+  instrumentType: InstrumentType = 'standard';
+  private activeSymbol = 'XAUUSD';
   private hasBrokerMarketData = false;
   private symbolSpec: SymbolTradingSpec | null = null;
-  private brokerAccountMode: 'demo' | 'live' | 'contest' | 'unknown' | null = null;
-  private hasBrokerDayAnchor = false;
-  private pendingCentralKillSwitch: boolean | null = null;
-  private dailyRiskDate = new Date().toISOString().slice(0, 10);
+   private brokerAccountMode: 'demo' | 'live' | 'contest' | 'unknown' | null = null;
+   private hasBrokerDayAnchor = false;
+   private pendingCentralKillSwitch: boolean | null = null;
+   private pendingCentralAutoTrade: boolean | null = null;
+   private dailyRiskDate = new Date().toISOString().slice(0, 10);
   private entryHistory: Array<{ at: number; direction: TradeDirection; poiKey: string }> = [];
 
   mt5Account: {
@@ -182,6 +186,8 @@ export class TradingEngine {
     spread: number;
     accountMode: 'demo' | 'live' | 'contest' | 'unknown';
     tradingHalted: boolean;
+    autoTrade: boolean;
+    instrumentType: InstrumentType;
     symbolSpec: SymbolTradingSpec;
     candlesM1: Candle[];
     candlesM5: Candle[];
@@ -194,6 +200,10 @@ export class TradingEngine {
       this.pendingCentralKillSwitch = null;
     }
     this.killSwitch = this.pendingCentralKillSwitch ?? snapshot.tradingHalted;
+    if (this.pendingCentralAutoTrade === snapshot.autoTrade) {
+      this.pendingCentralAutoTrade = null;
+    }
+    this.autoTrade = this.pendingCentralAutoTrade ?? snapshot.autoTrade;
     if (this.killSwitch) this.autoTrade = false;
     this.mt5Account = {
       connected: true,
@@ -217,6 +227,8 @@ export class TradingEngine {
     this.ask = snapshot.ask;
     this.lastPrice = (snapshot.bid + snapshot.ask) / 2;
     this.spread = snapshot.spread;
+    this.instrumentType = snapshot.instrumentType;
+    this.activeSymbol = snapshot.symbol;
     this.symbolSpec = snapshot.symbolSpec;
     this.brokerAccountMode = snapshot.accountMode;
     this.candlesM1 = snapshot.candlesM1;
@@ -434,7 +446,7 @@ export class TradingEngine {
 
       this._cachedTicker = {
         time: new Date().toISOString().substr(11, 8) + ' UTC',
-        symbol: SYMBOL,
+        symbol: this.activeSymbol,
         bid: Number(this.bid.toFixed(2)),
         ask: Number(this.ask.toFixed(2)),
         spread: this.spread,
@@ -463,23 +475,48 @@ export class TradingEngine {
       const dr = ms.dealingRange();
       const candidateSignals = this.hasBrokerMarketData
         ? [
-            evaluateConfluence(
+            ...(this.instrumentType === 'standard' && /^(XAU|GOLD)/i.test(this.activeSymbol)
+              ? [
+                  evaluateConfluence(
+                    this.candlesM1,
+                    this.candlesM5,
+                    this.account.auto_rr,
+                    SCORE_THRESHOLD,
+                    'M1'
+                  ),
+                  evaluateConfluence(
+                    this.candlesM5,
+                    this.candlesM15,
+                    this.account.auto_rr,
+                    SCORE_THRESHOLD,
+                    'M5'
+                  ),
+                ].filter((signal): signal is Signal => signal !== null)
+              : []),
+            ...evaluateTechnicalStrategies(
               this.candlesM1,
               this.candlesM5,
-              this.account.auto_rr,
-              SCORE_THRESHOLD,
-              'M1'
+              'M1',
+              this.instrumentType
             ),
-            evaluateConfluence(
+            ...evaluateTechnicalStrategies(
               this.candlesM5,
               this.candlesM15,
-              this.account.auto_rr,
-              SCORE_THRESHOLD,
-              'M5'
+              'M5',
+              this.instrumentType
             ),
           ].filter((signal): signal is Signal => signal !== null)
         : [];
-      const sig = candidateSignals.sort((left, right) => right.score - left.score)[0] ?? null;
+      const signals = candidateSignals
+        .map((signal) => ({
+          ...signal,
+          strategy: signal.strategy ?? 'SMC POI Retest' as const,
+        }))
+        .sort((left, right) => right.score - left.score)
+        .filter((signal, index, items) =>
+          items.findIndex((candidate) => candidate.strategy === signal.strategy && candidate.direction === signal.direction) === index
+        );
+      const sig = signals[0] ?? null;
 
       let pricePos: number | null = null;
       if (dr && dr.high > dr.low) {
@@ -526,6 +563,8 @@ export class TradingEngine {
         dealing_range: dr,
         price_pos: pricePos,
         signal: sig,
+        signals,
+        instrumentType: this.instrumentType,
         zones,
         history,
         brokerMarketData: this.hasBrokerMarketData,
@@ -767,12 +806,12 @@ export class TradingEngine {
     const now = Date.now();
     this.entryHistory = this.entryHistory.filter((entry) => now - entry.at < 60 * 60_000);
     if (this.killSwitch) return 'Kill switch is armed.';
-    if (this.newsBlackout) return 'News blackout is enabled.';
-    if (isWithinConfiguredNewsBlackout(new Date(now))) return 'Configured high-impact news blackout window is active.';
+    if (this.instrumentType === 'standard' && this.newsBlackout) return 'News blackout is enabled.';
+    if (this.instrumentType === 'standard' && isWithinConfiguredNewsBlackout(new Date(now))) return 'Configured high-impact news blackout window is active.';
     if (this.account.daily_loss_hit || this.account.daily_drawdown_pct >= this.account.max_daily_loss_pct) {
       return 'Daily loss limit reached.';
     }
-    if (this.spread > MAX_SPREAD_POINTS) return `Spread too wide (${this.spread} points).`;
+    if (this.spread > this.getMaxSpreadPoints()) return `Spread too wide (${this.spread} points; maximum ${this.getMaxSpreadPoints()}).`;
     if (this.positions.length >= RISK_CONFIG.maxOpenPositions) return 'Maximum open-position limit reached.';
     if (this.entryHistory.length >= RISK_CONFIG.maxTradesPerHour) return 'Hourly trade limit reached.';
 
@@ -794,6 +833,15 @@ export class TradingEngine {
       return 'This SMC point of interest was traded recently.';
     }
     return null;
+  }
+
+  getMaxSpreadPoints(): number {
+    if (this.instrumentType !== 'synthetic' || !this.symbolSpec?.point || this.candlesM1.length < 15) {
+      return MAX_SPREAD_POINTS;
+    }
+    const atr = calculateATR(this.candlesM1).at(-1);
+    if (!Number.isFinite(atr) || !atr) return MAX_SPREAD_POINTS;
+    return Math.max(1, Math.floor((atr * 0.15) / this.symbolSpec.point));
   }
 
   recordAcceptedEntry(direction: TradeDirection, signal = this.getMarketSnapshot().signal) {
@@ -1090,13 +1138,15 @@ export class TradingEngine {
 
     // Real market hours check: Gold interbank trading is closed on weekends!
     const schedule = getGoldMarketSchedule();
-    if (!schedule.isOpen && !this.simulateWeekendMode) {
+    if (this.instrumentType === 'standard' && !schedule.isOpen && !this.simulateWeekendMode) {
       return;
     }
 
     const market = this.getMarketSnapshot();
-    if (market.signal && market.signal.score >= SCORE_THRESHOLD) {
-      const sig = market.signal;
+    const sig = market.signals.find((candidate) =>
+      candidate.score >= (candidate.strategy === 'SMC POI Retest' ? SCORE_THRESHOLD : 3.8)
+    );
+    if (sig) {
       if (!market.brokerMarketData) {
         this.slog('Auto-trade blocked: live MT5 broker candle feed is unavailable.', 'warn');
         return;
@@ -1123,8 +1173,9 @@ export class TradingEngine {
             sl: sig.sl,
             tp: sig.tp,
             rationale,
-            clientOrderId: `${sig.timeframe}:${sig.direction}:${sig.timestamp}:${sig.entry.toFixed(2)}`,
+            clientOrderId: `${sig.strategy}:${sig.timeframe}:${sig.direction}:${sig.timestamp}:${sig.entry.toFixed(8)}`,
             poiKey: this.getSignalPoiKey(sig.direction, sig.entry),
+            instrumentType: this.instrumentType,
             signalTimeframe: sig.timeframe === 'M1' ? 'M1' : 'M5',
             signalTimestamp: sig.timestamp,
           });
@@ -1356,6 +1407,24 @@ export class TradingEngine {
     }
     this.autoTrade = !this.autoTrade;
     this.slog(`AUTO-TRADE ${this.autoTrade ? 'ON' : 'OFF'}`, 'info');
+
+    if (this.mt5Account.connected) {
+      const requestedAutoTrade = this.autoTrade;
+      this.pendingCentralAutoTrade = requestedAutoTrade;
+      void mt5Bridge.setAutoTrade(this.autoTrade).catch((error: unknown) => {
+        if (this.pendingCentralAutoTrade !== requestedAutoTrade) return;
+        this.pendingCentralAutoTrade = null;
+        this.slog(
+          `Failed to update auto-trade state on server: ${error instanceof Error ? error.message : 'Unknown bridge error'}`,
+          'error'
+        );
+        // Revert the local change if the server update failed
+        this.autoTrade = !requestedAutoTrade;
+        this.slog(`AUTO-TRADE ${this.autoTrade ? 'ON' : 'OFF'} (reverted due to server error)`, 'warn');
+        this.invalidateEngine();
+        this.emit('engine');
+      });
+    }
 
     this.invalidateEngine();
     this.emit('engine');

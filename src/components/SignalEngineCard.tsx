@@ -320,8 +320,8 @@ export const SignalEngineCard: React.FC<SignalEngineCardProps> = React.memo(({ o
           isWideSpread || !rawSig
             ? 'bg-zinc-200 text-zinc-400 dark:bg-zinc-900 dark:text-zinc-500 cursor-not-allowed border border-zinc-300 dark:border-zinc-800'
             : activeDirection === 'SELL'
-              ? 'bg-rose-700 hover:bg-rose-600 text-white shadow-lg'
-              : 'bg-emerald-700 hover:bg-emerald-600 text-white shadow-lg'
+              ? 'bg-rose-700 hover:bg-rose-600 text-white shadow-xs border border-rose-600/40 active:scale-[0.99]'
+              : 'bg-emerald-700 hover:bg-emerald-600 text-white shadow-xs border border-emerald-600/40 active:scale-[0.99]'
         }`}
       >
         <span className="font-medium">

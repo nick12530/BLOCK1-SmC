@@ -1,7 +1,7 @@
 /**
- * useAudioNotifications.ts - React hook for SMC Signal Audio Notifications
- * Listens for new high-confluence signals (score >= 4.0) detected by tradingEngine,
- * triggers a subtle professional chime, and updates reactive UI state.
+ * useAudioNotifications.ts - React hook for SMC Audio & System Sound Notifications
+ * Listens for new high-confluence signals (score >= 4.0), trade executions,
+ * profits, losses, and updates reactive UI state.
  */
 
 import { useState, useEffect, useRef, useCallback } from 'react';
@@ -13,6 +13,10 @@ export interface UseAudioNotificationsReturn {
   isMuted: boolean;
   toggleMute: () => void;
   playChime: () => void;
+  playTradeChime: (direction?: 'BUY' | 'SELL') => void;
+  playProfitChime: (profit?: number) => void;
+  playLossChime: (loss?: number) => void;
+  playTestSound: (type: 'signal' | 'trade' | 'profit' | 'loss') => void;
   lastAlertedSignal: Signal | null;
   hasNewAlert: boolean;
   clearAlert: () => void;
@@ -30,12 +34,28 @@ export function useAudioNotifications(): UseAudioNotificationsReturn {
     if (signal) signalAudioNotifier.playSignalAlert(signal.direction, signal.entry);
   }, [market.signal]);
 
+  const playTradeChime = useCallback((direction: 'BUY' | 'SELL' = 'BUY') => {
+    signalAudioNotifier.playTradeExecutionAlert(direction);
+  }, []);
+
+  const playProfitChime = useCallback((profit: number = 25.0) => {
+    signalAudioNotifier.playProfitAlert(profit);
+  }, []);
+
+  const playLossChime = useCallback((loss: number = -10.0) => {
+    signalAudioNotifier.playLossAlert(loss);
+  }, []);
+
+  const playTestSound = useCallback((type: 'signal' | 'trade' | 'profit' | 'loss') => {
+    signalAudioNotifier.playTestChime(type);
+  }, []);
+
   const toggleMute = useCallback(() => {
     const nextMuted = !isMuted;
     setIsMuted(nextMuted);
     signalAudioNotifier.setMuted(nextMuted);
     if (!nextMuted) {
-      signalAudioNotifier.playTestChime();
+      signalAudioNotifier.playTestChime('signal');
     }
   }, [isMuted]);
 
@@ -54,8 +74,8 @@ export function useAudioNotifications(): UseAudioNotificationsReturn {
       setLastAlertedSignal(sig);
       setHasNewAlert(true);
 
-      // Play professional chime
-      signalAudioNotifier.playSignalAlert();
+      // Play professional signal chime
+      signalAudioNotifier.playSignalAlert(sig.direction, sig.entry);
 
       // Reset alert badge after 8 seconds
       const timer = setTimeout(() => {
@@ -70,6 +90,10 @@ export function useAudioNotifications(): UseAudioNotificationsReturn {
     isMuted,
     toggleMute,
     playChime,
+    playTradeChime,
+    playProfitChime,
+    playLossChime,
+    playTestSound,
     lastAlertedSignal,
     hasNewAlert,
     clearAlert,

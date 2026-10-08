@@ -18,12 +18,35 @@ import type { Candle } from '../types/smc';
 
 export type ChartTimeframe = 'M1' | 'M5' | 'M15' | 'H1';
 
+export interface SMCIndicatorConfig {
+  orderBlocks: boolean;
+  fairValueGaps: boolean;
+  structure: boolean;
+  signals: boolean;
+  trades: boolean;
+}
+
+export const DEFAULT_INDICATOR_CONFIG: SMCIndicatorConfig = {
+  orderBlocks: true,
+  fairValueGaps: true,
+  structure: true,
+  signals: true,
+  trades: true,
+};
+
 interface SMCInteractiveChartProps {
   height?: number;
   timeframe: ChartTimeframe;
+  showIndicators?: boolean;
+  indicatorConfig?: SMCIndicatorConfig;
 }
 
-export const SMCInteractiveChart: React.FC<SMCInteractiveChartProps> = ({ height = 380, timeframe }) => {
+export const SMCInteractiveChart: React.FC<SMCInteractiveChartProps> = ({
+  height = 380,
+  timeframe,
+  showIndicators = true,
+  indicatorConfig = DEFAULT_INDICATOR_CONFIG,
+}) => {
   const market = useMarket();
   const positionsState = usePositions();
   const ticker = useTicker();
@@ -353,7 +376,7 @@ export const SMCInteractiveChart: React.FC<SMCInteractiveChartProps> = ({ height
           <line x1={plotWidth} y1={0} x2={plotWidth} y2={vbHeight} stroke="#27272a" strokeWidth="1" />
 
           {/* 1. ORDER BLOCKS (OB) SHADED ZONES */}
-          {nearestZones
+          {showIndicators && indicatorConfig.orderBlocks && nearestZones
             .filter((zone) => zone.kind === 'OB')
             .map((ob, idx) => {
               const yTop = getY(ob.top);
@@ -396,7 +419,7 @@ export const SMCInteractiveChart: React.FC<SMCInteractiveChartProps> = ({ height
             })}
 
           {/* 2. FAIR VALUE GAPS (FVG) */}
-          {nearestZones
+          {showIndicators && indicatorConfig.fairValueGaps && nearestZones
             .filter((zone) => zone.kind === 'FVG')
             .map((fvg, idx) => {
               const yTop = getY(fvg.top);
@@ -430,7 +453,7 @@ export const SMCInteractiveChart: React.FC<SMCInteractiveChartProps> = ({ height
               );
             })}
 
-          {selectedPosition && selectedOrderBlock && (() => {
+          {showIndicators && indicatorConfig.orderBlocks && selectedPosition && selectedOrderBlock && (() => {
             const top = Math.min(getY(selectedOrderBlock.top), getY(selectedOrderBlock.bottom));
             const bottom = Math.max(getY(selectedOrderBlock.top), getY(selectedOrderBlock.bottom));
             const zoneHeight = Math.max(5, bottom - top);
@@ -476,7 +499,7 @@ export const SMCInteractiveChart: React.FC<SMCInteractiveChartProps> = ({ height
           })()}
 
           {/* 3. BOS & CHOCH STRUCTURAL BREAK LINES */}
-          {chartStructure.bos && (
+          {showIndicators && indicatorConfig.structure && chartStructure.bos && (
             <g>
               <line
                 x1={0}
@@ -512,7 +535,7 @@ export const SMCInteractiveChart: React.FC<SMCInteractiveChartProps> = ({ height
             </g>
           )}
 
-          {chartStructure.choch && (
+          {showIndicators && indicatorConfig.structure && chartStructure.choch && (
             <g>
               <line
                 x1={0}
@@ -548,7 +571,7 @@ export const SMCInteractiveChart: React.FC<SMCInteractiveChartProps> = ({ height
             </g>
           )}
 
-          {chartSignal && (
+          {showIndicators && indicatorConfig.signals && chartSignal && (
             <g>
               {[
                 { label: 'SIGNAL ENTRY', price: chartSignal.entry, color: '#38bdf8' },
@@ -619,7 +642,7 @@ export const SMCInteractiveChart: React.FC<SMCInteractiveChartProps> = ({ height
           })}
 
           {/* 5. ACTIVE TRADE OVERLAYS (ENTRY, SL, TP) */}
-          {positionsState.positions.map((pos) => {
+          {showIndicators && indicatorConfig.trades && positionsState.positions.map((pos) => {
             const yEntry = getY(pos.price_open);
             const ySL = getY(pos.sl);
             const yTP = getY(pos.tp);

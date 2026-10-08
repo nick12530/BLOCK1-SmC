@@ -239,4 +239,57 @@ describe('TradingEngine Store Architecture', () => {
     engine.recordAcceptedEntry('BUY', null);
     expect(engine.getEntryBlockReason('BUY', null)).toBe('Direction cooldown is active.');
   });
+
+  it('allows high-confluence signal fallback override when daily limit is reached', () => {
+    engine.account.balance = 1000;
+    engine.account.equity = 1000;
+    const today = new Date().toISOString();
+    // Simulate 5 closed trades today
+    engine.closedTrades = [
+      { ticket: 1, type: 'BUY', volume: 0.01, price_open: 2000, price_close: 2005, sl: 1995, tp: 2010, profit: 5, pips: 50, closedAt: today, reason: 'TP' },
+      { ticket: 2, type: 'BUY', volume: 0.01, price_open: 2000, price_close: 2005, sl: 1995, tp: 2010, profit: 5, pips: 50, closedAt: today, reason: 'TP' },
+      { ticket: 3, type: 'BUY', volume: 0.01, price_open: 2000, price_close: 2005, sl: 1995, tp: 2010, profit: 5, pips: 50, closedAt: today, reason: 'TP' },
+      { ticket: 4, type: 'BUY', volume: 0.01, price_open: 2000, price_close: 2005, sl: 1995, tp: 2010, profit: 5, pips: 50, closedAt: today, reason: 'TP' },
+      { ticket: 5, type: 'BUY', volume: 0.01, price_open: 2000, price_close: 2005, sl: 1995, tp: 2010, profit: 5, pips: 50, closedAt: today, reason: 'TP' },
+    ];
+
+    const lowScoreSignal = {
+      direction: 'BUY' as const,
+      timeframe: 'M5' as const,
+      score: 55,
+      entry: 2000,
+      sl: 1995,
+      tp: 2005,
+      reasons: ['Consolidation'],
+      atr: 2.0,
+      timestamp: new Date().toISOString(),
+    };
+
+    const highScoreSignal = {
+      direction: 'BUY' as const,
+      timeframe: 'M5' as const,
+      score: 82,
+      entry: 2000,
+      sl: 1995,
+      tp: 2015,
+      reasons: ['HTF Order Block', 'Liquidity Sweep'],
+      atr: 2.0,
+      timestamp: new Date().toISOString(),
+    };
+
+    // Low score should be blocked by daily limit
+    expect(engine.getEntryBlockReason('BUY', lowScoreSignal)).toContain('DAILY_TRADE_LIMIT_REACHED');
+
+    // High score with allowHighConfluenceOverride should bypass daily limit
+    engine.allowHighConfluenceOverride = true;
+    expect(engine.getEntryBlockReason('BUY', highScoreSignal)).toBeNull();
+  });
+
+  it('auto-selects the best scenario when enabled', () => {
+    engine.setAutoSelectBestScenario(true);
+    expect(engine.autoSelectBestScenario).toBe(true);
+
+    engine.setAutoSelectBestScenario(false);
+    expect(engine.autoSelectBestScenario).toBe(false);
+  });
 });

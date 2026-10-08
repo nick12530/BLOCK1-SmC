@@ -197,7 +197,7 @@ export default function App() {
             const result = await mt5Bridge.sendTrade({
               direction: signal.direction,
               volume: riskVolume,
-              symbol: mt5Bridge.getSymbol(),
+              symbol: ticker.symbol || mt5Bridge.getSymbol(),
               sl: signal.sl,
               tp: signal.tp,
               rationale,
@@ -333,14 +333,6 @@ export default function App() {
             />
           </section>
 
-          <section aria-label="Trading parameters" className="space-y-3 lg:col-span-4">
-            <div>
-              <h2 className="text-base font-semibold text-slate-900 dark:text-zinc-100">Trade parameters</h2>
-              <p className="mt-1 text-xs sm:text-sm text-slate-500 dark:text-zinc-400">Position sizing and break-even preferences</p>
-            </div>
-            <CompoundingLadderCard />
-          </section>
-
           <section aria-label="Trade signals" className="space-y-3 lg:col-span-8">
             <div>
               <h2 className="text-base font-semibold text-slate-900 dark:text-zinc-100">Trade signals</h2>
@@ -349,10 +341,35 @@ export default function App() {
             <SignalEngineCard onExecuteSignal={handleExecuteSignal} />
           </section>
 
+          <section aria-label="Trading parameters" className="space-y-3 lg:col-span-4">
+            <div>
+              <h2 className="text-base font-semibold text-slate-900 dark:text-zinc-100">Trade parameters</h2>
+              <p className="mt-1 text-xs sm:text-sm text-slate-500 dark:text-zinc-400">Position sizing and break-even preferences</p>
+            </div>
+            <CompoundingLadderCard />
+          </section>
+
+          {/* Active Trade Block (Brought right below signals & parameters for mobile and desktop) */}
+          <section aria-label="Open positions" className="space-y-3 lg:col-span-12">
+            <div>
+              <h2 className="text-base font-semibold text-slate-900 dark:text-zinc-100">Active positions &amp; live trade monitor</h2>
+              <p className="mt-1 text-xs sm:text-sm text-slate-500 dark:text-zinc-400">Live floating P&amp;L, one-click break-even lock, and lot management</p>
+            </div>
+            <LiveExecutionCard
+              onFocusChart={() =>
+                document
+                  .getElementById('price-structure-chart')
+                  ?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+              }
+              onOpenClosedTradesModal={() => setActiveModal('closed_trades')}
+              onOpenDailyReportModal={() => setActiveModal('daily_report')}
+            />
+          </section>
+
           <section aria-label="FX chart" className="w-full space-y-3 lg:col-span-8">
             <div>
-              <h2 className="text-base font-semibold text-slate-900 dark:text-zinc-100">Price &amp; structure</h2>
-              <p className="mt-1 text-xs sm:text-sm text-slate-500 dark:text-zinc-400">One price scale for the selected broker market, structure, and execution levels</p>
+              <h2 className="text-base font-semibold text-slate-900 dark:text-zinc-100">Price &amp; structure workstation</h2>
+              <p className="mt-1 text-xs sm:text-sm text-slate-500 dark:text-zinc-400">Official TradingView live charts &amp; Institutional SMC engine with indicator toggle</p>
             </div>
             <TradingViewWidget
               isDark={isDark}
@@ -366,29 +383,13 @@ export default function App() {
 
           <section aria-label="Market context" className="space-y-3 lg:col-span-4">
             <div>
-              <h2 className="text-base font-semibold text-slate-900 dark:text-zinc-100">Market context</h2>
-              <p className="mt-1 text-xs sm:text-sm text-slate-500 dark:text-zinc-400">Dealing range, active zones, and order-block status</p>
+              <h2 className="text-base font-semibold text-slate-900 dark:text-zinc-100">Market context &amp; SMC POIs</h2>
+              <p className="mt-1 text-xs sm:text-sm text-slate-500 dark:text-zinc-400">Dealing range, active zones, and order-block progression</p>
             </div>
             <div className="flex flex-col gap-4">
               <DealingRangeZonesCard />
               <OrderBlocksProgressionCard />
             </div>
-          </section>
-
-          <section aria-label="Open positions" className="space-y-3 lg:col-span-12">
-            <div>
-              <h2 className="text-base font-semibold text-slate-900 dark:text-zinc-100">Open positions</h2>
-              <p className="mt-1 text-xs sm:text-sm text-slate-500 dark:text-zinc-400">Select an open trade to focus it and its order block on the chart</p>
-            </div>
-            <LiveExecutionCard
-              onFocusChart={() =>
-                document
-                  .getElementById('price-structure-chart')
-                  ?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-              }
-              onOpenClosedTradesModal={() => setActiveModal('closed_trades')}
-              onOpenDailyReportModal={() => setActiveModal('daily_report')}
-            />
           </section>
 
           <div className="lg:col-span-12">

@@ -279,6 +279,8 @@ export interface EngineState {
     freeMargin: number;
   };
   simulateWeekendMode?: boolean;
+  allowHighConfluenceOverride?: boolean;
+  autoSelectBestScenario?: boolean;
 }
 
 export interface EventsState {
@@ -298,6 +300,8 @@ export interface AccountRiskConfig {
   auto_rr: number;
   daily_drawdown_pct: number;
   daily_loss_hit: boolean;
+  allowHighConfluenceOverride?: boolean;
+  autoSelectBestScenario?: boolean;
 }
 
 export type AccountState = AccountRiskConfig;

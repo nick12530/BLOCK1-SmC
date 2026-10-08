@@ -90,6 +90,8 @@ export class MT5BridgeConnector {
     }
   }
 
+  private consecutiveErrors = 0;
+
   async connectAccount(credentials: {
     baseUrl: string;
     symbol: string;
@@ -103,6 +105,7 @@ export class MT5BridgeConnector {
       body: JSON.stringify({ symbol: this.symbol }),
     });
     this.isConnected = true;
+    this.consecutiveErrors = 0;
     this.accountMode = snapshot.accountMode;
     this.expectedAccount = { login: snapshot.account.login, server: snapshot.account.server };
     this.lastPing = Date.now();
@@ -110,6 +113,14 @@ export class MT5BridgeConnector {
     this.onDataCallback?.(instrumentSnapshot);
     this.startPolling();
     void this.refreshClosedTrades();
+
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('smc_mt5_auto_connect', 'true');
+      localStorage.setItem('smc_mt5_symbol', this.symbol);
+      localStorage.setItem('smc_mt5_base_url', this.serverUrl);
+      localStorage.setItem('smc_mt5_instrument_type', this.instrumentType);
+    }
+
     return instrumentSnapshot;
   }
 
@@ -119,6 +130,25 @@ export class MT5BridgeConnector {
     this.accountMode = 'standalone';
     this.expectedAccount = null;
     this.lastPing = null;
+    this.consecutiveErrors = 0;
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('smc_mt5_auto_connect');
+    }
+  }
+
+  async autoConnectIfSaved(): Promise<boolean> {
+    if (typeof window === 'undefined') return false;
+    const auto = localStorage.getItem('smc_mt5_auto_connect');
+    if (auto !== 'true') return false;
+    const baseUrl = localStorage.getItem('smc_mt5_base_url') || getDefaultServerUrl();
+    const symbol = localStorage.getItem('smc_mt5_symbol') || 'XAUUSD';
+    const instrumentType = (localStorage.getItem('smc_mt5_instrument_type') as InstrumentType) || 'standard';
+    try {
+      await this.connectAccount({ baseUrl, symbol, instrumentType });
+      return true;
+    } catch {
+      return false;
+    }
   }
 
    async setTradingHalted(tradingHalted: boolean): Promise<void> {

@@ -1,16 +1,18 @@
 /**
  * DealingRangeZonesCard.tsx - Minimalist Dealing Range & Key Institutional Zones
  * Features:
- * - Pure Black, White, and Grey palette for dark mode
- * - Clean presentation of HTF Equilibrium and high-probability SMC POIs
+ * - Interactive explanation banner detailing Dealing Range, Premium, Discount, EQ, OB, FVG
+ * - Clear presentation of HTF Equilibrium and high-probability SMC POIs
  */
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useMarket, useTicker } from '../hooks/useTradingStore';
+import { HelpCircle, ChevronDown, ChevronUp, Info } from 'lucide-react';
 
 export const DealingRangeZonesCard: React.FC = React.memo(() => {
   const market = useMarket();
   const ticker = useTicker();
+  const [showExplanation, setShowExplanation] = useState(false);
   const spot = ticker.bid || 4190.0;
 
   const dr = market.dealing_range || {
@@ -44,9 +46,18 @@ export const DealingRangeZonesCard: React.FC = React.memo(() => {
       {/* Dealing Range Meter */}
       <div className="space-y-3">
         <div className="flex items-center justify-between">
-          <span className="text-xs sm:text-sm font-bold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
-            DEALING RANGE
-          </span>
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs sm:text-sm font-bold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+              DEALING RANGE
+            </span>
+            <button
+              onClick={() => setShowExplanation(!showExplanation)}
+              className="p-1 rounded text-zinc-400 hover:text-zinc-800 dark:hover:text-white transition-colors cursor-pointer"
+              title="Click to view explanation of Dealing Range and Market Context"
+            >
+              <Info className="w-3.5 h-3.5" />
+            </button>
+          </div>
           <span
             className={`text-xs font-bold px-2.5 py-1 rounded-full ${
               isDiscount
@@ -54,7 +65,7 @@ export const DealingRangeZonesCard: React.FC = React.memo(() => {
                 : 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20'
             }`}
           >
-            {posPercent}% {isDiscount ? 'Discount' : 'Premium'}
+            {posPercent}% {isDiscount ? 'Discount (Buy Zone)' : 'Premium (Sell Zone)'}
           </span>
         </div>
 
@@ -75,12 +86,37 @@ export const DealingRangeZonesCard: React.FC = React.memo(() => {
             <span>High ${dr.high.toFixed(1)}</span>
           </div>
         </div>
+
+        {/* Expandable Explanation of Market Context */}
+        {showExplanation && (
+          <div className="p-3 rounded-xl bg-slate-50 dark:bg-zinc-900/90 border border-slate-200 dark:border-zinc-800 text-[11px] font-sans space-y-1.5 text-slate-700 dark:text-zinc-300">
+            <div className="font-bold text-slate-900 dark:text-white flex items-center justify-between">
+              <span>SMC Market Context Guide</span>
+              <span className="text-[10px] text-zinc-400">Smart Money Concepts</span>
+            </div>
+            <ul className="space-y-1 text-[10px] text-slate-600 dark:text-zinc-400 leading-relaxed">
+              <li>
+                <strong className="text-emerald-600 dark:text-emerald-400">Discount (&lt; 50%):</strong> Price is below Equilibrium. Institutions buy wholesale; look for high-probability Long setups.
+              </li>
+              <li>
+                <strong className="text-rose-600 dark:text-rose-400">Premium (&gt; 50%):</strong> Price is above Equilibrium. Institutions distribute inventory; look for high-probability Short setups.
+              </li>
+              <li>
+                <strong className="text-amber-600 dark:text-amber-400">Equilibrium (EQ 50%):</strong> Fair value balance point. Avoid entries here to avoid choppy consolidation.
+              </li>
+              <li>
+                <strong className="text-sky-600 dark:text-sky-400">POI (Points of Interest):</strong> Institutional Order Blocks (OB) and Fair Value Gaps (FVG) where liquidity was injected.
+              </li>
+            </ul>
+          </div>
+        )}
       </div>
 
       {/* Live SMC Institutional Zones */}
       <div className="space-y-2.5 pt-3.5 border-t border-zinc-100 dark:border-zinc-800">
-        <div className="text-xs sm:text-sm font-bold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
-          ACTIVE POI ZONES
+        <div className="flex items-center justify-between text-xs sm:text-sm font-bold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+          <span>ACTIVE POI ZONES</span>
+          <span className="text-[10px] font-normal lowercase opacity-75">tested count · bias</span>
         </div>
 
         <div className="space-y-2">
@@ -104,15 +140,20 @@ export const DealingRangeZonesCard: React.FC = React.memo(() => {
                 </span>
               </div>
 
-              <span
-                className={`font-bold text-xs ${
-                  z.bullish
-                    ? 'text-emerald-600 dark:text-emerald-400'
-                    : 'text-rose-600 dark:text-rose-400'
-                }`}
-              >
-                {z.bullish ? 'Demand' : 'Supply'}
-              </span>
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] text-zinc-400">
+                  {z.tests === 0 ? 'Fresh (Untested)' : `${z.tests}x Tested`}
+                </span>
+                <span
+                  className={`font-bold text-xs ${
+                    z.bullish
+                      ? 'text-emerald-600 dark:text-emerald-400'
+                      : 'text-rose-600 dark:text-rose-400'
+                  }`}
+                >
+                  {z.bullish ? 'Demand' : 'Supply'}
+                </span>
+              </div>
             </div>
           ))}
         </div>

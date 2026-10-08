@@ -62,6 +62,7 @@ import {
   calculateSmallAccountPositionSize,
 } from './multiPairScanner';
 import { generatePairCandles } from './dataFeed';
+import { signalAudioNotifier } from '../utils/audioNotification';
 
 const MAGIC = 20261001;
 export const MAX_SPREAD_POINTS = 40; // 40 points = 4.0 pips on gold
@@ -110,6 +111,8 @@ export class TradingEngine {
   bypassNewsBlackout: boolean = false;
   connected: boolean = true;
   simulateWeekendMode: boolean = false;
+  allowHighConfluenceOverride: boolean = true;
+  autoSelectBestScenario: boolean = true;
   instrumentType: InstrumentType = 'standard';
   private hasBrokerMarketData = false;
   private symbolSpec: SymbolTradingSpec | null = null;
@@ -764,6 +767,8 @@ export class TradingEngine {
         marketSchedule: getGoldMarketSchedule(),
         mt5Account: this.mt5Account,
         simulateWeekendMode: this.simulateWeekendMode,
+        allowHighConfluenceOverride: this.allowHighConfluenceOverride,
+        autoSelectBestScenario: this.autoSelectBestScenario,
       };
     }
     return this._cachedEngine;
@@ -853,6 +858,23 @@ export class TradingEngine {
     this.slog(`Confluence Execution Threshold updated to ${this.minScoreThreshold}/100`, 'info');
   }
 
+  setAllowHighConfluenceOverride(enabled: boolean) {
+    this.allowHighConfluenceOverride = enabled;
+    this.invalidateEngine();
+    this.emit('engine');
+    this.slog(`High-Confluence Fallback Override for Daily Limits: ${enabled ? 'ENABLED' : 'DISABLED'}`, 'info');
+  }
+
+  setAutoSelectBestScenario(enabled: boolean) {
+    this.autoSelectBestScenario = enabled;
+    if (enabled && this.bestOpportunity && this.bestOpportunity.symbol !== this.activeSymbol) {
+      this.switchSymbol(this.bestOpportunity.symbol);
+    }
+    this.invalidateEngine();
+    this.emit('engine');
+    this.slog(`Auto-Focus Best Opportunity Setup: ${enabled ? 'ENABLED' : 'DISABLED'}`, 'info');
+  }
+
   refreshScanner() {
     this.initPairData();
     const analyses: PairAnalysis[] = [];
@@ -889,6 +911,17 @@ export class TradingEngine {
     const ranked = rankOpportunities(analyses);
     this.scannerAnalyses = ranked;
     this.bestOpportunity = ranked[0] || null;
+
+    // Automatically select the best scenario in the chart if enabled
+    if (
+      this.autoSelectBestScenario &&
+      this.bestOpportunity &&
+      this.bestOpportunity.symbol !== this.activeSymbol &&
+      (this.bestOpportunity.status === 'READY' || this.bestOpportunity.confluenceScore >= 70)
+    ) {
+      this.switchSymbol(this.bestOpportunity.symbol);
+    }
+
     this.emit('scanner');
   }
 
@@ -920,9 +953,7 @@ export class TradingEngine {
     this.spread = targetData.spread;
     this.lastPrice = this.bid;
 
-    if (this.mt5Account.connected) {
-      mt5Bridge.setSymbol(newSymbol);
-    }
+    mt5Bridge.setSymbol(newSymbol);
 
     this.slog(`Active workstation switched to ${newSymbol} (${config.displayName})`, 'info');
 
@@ -982,12 +1013,25 @@ export class TradingEngine {
     // Daily trade count limits (Section 7: 5 total, 3 per pair)
     const today = new Date().toISOString().slice(0, 10);
     const todayClosedTrades = this.closedTrades.filter((t) => (t.closedAt || '').startsWith(today));
-    if (todayClosedTrades.length >= 5) {
-      return 'TRADE_REJECTED: DAILY_TRADE_LIMIT_REACHED (Maximum 5 trades per day limit reached)';
-    }
     const pairTodayTrades = todayClosedTrades.filter((t) => (t.symbol || t.comment || '').includes(this.activeSymbol));
+
+    // Fallback override: If a high-confluence or good setup presents itself (Score >= 70 or R:R >= 2.0)
+    const isHighQualitySignal = Boolean(signal && (signal.score >= 70 || (signal.score >= 65 && Math.abs(signal.tp - signal.entry) / Math.max(0.0001, Math.abs(signal.entry - signal.sl)) >= 2.0)));
+    const bypassDailyLimit = this.allowHighConfluenceOverride && isHighQualitySignal;
+
+    if (todayClosedTrades.length >= 5) {
+      if (bypassDailyLimit) {
+        this.slog(`Daily trade limit reached (5/5), but prime high-confluence signal detected (${signal?.score}/100). Fallback override activated to take trade.`, 'info');
+      } else {
+        return 'TRADE_REJECTED: DAILY_TRADE_LIMIT_REACHED (Maximum 5 trades per day reached. High-confluence fallback available for signal score ≥ 70)';
+      }
+    }
     if (pairTodayTrades.length >= 3) {
-      return `TRADE_REJECTED: PAIR_DAILY_LIMIT_REACHED (Maximum 3 trades per day reached for ${this.activeSymbol})`;
+      if (bypassDailyLimit) {
+        this.slog(`Pair daily limit reached (3/3 on ${this.activeSymbol}), but high-confluence signal detected (${signal?.score}/100). Fallback override activated.`, 'info');
+      } else {
+        return `TRADE_REJECTED: PAIR_DAILY_LIMIT_REACHED (Maximum 3 trades per day reached for ${this.activeSymbol}. High-confluence fallback available for signal score ≥ 70)`;
+      }
     }
 
     // Correlation & combined USD exposure protection (Section 8)
@@ -1044,6 +1088,11 @@ export class TradingEngine {
     const poiKey = signal ? this.getSignalPoiKey(signal.direction, signal.entry) : '';
     this.entryHistory.push({ at: Date.now(), direction, poiKey });
     this.entryHistory = this.entryHistory.slice(-RISK_CONFIG.maxTradesPerHour);
+    try {
+      signalAudioNotifier.playTradeExecutionAlert(direction);
+    } catch {
+      // ignore
+    }
   }
 
   getSignalPoiKey(direction: TradeDirection, entry: number): string {
@@ -1570,6 +1619,16 @@ export class TradingEngine {
 
     this.slog(`Closed #${ticket} (${reason}) PnL: ${profit >= 0 ? '+' : ''}$${profit} USD | Balance: $${this.account.balance.toFixed(2)}`, 'trade');
 
+    try {
+      if (profit >= 0) {
+        signalAudioNotifier.playProfitAlert(profit);
+      } else {
+        signalAudioNotifier.playLossAlert(profit);
+      }
+    } catch {
+      // ignore
+    }
+
     this.invalidatePositions();
     this.invalidateTicker();
     this.invalidateEngine();
@@ -1599,6 +1658,13 @@ export class TradingEngine {
     position.sl = sl;
     position.tp = tp;
     position.beLocked = position.type === 'BUY' ? sl > position.price_open : sl < position.price_open;
+    if (position.beLocked) {
+      try {
+        signalAudioNotifier.playBreakEvenAlert();
+      } catch {
+        // ignore
+      }
+    }
     this.slog(`Stops updated for position #${ticket}: SL $${sl.toFixed(2)}, TP $${tp.toFixed(2)}`, 'trade');
     this.notify();
   }

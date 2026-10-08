@@ -7,6 +7,8 @@
 import React, { useEffect } from 'react';
 import { X, ArrowLeft } from 'lucide-react';
 import { TradingViewWidget } from './TradingViewWidget';
+import { useTicker } from '../hooks/useTradingStore';
+import { getInstrumentConfig } from '../engine/instrumentConfig';
 
 interface TradingViewModalProps {
   isOpen: boolean;
@@ -15,6 +17,8 @@ interface TradingViewModalProps {
 }
 
 export const TradingViewModal: React.FC<TradingViewModalProps> = ({ isOpen, onClose, isDark }) => {
+  const ticker = useTicker();
+
   useEffect(() => {
     if (!isOpen) return;
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -25,6 +29,8 @@ export const TradingViewModal: React.FC<TradingViewModalProps> = ({ isOpen, onCl
   }, [isOpen, onClose]);
 
   if (!isOpen) return null;
+
+  const tvSymbol = getInstrumentConfig(ticker.symbol).tvSymbol;
 
   return (
     <div
@@ -39,7 +45,7 @@ export const TradingViewModal: React.FC<TradingViewModalProps> = ({ isOpen, onCl
           <div className="flex items-center gap-3">
           <span className="w-2.5 h-2.5 rounded-full bg-sky-500" />
             <h2 id="tradingview-modal-title" className="text-sm font-bold text-zinc-950 dark:text-white">
-              Broker-Aligned SMC Chart Workstation
+              Official TradingView &amp; SMC Workstation · {ticker.symbol}
             </h2>
           </div>
 
@@ -57,7 +63,7 @@ export const TradingViewModal: React.FC<TradingViewModalProps> = ({ isOpen, onCl
         <div className="flex-1 min-h-0 w-full bg-slate-100 dark:bg-[#080a0f] relative overflow-hidden">
           <TradingViewWidget
             isDark={isDark}
-            symbol="OANDA:XAUUSD"
+            symbol={tvSymbol}
             interval="1"
             height="100%"
           />

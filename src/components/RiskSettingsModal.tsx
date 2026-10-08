@@ -18,6 +18,8 @@ export const RiskSettingsModal: React.FC<RiskSettingsModalProps> = ({
   const [balanceInput, setBalanceInput] = useState<number>(snapshot.balance);
   const [autoRr, setAutoRr] = useState<number>(tradingEngine.account.auto_rr);
   const [minScore, setMinScore] = useState<number>(tradingEngine.minScoreThreshold || 75);
+  const [allowOverride, setAllowOverride] = useState<boolean>(tradingEngine.allowHighConfluenceOverride ?? true);
+  const [autoSelectBest, setAutoSelectBest] = useState<boolean>(tradingEngine.autoSelectBestScenario ?? true);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -35,12 +37,14 @@ export const RiskSettingsModal: React.FC<RiskSettingsModalProps> = ({
     tradingEngine.account.risk_pct = RISK_CONFIG.riskPercentPerTrade;
     tradingEngine.account.auto_rr = autoRr;
     tradingEngine.setMinScoreThreshold(minScore);
+    tradingEngine.setAllowHighConfluenceOverride(allowOverride);
+    tradingEngine.setAutoSelectBestScenario(autoSelectBest);
     if (!tradingEngine.mt5Account.connected) {
       tradingEngine.account.balance = balanceInput;
       tradingEngine.account.equity = balanceInput;
       tradingEngine.account.daily_start_balance = balanceInput;
     }
-    tradingEngine.slog(`Risk parameters updated: Score threshold ${minScore}/100, Max daily loss ${RISK_CONFIG.maxDailyLossPercent}%, Risk ${RISK_CONFIG.riskPercentPerTrade}%`, 'info');
+    tradingEngine.slog(`Risk parameters updated: Score threshold ${minScore}/100, Fallback Override: ${allowOverride ? 'ON' : 'OFF'}, Auto-Select Setup: ${autoSelectBest ? 'ON' : 'OFF'}`, 'info');
     tradingEngine.notify();
     onClose();
   };
@@ -154,6 +158,62 @@ export const RiskSettingsModal: React.FC<RiskSettingsModalProps> = ({
               <li>Rejects micro-lot if risk exceeds budget: <code>TRADE_REJECTED: MINIMUM_LOT_EXCEEDS_RISK</code></li>
               <li>Zero Martingale, zero averaging, and USD correlation exposure protection enabled</li>
             </ul>
+          </div>
+
+          {/* High-Confluence Fallback Override Toggle */}
+          <div className="p-3 rounded-xl bg-slate-50 dark:bg-[#0c1017] border border-slate-200 dark:border-zinc-800 flex items-center justify-between gap-3">
+            <div className="space-y-0.5 pr-2">
+              <div className="font-bold text-slate-900 dark:text-zinc-100 flex items-center gap-1.5">
+                <span>High-Quality Fallback Override</span>
+                <span className="text-[9px] px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-500 font-mono font-bold">PRIME</span>
+              </div>
+              <p className="text-[10px] text-slate-500 dark:text-zinc-400 font-sans">
+                Automatically take trades on prime signals (Score ≥ 70) even if daily limit (5/day) has been reached. Never miss an exceptional setup.
+              </p>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={allowOverride}
+              onClick={() => setAllowOverride(!allowOverride)}
+              className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                allowOverride ? 'bg-emerald-600' : 'bg-slate-300 dark:bg-zinc-700'
+              }`}
+            >
+              <span
+                className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out ${
+                  allowOverride ? 'translate-x-5' : 'translate-x-0'
+                }`}
+              />
+            </button>
+          </div>
+
+          {/* Auto-Select Best Opportunity Toggle */}
+          <div className="p-3 rounded-xl bg-slate-50 dark:bg-[#0c1017] border border-slate-200 dark:border-zinc-800 flex items-center justify-between gap-3">
+            <div className="space-y-0.5 pr-2">
+              <div className="font-bold text-slate-900 dark:text-zinc-100 flex items-center gap-1.5">
+                <span>Auto-Focus Best Setup in Chart</span>
+                <span className="text-[9px] px-1.5 py-0.2 rounded bg-sky-500/20 text-sky-400 font-mono font-bold">#1 SYNC</span>
+              </div>
+              <p className="text-[10px] text-slate-500 dark:text-zinc-400 font-sans">
+                When multi-pair scanner finds a top-ranked opportunity, automatically switch the chart symbol to it.
+              </p>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={autoSelectBest}
+              onClick={() => setAutoSelectBest(!autoSelectBest)}
+              className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                autoSelectBest ? 'bg-sky-600' : 'bg-slate-300 dark:bg-zinc-700'
+              }`}
+            >
+              <span
+                className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out ${
+                  autoSelectBest ? 'translate-x-5' : 'translate-x-0'
+                }`}
+              />
+            </button>
           </div>
 
           {/* Auto R:R Target */}

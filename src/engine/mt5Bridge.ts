@@ -172,8 +172,12 @@ export class MT5BridgeConnector {
     const baseUrl = localStorage.getItem('smc_mt5_base_url') || getDefaultServerUrl();
     const symbol = localStorage.getItem('smc_mt5_symbol') || 'XAUUSD';
     const instrumentType = (localStorage.getItem('smc_mt5_instrument_type') as InstrumentType) || 'standard';
-    await this.connectAccount({ baseUrl, symbol, instrumentType });
-    return true;
+    try {
+      await this.connectAccount({ baseUrl, symbol, instrumentType });
+      return true;
+    } catch {
+      return false;
+    }
   }
 
    async setTradingHalted(tradingHalted: boolean): Promise<void> {

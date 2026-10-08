@@ -29,6 +29,8 @@ Use a demo account to verify the complete process before considering a live acco
 
 The dashboard does not ask for an MT5 password. Do not expose port 8000, use Tailscale Funnel, or share the private dashboard address or bridge token publicly.
 
+The **TradingView Official** chart displays TradingView's own market chart. Its embedded widget is view-only for this application: TradingView does not provide its candle OHLC data to the dashboard's indicator engine. To use the SMC overlays and broker order workflow, the app separately requires a complete, fresh MT5 candle feed.
+
 To switch accounts, disconnect the dashboard, change the account in MT5 Desktop, then reconnect and verify the new account details.
 
 ## 3. Connect from a phone
@@ -87,6 +89,7 @@ The mobile layout enlarges small text and uses stronger default text weight. Inc
 | Phone cannot connect | Confirm Tailscale is connected on both devices and the private HTTPS address is current. Do not use a public URL or Funnel. |
 | Account shown as offline | Check the PC, bridge process, MT5 terminal, and Tailscale. The bridge retries automatically; broker orders remain paused while offline. |
 | No signals after changing symbols | Wait for the selected symbol's broker candles and quote to synchronize. Stale or unavailable broker data is not considered tradeable. |
+| TradingView chart appears but SMC indicators are paused | TradingView is a separate view-only embed and cannot supply the app's indicator inputs. Restore MT5 candle history; do not treat TradingView's visible chart as verified MT5 execution data. |
 | “Safe position size unavailable” | Read the dialog's broker-specific details. The minimum lot may exceed the configured risk budget; the system will not upsize risk to fit it. |
 | Order is pending, partial, or rejected | Check the order and positions in MT5, verify stops and volume limits, and review the dashboard event log. Do not assume a pending/partial order is fully filled. |
 | No sound | Unmute the dashboard, check device/browser volume, and interact with the page once to enable browser audio. |

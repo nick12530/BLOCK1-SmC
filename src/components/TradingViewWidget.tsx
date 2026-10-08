@@ -26,7 +26,7 @@ import {
   DEFAULT_INDICATOR_CONFIG,
 } from './SMCInteractiveChart';
 import { OfficialTradingViewEmbed } from './OfficialTradingViewEmbed';
-import { useEngine, useBestOpportunity, useTicker } from '../hooks/useTradingStore';
+import { useEngine, useBestOpportunity, useTicker, useMarket } from '../hooks/useTradingStore';
 import { tradingEngine } from '../engine/tradingEngine';
 import type { SupportedSymbol } from '../engine/instrumentConfig';
 
@@ -64,8 +64,11 @@ export const TradingViewWidget: React.FC<TradingViewWidgetProps> = memo(({
 
   const engine = useEngine();
   const ticker = useTicker();
+  const market = useMarket();
   const bestOpportunity = useBestOpportunity();
   const autoFocusEnabled = engine.autoSelectBestScenario ?? true;
+  const canShowSmcChart = market.brokerMarketData || !market.accountMode;
+  const effectiveChartMode = canShowSmcChart ? chartMode : 'tradingview';
 
   const handleToggleAutoFocus = useCallback(() => {
     tradingEngine.setAutoSelectBestScenario(!autoFocusEnabled);
@@ -103,7 +106,7 @@ export const TradingViewWidget: React.FC<TradingViewWidgetProps> = memo(({
             <button
               onClick={() => setChartMode('tradingview')}
               className={`px-2.5 py-1 rounded-md text-[11px] font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
-                chartMode === 'tradingview'
+                effectiveChartMode === 'tradingview'
                   ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-950 shadow-xs'
                   : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
               }`}
@@ -114,12 +117,15 @@ export const TradingViewWidget: React.FC<TradingViewWidgetProps> = memo(({
             </button>
             <button
               onClick={() => setChartMode('smc')}
+              disabled={!canShowSmcChart}
               className={`px-2.5 py-1 rounded-md text-[11px] font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
-                chartMode === 'smc'
+                effectiveChartMode === 'smc'
                   ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-950 shadow-xs'
                   : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-              }`}
-              title="Institutional SMC execution chart with Order Blocks, FVGs, and live broker trade lines"
+              } disabled:cursor-not-allowed disabled:opacity-50`}
+              title={!canShowSmcChart
+                ? 'SMC chart indicators require a verified MT5 candle history. TradingView is available as a view-only chart.'
+                : 'Institutional SMC execution chart with Order Blocks, FVGs, and live broker trade lines'}
             >
               <Layers className="w-3.5 h-3.5" />
               <span>SMC Engine</span>
@@ -129,6 +135,15 @@ export const TradingViewWidget: React.FC<TradingViewWidgetProps> = memo(({
           <span className="font-bold text-slate-900 dark:text-white text-xs px-1.5 py-0.5 rounded bg-sky-500/10 text-sky-600 dark:text-sky-300 border border-sky-500/20">
             {rawSymbol}
           </span>
+          {engine.mt5Account?.connected && !market.brokerMarketData && (
+            <span
+              role="status"
+              className="rounded border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10px] font-bold text-amber-700 dark:text-amber-300"
+              title="TradingView embeds display chart prices but do not provide OHLC candles to the app's indicator engine."
+            >
+              MT5 CANDLE HISTORY UNVERIFIED · INDICATORS PAUSED
+            </span>
+          )}
 
           {/* Auto-Scenario Focus Pill */}
           {bestOpportunity && (
@@ -175,6 +190,7 @@ export const TradingViewWidget: React.FC<TradingViewWidgetProps> = memo(({
         {/* Right: Indicator Toggle Button & Controls */}
         <div className="flex items-center gap-1.5 sm:gap-2">
           {/* Main Indicators Toggle Button (Section: Indicators ON / OFF) */}
+          {effectiveChartMode === 'smc' && (
           <div className="relative">
             <div className="flex items-center rounded-lg border border-slate-200 dark:border-zinc-800 bg-slate-100 dark:bg-zinc-900 p-0.5">
               <button
@@ -239,6 +255,7 @@ export const TradingViewWidget: React.FC<TradingViewWidgetProps> = memo(({
               </div>
             )}
           </div>
+          )}
 
           {onOpenHelp && (
             <button
@@ -287,7 +304,7 @@ export const TradingViewWidget: React.FC<TradingViewWidgetProps> = memo(({
         }`}
         style={typeof height === 'number' ? { height: `${height}px` } : undefined}
       >
-        {chartMode === 'tradingview' ? (
+        {effectiveChartMode === 'tradingview' ? (
           <OfficialTradingViewEmbed
             key={`tv-${symbol}-${selectedTf}-${chartKey}`}
             symbol={symbol}

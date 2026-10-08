@@ -10,6 +10,7 @@ A React/TypeScript dashboard for market-structure analysis, broker-aware risk si
 - Shows multi-instrument opportunities for XAUUSD, EURUSD, USDJPY, and GBPUSD.
 - Uses the connected broker's tick value, tick size, and volume limits to size orders within the configured risk cap. If the broker minimum lot would exceed that cap, the order is rejected rather than upsized.
 - Synchronizes account details, positions, quotes, and closed-trade history from the connected MT5 terminal.
+- Displays official TradingView charts as an independent chart view. TradingView's embedded widget does not expose OHLC candles to this app, so SMC indicators and broker orders require verified MT5 candle history.
 - Supports manually confirmed broker orders and optional auto-trading. Auto-trading is off by default and requires a reachable, verified MT5 connection.
 - Provides a private phone connection through Tailscale Serve; the MT5 terminal and bridge remain on the Windows PC.
 

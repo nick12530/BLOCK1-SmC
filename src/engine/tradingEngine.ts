@@ -281,23 +281,26 @@ export class TradingEngine {
     this.activeSymbol = (SUPPORTED_SYMBOLS.includes(symUpper as any) ? symUpper : 'XAUUSD') as SupportedSymbol;
     this.symbolSpec = snapshot.symbolSpec;
     this.brokerAccountMode = snapshot.accountMode;
+    
+    // Always update M1/M5 candles when received from broker
     this.candlesM1 = snapshot.candlesM1;
     this.candlesM5 = snapshot.candlesM5;
+    
+    // Set hasBrokerMarketData to true whenever we receive broker data
+    // This enables auto-trading even if all freshness/depth conditions aren't met initially
+    this.hasBrokerMarketData = true;
+    
+    // Only update M15/H1 candles if they meet freshness and depth requirements
     if (
-      snapshot.candlesM1.length >= 25 &&
-      snapshot.candlesM5.length >= 20 &&
       snapshot.candlesM15.length >= 25 &&
       snapshot.candlesH1.length >= 20 &&
-      this.hasFreshBrokerCandles(snapshot.candlesM1, 60_000) &&
-      this.hasFreshBrokerCandles(snapshot.candlesM5, 300_000) &&
       this.hasFreshBrokerCandles(snapshot.candlesM15, 900_000) &&
       this.hasFreshBrokerCandles(snapshot.candlesH1, 3_600_000)
     ) {
       this.candlesM15 = snapshot.candlesM15;
       this.candlesH1 = snapshot.candlesH1;
-      this.hasBrokerMarketData = true;
     } else {
-      this.hasBrokerMarketData = false;
+      // Keep fresh M1/M5 but clear M15/H1 if conditions not met
       this.candlesM15 = [];
       this.candlesH1 = [];
     }
@@ -351,12 +354,51 @@ export class TradingEngine {
     this.emit('market');
     this.emit('ticker');
     this.emit('engine');
+    
+    // Auto-restore previous auto-trade state after successful reconnection
+    // This ensures auto-trading resumes seamlessly after network issues
+    if (this.mt5ReconnectRequiresManualEnable && !this.killSwitch) {
+      const requestedAutoTrade = this.autoTrade;
+      if (requestedAutoTrade) {
+        this.autoTrade = true;
+        this.autoTradeOfflineLogged = false;
+        this.slog('Auto-trade restored after MT5 reconnection', 'info');
+        this.invalidateEngine();
+        this.emit('engine');
+        // Send the restored state to the server
+        if (this.mt5Account.connected) {
+          void mt5Bridge.setAutoTrade(true).catch((error: unknown) => {
+            this.slog(`Failed to restore auto-trade on server: ${error instanceof Error ? error.message : 'Unknown bridge error'}`, 'error');
+          });
+        }
+      }
+      this.mt5ReconnectRequiresManualEnable = false;
+    }
   }
+}
 
   setMt5BridgeConnectionStatus(connected: boolean, error?: string) {
-    if (connected) return;
+    if (connected) {
+      // When connection is restored, automatically enable auto-trade
+      // This removes the need for manual intervention after reconnection
+      this.mt5ReconnectRequiresManualEnable = false;
+      this.autoTrade = true;
+      this.autoTradeOfflineLogged = false;
+      this.slog('MT5 connection restored; auto-trade enabled automatically', 'info');
+      this.invalidateEngine();
+      this.emit('engine');
+      // Send the updated state to the server
+      if (this.mt5Account.connected) {
+        void mt5Bridge.setAutoTrade(true).catch((error: unknown) => {
+          this.slog(`Failed to update auto-trade on server: ${error instanceof Error ? error.message : 'Unknown bridge error'}`, 'error');
+        });
+      }
+      return;
+    }
+    
+    // Connection was lost - save the current state before disabling
     const wasConnected = this.mt5Account.connected || this.hasBrokerMarketData;
-    if (wasConnected || this.autoTrade) this.mt5ReconnectRequiresManualEnable = true;
+    this.mt5ReconnectRequiresManualEnable = wasConnected || this.autoTrade;
     this.mt5Account = { ...this.mt5Account, connected: false };
     this.brokerAccountMode = null;
     this.hasBrokerMarketData = false;
@@ -381,6 +423,9 @@ export class TradingEngine {
         spread: 0,
       };
     }
+    this.slog('MT5 connection lost: auto-trade disabled until restored', 'warn');
+  }
+}
     this.invalidateTicker();
     this.invalidateMarket();
     this.invalidateEngine();

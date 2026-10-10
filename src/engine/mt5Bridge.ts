@@ -43,17 +43,59 @@ export interface BridgeStatus {
   lastPing: number | null;
   lastError: string | null;
   mode: 'standalone' | 'demo' | 'live' | 'contest' | 'unknown';
+  latencyMs?: number | null;
+  isReconnecting?: boolean;
+  isTailscale?: boolean;
 }
 
 const DEFAULT_SERVER_URL = 'http://127.0.0.1:8000';
-export const getDefaultServerUrl = () =>
-  typeof window === 'undefined' ? DEFAULT_SERVER_URL : `${window.location.origin}/mt5-bridge`;
+export const getDefaultServerUrl = () => {
+  if (typeof window === 'undefined') return DEFAULT_SERVER_URL;
+  // Check if saved Tailscale URL exists first
+  const savedTailscale = localStorage.getItem('smc_tailscale_url') || localStorage.getItem('smc_mt5_base_url');
+  if (savedTailscale && (savedTailscale.includes('100.') || savedTailscale.includes('.ts.net'))) {
+    return normalizeTailscaleUrl(savedTailscale);
+  }
+  return `${window.location.origin}/mt5-bridge`;
+};
+
+/**
+ * Normalizes Tailscale IP / MagicDNS addresses into standard HTTP/HTTPS origin.
+ * Handles:
+ * - Pure IPv4: '100.85.120.45' -> 'http://100.85.120.45:8000'
+ * - IPv4 with port: '100.85.120.45:8000' -> 'http://100.85.120.45:8000'
+ * - MagicDNS: 'my-desktop.tailnet.ts.net' -> 'https://my-desktop.tailnet.ts.net'
+ */
+export function normalizeTailscaleUrl(input: string): string {
+  let url = (input || '').trim();
+  if (!url) return '';
+  if (!/^https?:\/\//i.test(url)) {
+    // If it's a ts.net MagicDNS address, prefer https, otherwise http
+    if (url.includes('.ts.net')) {
+      url = `https://${url}`;
+    } else {
+      url = `http://${url}`;
+    }
+  }
+  try {
+    const parsed = new URL(url);
+    // If Tailscale 100.x.y.z IP without explicit port, default to 8000 (standard Python bridge port)
+    if (!parsed.port && /^100\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(parsed.hostname)) {
+      parsed.port = '8000';
+    }
+    return parsed.origin;
+  } catch {
+    return url.replace(/\/+$/, '');
+  }
+}
 
 export class MT5BridgeConnector {
   private serverUrl = getDefaultServerUrl();
   private symbol = 'XAUUSD';
   private instrumentType: InstrumentType = 'standard';
   private isConnected = false;
+  private isReconnecting = false;
+  private lastLatencyMs: number | null = null;
   private accountMode: BridgeStatus['mode'] = 'standalone';
   private expectedAccount: { login: number; server: string } | null = null;
   private historyPollInterval: ReturnType<typeof setInterval> | null = null;
@@ -65,6 +107,30 @@ export class MT5BridgeConnector {
   private onConnectionChangeCallback: ((connected: boolean, error?: string) => void) | null = null;
   private lastPing: number | null = null;
   private lastError: string | null = null;
+  private consecutiveErrors = 0;
+
+  constructor() {
+    if (typeof window !== 'undefined') {
+      // Mobile screen wake listener: immediately wake up sync when unlocking phone or switching back to app
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible' && this.isConnected) {
+          this.consecutiveErrors = 0;
+          this.isReconnecting = false;
+          void this.refreshAccount();
+          void this.refreshClosedTrades();
+        }
+      });
+
+      // Mobile network reconnection listener: triggers immediately when phone recovers network connectivity
+      window.addEventListener('online', () => {
+        if (this.isConnected) {
+          this.consecutiveErrors = 0;
+          this.isReconnecting = false;
+          void this.refreshAccount();
+        }
+      });
+    }
+  }
 
   setCallback(callback: (data: BridgeAccountSnapshot) => void) {
     this.onDataCallback = callback;
@@ -78,6 +144,10 @@ export class MT5BridgeConnector {
     this.onConnectionChangeCallback = callback;
   }
 
+  private isTailscaleUrl(url: string): boolean {
+    return url.includes('100.') || url.includes('.ts.net');
+  }
+
   getStatus(): BridgeStatus {
     return {
       connected: this.isConnected,
@@ -85,7 +155,43 @@ export class MT5BridgeConnector {
       lastPing: this.lastPing,
       lastError: this.lastError,
       mode: this.isConnected ? this.accountMode : 'standalone',
+      latencyMs: this.lastLatencyMs,
+      isReconnecting: this.isReconnecting,
+      isTailscale: this.isTailscaleUrl(this.serverUrl),
     };
+  }
+
+  /**
+   * Performs an instant ping test to check Tailscale / local bridge reachability and latency.
+   */
+  async ping(targetUrl?: string): Promise<{ ok: boolean; latencyMs: number; error?: string }> {
+    const url = normalizeTailscaleUrl(targetUrl || this.serverUrl);
+    const start = performance.now();
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 6_000);
+    try {
+      const res = await fetch(`${url}/api/health`, {
+        method: 'GET',
+        cache: 'no-store',
+        signal: controller.signal,
+      });
+      const latencyMs = Math.round(performance.now() - start);
+      if (res.ok) {
+        this.lastLatencyMs = latencyMs;
+        this.lastPing = Date.now();
+        return { ok: true, latencyMs };
+      }
+      return { ok: false, latencyMs, error: `HTTP ${res.status}` };
+    } catch (err) {
+      const latencyMs = Math.round(performance.now() - start);
+      return {
+        ok: false,
+        latencyMs,
+        error: err instanceof Error ? err.message : 'Timed out. Verify Tailscale app is active on phone and PC.',
+      };
+    } finally {
+      clearTimeout(timeout);
+    }
   }
 
   getSymbol(): string {
@@ -101,35 +207,38 @@ export class MT5BridgeConnector {
     }
   }
 
-  private consecutiveErrors = 0;
-
   async connectAccount(credentials: {
     baseUrl: string;
     symbol: string;
     instrumentType: InstrumentType;
   }): Promise<BridgeAccountSnapshot> {
-    this.serverUrl = credentials.baseUrl.replace(/\/+$/, '');
+    this.serverUrl = normalizeTailscaleUrl(credentials.baseUrl);
     this.symbol = credentials.symbol.trim();
     this.instrumentType = credentials.instrumentType;
     this.stopPolling();
     this.isConnected = false;
+    this.isReconnecting = false;
     this.expectedAccount = null;
     this.lastPing = null;
     this.lastError = null;
+    this.consecutiveErrors = 0;
     this.onConnectionChangeCallback?.(false);
     let snapshot: BridgeAccountSnapshot;
+    const startPing = performance.now();
     try {
       snapshot = await this.request<BridgeAccountSnapshot>('/api/connect', {
         method: 'POST',
         body: JSON.stringify({ symbol: this.symbol }),
       });
+      this.lastLatencyMs = Math.round(performance.now() - startPing);
     } catch (error) {
       const detail = error instanceof Error ? error.message : 'Unknown connection error.';
-      this.lastError = `Could not connect to the MT5 bridge at ${this.serverUrl}: ${detail} Start the private-link launcher on the MT5 PC and keep its windows open.`;
+      this.lastError = `Could not reach MT5 bridge at ${this.serverUrl}: ${detail} Ensure Tailscale is connected on your phone and PC, or start the private-link launcher.`;
       this.onConnectionChangeCallback?.(false, this.lastError);
       throw new Error(this.lastError);
     }
     this.isConnected = true;
+    this.isReconnecting = false;
     this.consecutiveErrors = 0;
     this.lastError = null;
     this.accountMode = snapshot.accountMode;
@@ -146,6 +255,9 @@ export class MT5BridgeConnector {
       localStorage.setItem('smc_mt5_symbol', this.symbol);
       localStorage.setItem('smc_mt5_base_url', this.serverUrl);
       localStorage.setItem('smc_mt5_instrument_type', this.instrumentType);
+      if (this.isTailscaleUrl(this.serverUrl)) {
+        localStorage.setItem('smc_tailscale_url', this.serverUrl);
+      }
     }
 
     return instrumentSnapshot;
@@ -356,15 +468,23 @@ export class MT5BridgeConnector {
       this.onDataCallback?.({ ...snapshot, instrumentType: this.instrumentType });
     } catch (error) {
       failed = true;
-      this.isConnected = false;
       this.consecutiveErrors += 1;
       this.lastError = error instanceof Error ? error.message : 'Unknown MT5 bridge polling error.';
-      this.onConnectionChangeCallback?.(false, this.lastError);
-      console.error(`[MT5 Bridge] Account sync failed (attempt ${this.consecutiveErrors}); retrying:`, error);
+
+      // Grace tolerance for mobile & Tailscale network hops:
+      // Only announce complete disconnection after 3 consecutive failed attempts
+      if (this.consecutiveErrors >= 3) {
+        this.isConnected = false;
+        this.isReconnecting = false;
+        this.onConnectionChangeCallback?.(false, this.lastError);
+      } else {
+        this.isReconnecting = true;
+      }
+      console.warn(`[MT5 Bridge] Transient sync failure (${this.consecutiveErrors}/3); retrying:`, error);
     } finally {
       this.accountPollInFlight = false;
       if (this.pollingEnabled) {
-        const retryDelay = Math.min(30_000, 2_000 * (2 ** Math.min(this.consecutiveErrors, 4)));
+        const retryDelay = Math.min(15_000, 1_500 * (2 ** Math.min(this.consecutiveErrors, 3)));
         this.scheduleAccountPoll(failed ? retryDelay : 2_000);
       }
     }
@@ -385,7 +505,9 @@ export class MT5BridgeConnector {
 
   private async request<T>(path: string, init: RequestInit): Promise<T> {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 8_000);
+    // 12s timeout to accommodate mobile network transitions and Tailscale DERP packet relays
+    const timeout = setTimeout(() => controller.abort(), 12_000);
+    const start = performance.now();
     try {
       const response = await fetch(`${this.serverUrl}${path}`, {
         ...init,
@@ -396,6 +518,7 @@ export class MT5BridgeConnector {
           ...init.headers,
         },
       });
+      this.lastLatencyMs = Math.round(performance.now() - start);
       const data = (await response.json()) as T | { detail?: string };
       if (!response.ok) {
         const detail = (data as { detail?: string }).detail;

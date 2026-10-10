@@ -1222,8 +1222,7 @@ export class TradingEngine {
     return adjustedVolume <= riskVolume ? adjustedVolume : null;
   }
 
-  getEntryBlockReason(direction: TradeDirection, signal = this.getMarketSnapshot().signal): string | null {
-    const now = Date.now();
+  getEntryBlockReason(direction: TradeDirection, signal = this.getMarketSnapshot().signal, now: number = Date.now()): string | null {
     this.entryHistory = this.entryHistory.filter((entry) => now - entry.at < 60 * 60_000);
     if (this.killSwitch) return 'Kill switch is armed.';
     if (this.account.daily_loss_hit || this.account.daily_drawdown_pct >= this.account.max_daily_loss_pct) {
@@ -1303,6 +1302,29 @@ export class TradingEngine {
     if (this.instrumentType === 'standard' && !this.bypassNewsBlackout && isWithinConfiguredNewsBlackout(new Date(now))) {
       return 'Configured high-impact news blackout window is active.';
     }
+
+    // Institutional Session Timing Filter & Asian Consolidation Gate
+    // High-Institutional-Volume Windows: London Open (07:00–10:00 UTC / 10:00–13:00 EAT), NY Silver Bullet (13:00–16:00 UTC / 16:00–19:00 EAT)
+    // Low-liquidity Asian Consolidation (21:00–05:00 UTC / 00:00–08:00 EAT) is suppressed unless an exceptional high-profit signal exists
+    if (this.instrumentType === 'standard') {
+      const sess = sessionFilter(new Date(now));
+      if (sess.asianConsolidation) {
+        const isHighProfitException = Boolean(
+          signal && (
+            signal.isOutOfSessionException ||
+            signal.score >= 6.5 ||
+            (signal.score >= 60 && Math.abs(signal.tp - signal.entry) / Math.max(0.0001, Math.abs(signal.entry - signal.sl)) >= 2.5)
+          )
+        );
+
+        if (isHighProfitException) {
+          this.slog(`⭐ HIGH-PROFIT EXCEPTION: Out-of-session entry authorized for ${this.activeSymbol} (Score: ${signal?.score}) during Asian consolidation (21:00–05:00 UTC / 00:00–08:00 EAT).`, 'info');
+        } else {
+          return 'TRADE_REJECTED: ASIAN_CONSOLIDATION_SUPPRESSED (Low-liquidity Asian consolidation 21:00–05:00 UTC / 00:00–08:00 EAT. High-profit exception available for score ≥ 6.5 / RR ≥ 2.5).';
+        }
+      }
+    }
+
     return null;
   }
 
@@ -1520,36 +1542,154 @@ export class TradingEngine {
         floatingPnl += profit;
 
         let currentSl = p.sl;
+        let currentTp = p.tp;
         let beLocked = p.beLocked;
         let trailLocked = p.trailLocked;
+        let partialTaken = p.partialTaken;
+        let partialProfitLocked = p.partialProfitLocked;
+        let currentVolume = p.volume;
 
-        // Auto Break-Even (BE) Lock: when trade reaches 1:1 RR, move SL to entry
-        const beBuffer = cfg.pipSize * 3;
-        if (this.autoBeEnabled && !beLocked && pts >= cfg.pipSize * 15) {
+        // Risk Multiple (R) calculation for institutional scale-out
+        const initialRiskPts = Math.abs(p.price_open - (p.initialSl || p.sl)) || (cfg.pipSize * 20);
+        const rMultiple = pts / Math.max(0.0001, initialRiskPts);
+
+        // 1. Multi-Tier Partial Profit Taking (Scale-Out)
+        // Close 50% of volume at 1.5R, secure profits and cover commission, then move SL to Breakeven + 2 points.
+        // Let remaining 50% run to the full 3.0R+ institutional POI.
+        if (this.autoBeEnabled && !partialTaken && rMultiple >= 1.5) {
+          const halfVolume = Number((currentVolume * 0.5).toFixed(2));
+          if (halfVolume >= 0.01 && currentVolume - halfVolume >= 0.01) {
+            let partialProfit = 0;
+            if (cfg.category === 'metals') {
+              partialProfit = Number((pts * halfVolume * cfg.contractSize).toFixed(2));
+            } else if (posSym === 'USDJPY') {
+              partialProfit = Number(((pts * halfVolume * cfg.contractSize) / Math.max(1, curPrice)).toFixed(2));
+            } else {
+              partialProfit = Number((pts * halfVolume * cfg.contractSize).toFixed(2));
+            }
+
+            this.account.balance = Number((this.account.balance + partialProfit).toFixed(2));
+            this.closedTrades.unshift({
+              ticket: ++this.ticketCounter,
+              positionTicket: p.ticket,
+              symbol: posSym,
+              type: p.type,
+              volume: halfVolume,
+              openPrice: p.price_open,
+              closePrice: curPrice,
+              sl: currentSl,
+              tp: currentTp,
+              profit: partialProfit,
+              pips,
+              reason: 'PARTIAL_TP',
+              closedAt: new Date().toISOString(),
+              comment: `Scale-Out 50% @ 1.5R (#${p.ticket})`,
+              strategyRationale: p.strategyRationale,
+            });
+            persistClosedTrades(this.closedTrades);
+
+            currentVolume = Number((currentVolume - halfVolume).toFixed(2));
+            partialTaken = true;
+            partialProfitLocked = (partialProfitLocked || 0) + partialProfit;
+
+            // Automatically move Stop Loss to Breakeven + 2 points (or 2 pips)
+            const bePlus2 = p.type === 'BUY'
+              ? p.price_open + cfg.pipSize * 2
+              : p.price_open - cfg.pipSize * 2;
+            currentSl = Number(bePlus2.toFixed(cfg.digits));
+            beLocked = true;
+
+            // Extend target for runner 50% to full 3.0R+ institutional POI
+            const institutional3R_tp = p.type === 'BUY'
+              ? p.price_open + 3.0 * initialRiskPts
+              : p.price_open - 3.0 * initialRiskPts;
+            if (p.type === 'BUY' && institutional3R_tp > currentTp) {
+              currentTp = Number(institutional3R_tp.toFixed(cfg.digits));
+            } else if (p.type === 'SELL' && institutional3R_tp < currentTp) {
+              currentTp = Number(institutional3R_tp.toFixed(cfg.digits));
+            }
+
+            this.slog(
+              `💰 MULTI-TIER SCALE-OUT (1.5R SECURED): Closed 50% (${halfVolume}L) for +$${partialProfit.toFixed(2)} USD (#${p.ticket}). SL moved to BE+2pts ($${currentSl.toFixed(cfg.digits)}). Runner (${currentVolume}L) targeting 3.0R+ ($${currentTp.toFixed(cfg.digits)})!`,
+              'trade'
+            );
+
+            if (this.mt5Account.connected && mt5Bridge.getStatus().connected) {
+              void mt5Bridge.modifyPositionStops(p.ticket, currentSl, currentTp).catch(() => {});
+            }
+          }
+        }
+
+        // 2. Auto Break-Even (BE) Lock fallback: at 1:1 RR (or 15 pips) move SL to entry + 2 buffer
+        const beBuffer = cfg.pipSize * 2;
+        if (this.autoBeEnabled && !beLocked && (pts >= cfg.pipSize * 15 || rMultiple >= 1.0)) {
           beLocked = true;
           currentSl = Number((p.type === 'BUY' ? p.price_open + beBuffer : p.price_open - beBuffer).toFixed(cfg.digits));
           this.slog(`🛡️ ZERO-RISK BE LOCK: SL moved to $${currentSl.toFixed(cfg.digits)} (#${p.ticket}) · Trade cannot lose!`, 'trade');
+          if (this.mt5Account.connected && mt5Bridge.getStatus().connected) {
+            void mt5Bridge.modifyPositionStops(p.ticket, currentSl, currentTp).catch(() => {});
+          }
         }
 
-        // Tier-2 Profit Shield Lock: when trade reaches 75% of target, lock 50% profit
-        const targetPts = Math.abs(p.tp - p.price_open);
-        if (this.autoBeEnabled && !trailLocked && targetPts > 0 && pts >= targetPts * 0.75) {
-          trailLocked = true;
-          const lockedProfitPts = targetPts * 0.5;
-          currentSl = Number((p.type === 'BUY' ? p.price_open + lockedProfitPts : p.price_open - lockedProfitPts).toFixed(cfg.digits));
-          this.slog(`🎯 TIER-2 PROFIT SHIELD: Locked $${profit.toFixed(2)} profit floor (#${p.ticket})!`, 'trade');
+        // 3. Trailing Stop via Formed Order Block Swings
+        // As price creates new structural swing highs/lows and closes beyond them (BOS),
+        // trail the stop loss to the base of each newly confirmed Order Block rather than keeping it static.
+        if (this.autoBeEnabled && this._cachedMarket && this._cachedMarket.zones) {
+          const activeObs = this._cachedMarket.zones.filter((z) => !z.filled && z.kind === 'OB');
+          if (p.type === 'BUY') {
+            // For BUY: Bullish OB base is bottom - 0.25 * ATR
+            const qualifyingObs = activeObs.filter((z) => z.bullish && z.bottom > p.price_open);
+            if (qualifyingObs.length > 0) {
+              const highestOb = qualifyingObs.reduce((prev, curr) => (curr.bottom > prev.bottom ? curr : prev));
+              const obBase = Number((highestOb.bottom - 0.25 * (this._cachedMarket.signal?.atr || cfg.pipSize * 5)).toFixed(cfg.digits));
+              if (obBase > currentSl && obBase < curPrice) {
+                currentSl = obBase;
+                trailLocked = true;
+                this.slog(`🏹 OB TRAILING STOP: SL trailed to base of confirmed Bullish Order Block ($${currentSl.toFixed(cfg.digits)}) (#${p.ticket})`, 'trade');
+                if (this.mt5Account.connected && mt5Bridge.getStatus().connected) {
+                  void mt5Bridge.modifyPositionStops(p.ticket, currentSl, currentTp).catch(() => {});
+                }
+              }
+            }
+          } else {
+            // For SELL: Bearish OB base is top + 0.25 * ATR
+            const qualifyingObs = activeObs.filter((z) => !z.bullish && z.top < p.price_open);
+            if (qualifyingObs.length > 0) {
+              const lowestOb = qualifyingObs.reduce((prev, curr) => (curr.top < prev.top ? curr : prev));
+              const obBase = Number((lowestOb.top + 0.25 * (this._cachedMarket.signal?.atr || cfg.pipSize * 5)).toFixed(cfg.digits));
+              if (obBase < currentSl && obBase > curPrice) {
+                currentSl = obBase;
+                trailLocked = true;
+                this.slog(`🏹 OB TRAILING STOP: SL trailed to base of confirmed Bearish Order Block ($${currentSl.toFixed(cfg.digits)}) (#${p.ticket})`, 'trade');
+                if (this.mt5Account.connected && mt5Bridge.getStatus().connected) {
+                  void mt5Bridge.modifyPositionStops(p.ticket, currentSl, currentTp).catch(() => {});
+                }
+              }
+            }
+          }
         }
 
         // Check SL / TP
         if (p.type === 'BUY') {
           if (curPrice <= currentSl) toClose.push({ ticket: p.ticket, reason: 'SL' });
-          else if (curPrice >= p.tp) toClose.push({ ticket: p.ticket, reason: 'TP' });
+          else if (curPrice >= currentTp) toClose.push({ ticket: p.ticket, reason: 'TP' });
         } else {
           if (curPrice >= currentSl) toClose.push({ ticket: p.ticket, reason: 'SL' });
-          else if (curPrice <= p.tp) toClose.push({ ticket: p.ticket, reason: 'TP' });
+          else if (curPrice <= currentTp) toClose.push({ ticket: p.ticket, reason: 'TP' });
         }
 
-        return { ...p, sl: currentSl, beLocked, trailLocked, profit, pips };
+        return {
+          ...p,
+          volume: currentVolume,
+          sl: currentSl,
+          tp: currentTp,
+          beLocked,
+          trailLocked,
+          partialTaken,
+          partialProfitLocked,
+          profit,
+          pips,
+        };
       });
 
       // Safely close positions outside the map loop
@@ -1946,9 +2086,12 @@ export class TradingEngine {
       time: new Date().toISOString().substr(11, 8),
       type: direction,
       volume: riskVolume,
+      initialVolume: riskVolume,
       price_open: openPrice,
       sl: Number(sl.toFixed(config.digits)),
+      initialSl: Number(sl.toFixed(config.digits)),
       tp: Number(tp.toFixed(config.digits)),
+      initialTp: Number(tp.toFixed(config.digits)),
       profit: 0.0,
       pips: 0.0,
       magic: config.magicNumber,
@@ -2084,6 +2227,75 @@ export class TradingEngine {
     }
     this.slog(`Stops updated for position #${ticket}: SL $${sl.toFixed(2)}, TP $${tp.toFixed(2)}`, 'trade');
     this.notify();
+  }
+
+  scaleOutPosition(ticket: number, fraction = 0.5): boolean {
+    const pos = this.positions.find((p) => p.ticket === ticket);
+    if (!pos) return false;
+    const posSym = (pos.symbol || this.activeSymbol) as SupportedSymbol;
+    const cfg = getInstrumentConfig(posSym);
+    const curPrice = pos.type === 'BUY' ? this.bid : this.ask;
+    const pts = pos.type === 'BUY' ? curPrice - pos.price_open : pos.price_open - curPrice;
+    const pips = Number((pts / cfg.pipSize).toFixed(1));
+    const closeVol = Number((pos.volume * fraction).toFixed(2));
+    if (closeVol < 0.01 || pos.volume - closeVol < 0.01) return false;
+
+    let partialProfit = 0;
+    if (cfg.category === 'metals') {
+      partialProfit = Number((pts * closeVol * cfg.contractSize).toFixed(2));
+    } else if (posSym === 'USDJPY') {
+      partialProfit = Number(((pts * closeVol * cfg.contractSize) / Math.max(1, curPrice)).toFixed(2));
+    } else {
+      partialProfit = Number((pts * closeVol * cfg.contractSize).toFixed(2));
+    }
+
+    this.account.balance = Number((this.account.balance + partialProfit).toFixed(2));
+    const closedAt = new Date();
+    this.closedTrades.unshift({
+      ticket: ++this.ticketCounter,
+      positionTicket: pos.ticket,
+      symbol: posSym,
+      openTime: pos.time,
+      closeTime: closedAt.toISOString().substr(11, 8),
+      closedAt: closedAt.toISOString(),
+      type: pos.type,
+      volume: closeVol,
+      openPrice: pos.price_open,
+      closePrice: curPrice,
+      sl: pos.sl,
+      tp: pos.tp,
+      profit: partialProfit,
+      pips,
+      reason: 'PARTIAL_TP',
+      comment: `Manual Scale-Out ${(fraction * 100).toFixed(0)}% (#${pos.ticket})`,
+      strategyRationale: pos.strategyRationale,
+    });
+    persistClosedTrades(this.closedTrades);
+
+    pos.volume = Number((pos.volume - closeVol).toFixed(2));
+    pos.partialTaken = true;
+    pos.partialProfitLocked = (pos.partialProfitLocked || 0) + partialProfit;
+
+    // Automatically move SL to Breakeven + 2 points
+    const bePlus2 = pos.type === 'BUY'
+      ? pos.price_open + cfg.pipSize * 2
+      : pos.price_open - cfg.pipSize * 2;
+    pos.sl = Number(bePlus2.toFixed(cfg.digits));
+    pos.beLocked = true;
+
+    this.slog(
+      `💰 SCALE-OUT EXECUTED: Closed ${closeVol}L for +$${partialProfit.toFixed(2)} USD (#${pos.ticket}). SL moved to BE+2pts ($${pos.sl.toFixed(cfg.digits)}). Remaining ${pos.volume}L running.`,
+      'trade'
+    );
+
+    if (this.mt5Account.connected && mt5Bridge.getStatus().connected) {
+      void mt5Bridge.modifyPositionStops(pos.ticket, pos.sl, pos.tp).catch(() => {});
+    }
+
+    this.invalidatePositions();
+    this.emit('positions');
+    this.emit('ticker');
+    return true;
   }
 
   closeAll(reason: 'Manual' | 'KillSwitch' | 'TP' | 'SL' = 'Manual') {

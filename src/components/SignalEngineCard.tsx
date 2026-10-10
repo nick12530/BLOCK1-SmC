@@ -264,35 +264,37 @@ export const SignalEngineCard: React.FC<SignalEngineCardProps> = React.memo(({ o
       </div>
 
       {/* Target Price Levels Matrix */}
-      <div className="grid grid-cols-3 gap-2.5 text-center text-xs">
+      <div className="grid grid-cols-3 gap-2.5 sm:gap-3 text-center text-xs">
         {/* Entry Price */}
-        <div className="p-3 rounded-xl bg-slate-50 dark:bg-zinc-900/80 border border-slate-200 dark:border-zinc-800">
+        <div className="p-3 sm:p-3.5 rounded-xl bg-slate-50 dark:bg-zinc-900/80 border border-slate-200 dark:border-zinc-800">
           <span className="text-xs text-zinc-500 block uppercase font-bold">Signal Entry</span>
           <span className="text-sm sm:text-base font-black text-slate-900 dark:text-white tabular-nums block mt-0.5">
             {signalEntry === null ? '—' : `$${signalEntry.toFixed(2)}`}
           </span>
-          <span className="text-xs text-zinc-500 block">{rawSig ? `Confirmed ${rawSig.timeframe} setup` : 'No confirmed entry'}</span>
+          <span className="text-xs text-zinc-500 block mt-0.5">
+            {rawSig ? `Confirmed ${rawSig.timeframe}` : 'Waiting for entry'}
+          </span>
         </div>
 
         {/* Stop Loss */}
-        <div className="p-3 rounded-xl bg-slate-50 dark:bg-zinc-900/80 border border-slate-200 dark:border-zinc-800">
+        <div className="p-3 sm:p-3.5 rounded-xl bg-slate-50 dark:bg-zinc-900/80 border border-slate-200 dark:border-zinc-800">
           <span className="text-xs text-rose-500 block uppercase font-bold">Stop Loss (SL)</span>
           <span className="text-sm sm:text-base font-black text-rose-600 dark:text-rose-400 tabular-nums block mt-0.5">
             {slPrice === null ? '—' : `$${slPrice.toFixed(2)}`}
           </span>
-          <span className="text-[10px] text-zinc-500 block">
-            {rawSig ? `-${riskPts.toFixed(2)} pts (-$${tradeMetrics.riskDollar})` : 'Waiting for validated setup'}
+          <span className="text-xs text-zinc-500 block mt-0.5">
+            {rawSig ? `-${riskPts.toFixed(1)} pts (-$${tradeMetrics.riskDollar})` : 'SL pending'}
           </span>
         </div>
 
         {/* Take Profit */}
-        <div className="p-3 rounded-xl bg-slate-50 dark:bg-zinc-900/80 border border-slate-200 dark:border-zinc-800">
+        <div className="p-3 sm:p-3.5 rounded-xl bg-slate-50 dark:bg-zinc-900/80 border border-slate-200 dark:border-zinc-800">
           <span className="text-xs text-emerald-500 block uppercase font-bold">Take Profit (TP)</span>
           <span className="text-sm sm:text-base font-black text-emerald-600 dark:text-emerald-400 tabular-nums block mt-0.5">
             {tpPrice === null ? '—' : `$${tpPrice.toFixed(2)}`}
           </span>
-          <span className="text-[10px] text-zinc-500 block">
-            {rawSig ? `+${rewardPts.toFixed(2)} pts (+$${tradeMetrics.rewardDollar})` : 'Waiting for validated setup'}
+          <span className="text-xs text-zinc-500 block mt-0.5">
+            {rawSig ? `+${rewardPts.toFixed(1)} pts (+$${tradeMetrics.rewardDollar})` : 'TP pending'}
           </span>
         </div>
       </div>

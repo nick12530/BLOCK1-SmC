@@ -29,6 +29,7 @@ import {
   TrendingUp,
   Activity,
   ShieldAlert,
+  Crosshair,
 } from 'lucide-react';
 
 interface HelpCenterModalProps {
@@ -39,6 +40,7 @@ interface HelpCenterModalProps {
 }
 
 type TabType =
+  | 'system_engines'
   | 'pairs_matrix'
   | 'indicators_suite'
   | 'pending_orders'
@@ -58,15 +60,16 @@ interface TabItem {
 }
 
 const TABS: TabItem[] = [
-  { id: 'pairs_matrix', num: '01', title: 'Currency Pairs', desc: 'XAUUSD, EUR, GBP, JPY playbooks', icon: Globe },
-  { id: 'indicators_suite', num: '02', title: 'Indicator Suite', desc: 'ATR, Candles, MTF (M1-H4), Sessions & SMC', icon: BarChart3 },
-  { id: 'pending_orders', num: '03', title: 'Pending Limit Orders', desc: 'Holding timer & auto-cancel', icon: Clock },
-  { id: 'valid_signals', num: '04', title: '6 Execution Gates', desc: 'Deterministic trade criteria', icon: Zap },
-  { id: 'dealing_range', num: '05', title: 'Dealing Range & EQ', desc: 'Discount vs Premium zones', icon: Compass },
-  { id: 'balances', num: '06', title: 'MT5 Balances & Margin', desc: 'Capital & leverage guide', icon: DollarSign },
-  { id: 'abbreviations', num: '07', title: 'Indicator Glossary', desc: 'OB, BOS, CHoCH, FVG, ATR', icon: Layers },
-  { id: 'mt5', num: '08', title: 'MT5 Live Bridge', desc: 'Broker execution & socket sync', icon: Server },
-  { id: 'phone_pwa', num: '09', title: 'Mobile PWA', desc: 'Install on iOS & Android', icon: Smartphone },
+  { id: 'system_engines', num: '01', title: 'System Engines', desc: '10 Core Engines Defined & Architecture', icon: Activity },
+  { id: 'pairs_matrix', num: '02', title: 'Currency Pairs', desc: 'XAUUSD, EUR, GBP, JPY playbooks', icon: Globe },
+  { id: 'indicators_suite', num: '03', title: 'Indicator Suite', desc: 'ATR, Candles, MTF, Sessions (UTC & EAT)', icon: BarChart3 },
+  { id: 'pending_orders', num: '04', title: 'Pending Limit Orders', desc: 'Holding timer & auto-cancel', icon: Clock },
+  { id: 'valid_signals', num: '05', title: 'Execution Gates', desc: 'SFP, 1.5R Scale-Out, OB Trailing & Rules', icon: Zap },
+  { id: 'dealing_range', num: '06', title: 'Dealing Range & EQ', desc: 'Discount vs Premium zones', icon: Compass },
+  { id: 'balances', num: '07', title: 'MT5 Balances & Margin', desc: 'Capital & leverage guide', icon: DollarSign },
+  { id: 'abbreviations', num: '08', title: 'Glossary & SMC', desc: 'OB, BOS, CHoCH, FVG, ATR, SFP', icon: Layers },
+  { id: 'mt5', num: '09', title: 'MT5 Live Bridge', desc: 'Broker execution & socket sync', icon: Server },
+  { id: 'phone_pwa', num: '10', title: 'Mobile Server & PWA', desc: 'Start server on phone & install app', icon: Smartphone },
 ];
 
 export const HelpCenterModal: React.FC<HelpCenterModalProps> = ({
@@ -173,6 +176,132 @@ export const HelpCenterModal: React.FC<HelpCenterModalProps> = ({
 
         {/* Body Content */}
         <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 font-sans text-xs">
+          {/* TAB 0: SYSTEM ENGINES ARCHITECTURE */}
+          {activeTab === 'system_engines' && (
+            <div className="space-y-3.5">
+              <div className="p-3.5 rounded-xl bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-800 space-y-1">
+                <span className="font-bold text-zinc-950 dark:text-white font-mono text-xs block">
+                  The 10 Algorithmic Engines Powering the System
+                </span>
+                <p className="text-[11px] text-zinc-600 dark:text-zinc-400 leading-relaxed">
+                  The terminal operates on a modular, multi-pipeline architecture. Below is the comprehensive technical definition and operational functionality of every engine running the system:
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-[11px]">
+                {/* Engine 1 */}
+                <div className="p-3.5 rounded-xl bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 space-y-1.5">
+                  <div className="flex items-center gap-1.5 font-bold font-mono text-xs text-sky-600 dark:text-sky-400">
+                    <Layers className="w-3.5 h-3.5" />
+                    <span>1. Market Structure Engine (MSE)</span>
+                  </div>
+                  <p className="text-zinc-600 dark:text-zinc-400 leading-relaxed">
+                    <strong>Functionality:</strong> Detects multi-bar fractal swing highs and swing lows without lookahead bias using a strict confirmation delay. Identifies <strong>Break of Structure (BOS)</strong> for trend continuation, <strong>Change of Character (CHoCH)</strong> for early structural reversals, and establishes the institutional <strong>Dealing Range</strong> (High, Low, and the 50% Equilibrium line).
+                  </p>
+                </div>
+
+                {/* Engine 2 */}
+                <div className="p-3.5 rounded-xl bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 space-y-1.5">
+                  <div className="flex items-center gap-1.5 font-bold font-mono text-xs text-emerald-600 dark:text-emerald-400">
+                    <Compass className="w-3.5 h-3.5" />
+                    <span>2. SMC POI Engine (Order Blocks &amp; FVGs)</span>
+                  </div>
+                  <p className="text-zinc-600 dark:text-zinc-400 leading-relaxed">
+                    <strong>Functionality:</strong> Identifies Bullish (+OB) Demand Order Blocks and Bearish (-OB) Supply Order Blocks using 20-period rolling body size displacement filters. Detects 3-candle Fair Value Gaps (FVG) and tracks their exact mitigation and fill status across live price ticks.
+                  </p>
+                </div>
+
+                {/* Engine 3 */}
+                <div className="p-3.5 rounded-xl bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 space-y-1.5">
+                  <div className="flex items-center gap-1.5 font-bold font-mono text-xs text-amber-600 dark:text-amber-400">
+                    <Crosshair className="w-3.5 h-3.5" />
+                    <span>3. Liquidity Sweep &amp; SFP Gate Engine</span>
+                  </div>
+                  <p className="text-zinc-600 dark:text-zinc-400 leading-relaxed">
+                    <strong>Functionality:</strong> Requires an aggressive wick sweep of an Asian session high/low or prior swing extreme that immediately rejects back inside the range (Swing Failure Pattern). Swept liquidity captures institutional stop orders and significantly elevates trade win rates on Gold (XAUUSD) and Forex.
+                  </p>
+                </div>
+
+                {/* Engine 4 */}
+                <div className="p-3.5 rounded-xl bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 space-y-1.5">
+                  <div className="flex items-center gap-1.5 font-bold font-mono text-xs text-rose-600 dark:text-rose-400">
+                    <BarChart3 className="w-3.5 h-3.5" />
+                    <span>4. Candlestick Physics &amp; Rejection Engine</span>
+                  </div>
+                  <p className="text-zinc-600 dark:text-zinc-400 leading-relaxed">
+                    <strong>Functionality:</strong> Measures candlestick anatomy, wick-to-body ratios (&gt;65% rejection wick required), Pinbars, and Engulfing displacement. Scores candle pattern reliability (80%–95%) and prevents entering on indecision bars or candles closing against direction.
+                  </p>
+                </div>
+
+                {/* Engine 5 */}
+                <div className="p-3.5 rounded-xl bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 space-y-1.5">
+                  <div className="flex items-center gap-1.5 font-bold font-mono text-xs text-purple-600 dark:text-purple-400">
+                    <Activity className="w-3.5 h-3.5" />
+                    <span>5. Multi-Timeframe (MTF) Alignment Engine</span>
+                  </div>
+                  <p className="text-zinc-600 dark:text-zinc-400 leading-relaxed">
+                    <strong>Functionality:</strong> Harmonizes trends and dealing ranges across 5 timeframes: <strong>M1, M5, M15, H1, and H4</strong>. Ensures that lower-timeframe execution triggers (M1/M5) strictly agree with higher-timeframe order flow (M15/H1/H4).
+                  </p>
+                </div>
+
+                {/* Engine 6 */}
+                <div className="p-3.5 rounded-xl bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 space-y-1.5">
+                  <div className="flex items-center gap-1.5 font-bold font-mono text-xs text-indigo-600 dark:text-indigo-400">
+                    <Clock className="w-3.5 h-3.5" />
+                    <span>6. Session &amp; Timing Filter Engine (UTC &amp; EAT)</span>
+                  </div>
+                  <p className="text-zinc-600 dark:text-zinc-400 leading-relaxed">
+                    <strong>Functionality:</strong> Filters execution by institutional market hours. Prioritizes <strong>London Open (07:00–10:00 UTC / 10:00–13:00 EAT)</strong> and <strong>New York AM / Silver Bullet (13:00–16:00 UTC / 16:00–19:00 EAT)</strong>. Suppresses low-liquidity Asian consolidation (21:00–05:00 UTC / 00:00–08:00 EAT) to prevent whipsaws, while auto-authorizing high-profit exception setups (Score &ge; 6.5 / RR &ge; 2.5) across all currency pairs.
+                  </p>
+                </div>
+
+                {/* Engine 7 */}
+                <div className="p-3.5 rounded-xl bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 space-y-1.5">
+                  <div className="flex items-center gap-1.5 font-bold font-mono text-xs text-teal-600 dark:text-teal-400">
+                    <Globe className="w-3.5 h-3.5" />
+                    <span>7. Multi-Pair SMC Scanner Engine</span>
+                  </div>
+                  <p className="text-zinc-600 dark:text-zinc-400 leading-relaxed">
+                    <strong>Functionality:</strong> Background radar continuously scanning 4 assets (XAUUSD, EURUSD, GBPUSD, USDJPY). Computes real-time scores (0–100), detects session bias, evaluates fresh POIs, and feeds opportunities to the top dashboard deck.
+                  </p>
+                </div>
+
+                {/* Engine 8 */}
+                <div className="p-3.5 rounded-xl bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 space-y-1.5">
+                  <div className="flex items-center gap-1.5 font-bold font-mono text-xs text-rose-500">
+                    <ShieldAlert className="w-3.5 h-3.5" />
+                    <span>8. Automated Risk &amp; Compounding Engine</span>
+                  </div>
+                  <p className="text-zinc-600 dark:text-zinc-400 leading-relaxed">
+                    <strong>Functionality:</strong> Computes dynamic position sizing from account equity and stop loss distance. Enforces a 7-stage compounding ladder from $10 micro accounts to $10,000+ institutional tiers, daily drawdown limits (-12%), basket profit target locks (+15%), and correlated exposure limits.
+                  </p>
+                </div>
+
+                {/* Engine 9 */}
+                <div className="p-3.5 rounded-xl bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 space-y-1.5">
+                  <div className="flex items-center gap-1.5 font-bold font-mono text-xs text-amber-500">
+                    <Zap className="w-3.5 h-3.5" />
+                    <span>9. Order Lifecycle &amp; Scale-Out Execution Engine</span>
+                  </div>
+                  <p className="text-zinc-600 dark:text-zinc-400 leading-relaxed">
+                    <strong>Functionality:</strong> Manages limit orders with holding timers and drift invalidation. Automates <strong>Multi-Tier Partial Profit Taking (Scale-Out)</strong>: closes 50% volume at 1.5R, moves Stop Loss to Breakeven + 2 points, trails SL along newly formed Order Blocks on subsequent BOS breaks, and lets the remaining 50% runner target 3.0R+ institutional POIs.
+                  </p>
+                </div>
+
+                {/* Engine 10 */}
+                <div className="p-3.5 rounded-xl bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 space-y-1.5">
+                  <div className="flex items-center gap-1.5 font-bold font-mono text-xs text-blue-500">
+                    <Server className="w-3.5 h-3.5" />
+                    <span>10. MT5 ZeroMQ Bridge &amp; Phone Server Engine</span>
+                  </div>
+                  <p className="text-zinc-600 dark:text-zinc-400 leading-relaxed">
+                    <strong>Functionality:</strong> High-performance bridge syncing real-time broker ticks, margin, and order execution with MetaTrader 5. When offline, operates as a self-contained algorithmic station. Features native mobile server launchers (<code>./start-on-phone.sh</code>) for Termux and iSH with Tailscale remote network synchronization.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* TAB 1: CURRENCY PAIRS PLAYBOOK */}
           {activeTab === 'pairs_matrix' && (
             <div className="space-y-3.5">
@@ -181,7 +310,7 @@ export const HelpCenterModal: React.FC<HelpCenterModalProps> = ({
                   Institutional Multi-Pair Playbook (4 Supported Instruments)
                 </span>
                 <p className="text-[11px] text-zinc-600 dark:text-zinc-400 leading-relaxed">
-                  The terminal scans, scores, and executes across 4 distinct financial markets. Each pair has its own volatility profile, pip calculation, and prime trading hours:
+                  The terminal scans, scores, and executes across 4 distinct financial markets. All sessions are quoted in both UTC and East Africa Time (EAT = UTC+3):
                 </p>
               </div>
 
@@ -198,8 +327,8 @@ export const HelpCenterModal: React.FC<HelpCenterModalProps> = ({
                   <ul className="space-y-1 text-zinc-600 dark:text-zinc-300 leading-relaxed list-disc list-inside">
                     <li><strong>Point Value:</strong> $1.00 per point per 1.0 standard lot.</li>
                     <li><strong>Key Drivers:</strong> US CPI, Non-Farm Payrolls, Treasury Yields, and Safe-Haven flows.</li>
-                    <li><strong>Prime Window:</strong> London/New York Overlap (13:00 - 16:00 UTC) produces the highest volatility.</li>
-                    <li><strong>Execution Rule:</strong> Enter at unmitigated 15m/1h Order Blocks in deep Discount/Premium dealing ranges.</li>
+                    <li><strong>Prime Window:</strong> London/New York Overlap (13:00 - 16:00 UTC / 16:00 - 19:00 EAT) produces maximum institutional volume.</li>
+                    <li><strong>Execution Rule:</strong> Enter at unmitigated 15m/1h Order Blocks in deep Discount/Premium dealing ranges with SFP liquidity sweep confirmation.</li>
                   </ul>
                 </div>
 
@@ -215,8 +344,8 @@ export const HelpCenterModal: React.FC<HelpCenterModalProps> = ({
                   <ul className="space-y-1 text-zinc-600 dark:text-zinc-300 leading-relaxed list-disc list-inside">
                     <li><strong>Pip Value:</strong> $10.00 per pip (0.0001) per 1.0 standard lot. Lowest broker spreads (0.6 - 1.2 pips).</li>
                     <li><strong>Key Drivers:</strong> ECB rate decisions, Federal Reserve rate differentials, Eurozone manufacturing PMIs.</li>
-                    <li><strong>Prime Window:</strong> London Open (07:00 - 10:00 UTC) sets the directional trend of the day.</li>
-                    <li><strong>Execution Rule:</strong> Look for session liquidity sweeps followed by clean Fair Value Gap imbalances.</li>
+                    <li><strong>Prime Window:</strong> London Open (07:00 - 10:00 UTC / 10:00 - 13:00 EAT) sets the directional trend of the day.</li>
+                    <li><strong>Execution Rule:</strong> Look for Asian session liquidity sweeps followed by clean Fair Value Gap imbalances.</li>
                   </ul>
                 </div>
 
@@ -232,8 +361,8 @@ export const HelpCenterModal: React.FC<HelpCenterModalProps> = ({
                   <ul className="space-y-1 text-zinc-600 dark:text-zinc-300 leading-relaxed list-disc list-inside">
                     <li><strong>Pip Value:</strong> $10.00 per pip per 1.0 lot. Higher ATR (Average True Range) than EURUSD.</li>
                     <li><strong>Key Drivers:</strong> Bank of England MPC decisions, UK GDP, US Dollar DXY strength.</li>
-                    <li><strong>Prime Window:</strong> Frankfurt/London open (06:30 - 11:00 UTC). Known for aggressive stop sweeps.</li>
-                    <li><strong>Execution Rule:</strong> Wait for Breaker Blocks and clear CHoCH structural reversals after liquidity pools.</li>
+                    <li><strong>Prime Window:</strong> Frankfurt/London open (06:30 - 11:00 UTC / 09:30 - 14:00 EAT). Known for aggressive stop sweeps.</li>
+                    <li><strong>Execution Rule:</strong> Wait for Breaker Blocks and clear CHoCH structural reversals after liquidity pool raids.</li>
                   </ul>
                 </div>
 
@@ -249,7 +378,7 @@ export const HelpCenterModal: React.FC<HelpCenterModalProps> = ({
                   <ul className="space-y-1 text-zinc-600 dark:text-zinc-300 leading-relaxed list-disc list-inside">
                     <li><strong>Pip Value:</strong> 0.01 = 1 pip. Multi-hour clean trend continuation characteristics.</li>
                     <li><strong>Key Drivers:</strong> US 10Y Treasury Yield correlation, Bank of Japan policy adjustments.</li>
-                    <li><strong>Prime Window:</strong> Tokyo Asian Session (00:00 - 09:00 UTC) and NY open (13:00 - 17:00 UTC).</li>
+                    <li><strong>Prime Window:</strong> Tokyo Asian Session (00:00 - 09:00 UTC / 03:00 - 12:00 EAT) and NY AM (13:00 - 17:00 UTC / 16:00 - 20:00 EAT).</li>
                     <li><strong>Execution Rule:</strong> Trend-following pullback entries at 50% Equilibrium during strong bond yield moves.</li>
                   </ul>
                 </div>
@@ -303,10 +432,16 @@ export const HelpCenterModal: React.FC<HelpCenterModalProps> = ({
                 <div className="p-3 rounded-xl bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 space-y-1">
                   <span className="font-mono font-bold text-purple-600 dark:text-purple-400 text-xs block flex items-center gap-1.5">
                     <Clock className="w-3.5 h-3.5" />
-                    <span>4. Session Kill-Zones &amp; Dual Real-Time Clocks</span>
+                    <span>4. Session Kill-Zones &amp; Dual Real-Time Clocks (UTC &amp; EAT)</span>
                   </span>
                   <p className="text-zinc-600 dark:text-zinc-400 leading-relaxed">
-                    Tracks London Open (07:00-16:00 UTC), New York Cash (13:00-22:00 UTC), and Asian Tokyo (00:00-09:00 UTC) with dual clocks in Server time and East Africa / Kenya time (EAT).
+                    Tracks dual clocks in UTC and <strong>East Africa Time (EAT = UTC+3)</strong>:
+                    <br />• <strong>London Open:</strong> 07:00–10:00 UTC (10:00–13:00 EAT)
+                    <br />• <strong>New York AM / Silver Bullet:</strong> 13:00–16:00 UTC (16:00–19:00 EAT)
+                    <br />• <strong>London Full Session:</strong> 08:00–17:00 UTC (11:00–20:00 EAT)
+                    <br />• <strong>New York Full Session:</strong> 13:00–22:00 UTC (16:00–01:00 EAT)
+                    <br />• <strong>Asian Tokyo Session:</strong> 00:00–09:00 UTC (03:00–12:00 EAT)
+                    <br />• <strong>Asian Consolidation Window:</strong> 21:00–05:00 UTC (00:00–08:00 EAT) (suppressed unless high-profit exception)
                   </p>
                 </div>
 
@@ -448,7 +583,37 @@ export const HelpCenterModal: React.FC<HelpCenterModalProps> = ({
                     <span>Gate 6: Daily Loss Circuit Breaker</span>
                   </div>
                   <p className="text-zinc-600 dark:text-zinc-400 leading-relaxed">
-                    Hard stop if daily drawdown reaches 3.0%, preserving account capital until the next trading day.
+                    Hard stop if daily drawdown reaches configured risk ceiling (or consecutive losses hit 3), preserving account capital until the next trading day.
+                  </p>
+                </div>
+
+                <div className="p-3 rounded-xl border border-amber-500/30 bg-amber-500/[0.03] space-y-1">
+                  <div className="font-bold text-zinc-950 dark:text-white flex items-center gap-1.5 font-mono text-xs">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-amber-500" />
+                    <span>Gate 7: Multi-Tier 1.5R Scale-Out &amp; BE+2pts</span>
+                  </div>
+                  <p className="text-zinc-600 dark:text-zinc-400 leading-relaxed">
+                    Positions do not remain all-or-nothing. At 1.5R, 50% of volume automatically closes to bank realized profit and cover commission. Stop Loss is simultaneously relocated to Breakeven + 2 points. The remaining 50% runner targets the full 3.0R+ institutional POI.
+                  </p>
+                </div>
+
+                <div className="p-3 rounded-xl border border-purple-500/30 bg-purple-500/[0.03] space-y-1">
+                  <div className="font-bold text-zinc-950 dark:text-white flex items-center gap-1.5 font-mono text-xs">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-purple-500" />
+                    <span>Gate 8: Formed Order Block Swing Trailing Stop</span>
+                  </div>
+                  <p className="text-zinc-600 dark:text-zinc-400 leading-relaxed">
+                    As price prints new structural swing highs/lows and breaks beyond them (BOS), the stop loss is dynamically trailed to the base of each newly confirmed Order Block rather than sitting at a static entry.
+                  </p>
+                </div>
+
+                <div className="p-3 rounded-xl border border-sky-500/30 bg-sky-500/[0.03] space-y-1 sm:col-span-2">
+                  <div className="font-bold text-zinc-950 dark:text-white flex items-center gap-1.5 font-mono text-xs">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-sky-500" />
+                    <span>Gate 9: Liquidity Sweep / SFP Gate &amp; Session Timing</span>
+                  </div>
+                  <p className="text-zinc-600 dark:text-zinc-400 leading-relaxed">
+                    Orders require a wick sweep of an Asian session high/low or prior swing extreme that immediately rejects back inside the range (Swing Failure Pattern). Entries are restricted to high-volume windows: <strong>London Open (07:00–10:00 UTC / 10:00–13:00 EAT)</strong> and <strong>New York AM / Silver Bullet (13:00–16:00 UTC / 16:00–19:00 EAT)</strong>. Asian consolidation entries (21:00–05:00 UTC / 00:00–08:00 EAT) are suppressed to prevent false breakouts, with automated exceptions granted for high-profit setups across all currency pairs.
                   </p>
                 </div>
               </div>
@@ -642,16 +807,24 @@ export const HelpCenterModal: React.FC<HelpCenterModalProps> = ({
               </div>
 
               {/* Start Local Server Directly on Phone */}
-              <div className="p-3.5 rounded-xl bg-slate-900/80 border border-slate-800 space-y-2 font-mono text-[11px]">
+              <div className="p-3.5 rounded-xl bg-slate-900/90 border border-slate-800 space-y-2.5 font-mono text-[11px]">
                 <div className="flex items-center justify-between">
-                  <span className="font-bold text-sky-400">Start Server on Android Phone (Termux)</span>
-                  <span className="text-[10px] text-zinc-400">No computer required</span>
+                  <span className="font-bold text-sky-400">Launch Phone Server (Android Termux or iOS iSH)</span>
+                  <span className="text-[10px] text-zinc-400">1-Command Launcher</span>
                 </div>
                 <div className="p-2.5 rounded-lg bg-black/80 text-emerald-400 text-[10px] font-mono leading-relaxed border border-zinc-800 overflow-x-auto">
+                  # 1. On Android Termux:<br />
                   pkg update &amp;&amp; pkg install nodejs git<br />
-                  git clone https://github.com/nick12530/BLOCK1-SmC.git &amp;&amp; cd BLOCK1-SmC<br />
-                  npm install &amp;&amp; npm run mobile<br />
-                  # Open http://localhost:3000 in your phone&apos;s browser
+                  bash start-on-phone.sh<br />
+                  <br />
+                  # 2. Or run zero-dependency mobile HTTP daemon directly:<br />
+                  node scripts/mobile-server.js<br />
+                  <br />
+                  # Access in mobile browser: http://localhost:3000 (or your Wi-Fi LAN IP)
+                </div>
+                <div className="text-[10px] text-zinc-400 space-y-1">
+                  <p>• <strong>Tailscale Remote Sync:</strong> Connect your phone to your Tailscale mesh network (e.g. <code>http://100.x.y.z:8000</code>). The terminal will sync ticks and trades to your desktop MT5 terminal securely over cellular data.</p>
+                  <p>• <strong>100% Standalone Offline Mode:</strong> If MT5 is not reachable, the system automatically runs as a full client-side algorithmic trading workstation with real-time indicators and simulated execution.</p>
                 </div>
               </div>
             </div>

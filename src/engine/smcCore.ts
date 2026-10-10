@@ -4,7 +4,16 @@
  * Design goals: lookahead-safe, high fidelity, confluence scoring.
  */
 
-import { Candle, Swing, StructureEvent, Zone, DealingRange, SessionInfo, Signal } from '../types/smc';
+import {
+  Candle,
+  Swing,
+  StructureEvent,
+  Zone,
+  DealingRange,
+  SessionInfo,
+  Signal,
+  LiquiditySweepInfo,
+} from '../types/smc';
 import { analyzeGoldCandlestickPatterns } from './candlestickPatterns';
 
 // ============================================================
@@ -334,12 +343,24 @@ export function sessionFilter(dateOrTimestamp: Date | number): SessionInfo {
 
   const pad = (n: number) => n.toString().padStart(2, '0');
   const currentUtcTime = `${pad(utcHours)}:${pad(utcMinutes)}:${pad(d.getUTCSeconds())} UTC`;
+  // East Africa Time (EAT = UTC + 3)
+  const eatHours = (utcHours + 3) % 24;
+  const currentEatTime = `${pad(eatHours)}:${pad(utcMinutes)}:${pad(d.getUTCSeconds())} EAT`;
+
+  // High-Institutional-Volume Windows
+  // London Open: 07:00 – 10:00 UTC (10:00 – 13:00 EAT)
+  const londonOpenWindow = utcHours >= 7 && utcHours < 10;
+  // New York AM / Silver Bullet: 13:00 – 16:00 UTC (16:00 – 19:00 EAT)
+  const newYorkSilverBullet = utcHours >= 13 && utcHours < 16;
+  // Low-liquidity Asian Consolidation: 21:00 – 05:00 UTC (00:00 – 08:00 EAT)
+  const asianConsolidation = utcHours >= 21 || utcHours < 5;
+  const isHighVolumeWindow = londonOpenWindow || newYorkSilverBullet;
 
   const sessions = [
-    { id: 'london' as const, name: 'London', active: london, hours: '08:00–17:00 London local time' },
-    { id: 'new_york' as const, name: 'New York', active: newYork, hours: '08:00–17:00 New York local time' },
-    { id: 'asian' as const, name: 'Asian / Tokyo', active: asian, hours: '00:00–09:00 Tokyo local time' },
-    { id: 'sydney' as const, name: 'Sydney', active: sydney, hours: '07:00–16:00 Sydney local time' },
+    { id: 'london' as const, name: 'London', active: london, hours: '08:00–17:00 London local (11:00–20:00 EAT)' },
+    { id: 'new_york' as const, name: 'New York', active: newYork, hours: '08:00–17:00 New York local (16:00–01:00 EAT)' },
+    { id: 'asian' as const, name: 'Asian / Tokyo', active: asian, hours: '00:00–09:00 Tokyo local (00:00–09:00 EAT)' },
+    { id: 'sydney' as const, name: 'Sydney', active: sydney, hours: '07:00–16:00 Sydney local (00:00–09:00 EAT)' },
   ];
 
   return {
@@ -349,9 +370,67 @@ export function sessionFilter(dateOrTimestamp: Date | number): SessionInfo {
     sydney,
     tradable,
     currentUtcTime,
+    currentEatTime,
     activeSessionName,
+    londonOpenWindow,
+    newYorkSilverBullet,
+    asianConsolidation,
+    isHighVolumeWindow,
     sessions,
   };
+}
+
+/**
+ * Liquidity Sweep / Swing Failure Pattern (SFP) Gate Engine
+ * Checks whether the current/recent candle wicked past previous swing highs/lows
+ * or Asian session extremes to collect liquidity, then rejected back inside the range.
+ */
+export function detectLiquiditySweep(
+  candles: Candle[],
+  swings: Swing[],
+  direction: 'BUY' | 'SELL'
+): LiquiditySweepInfo {
+  if (candles.length < 5) return { hasSweep: false };
+  const lastCandle = candles[candles.length - 1];
+  const prevCandles = candles.slice(-12, -1);
+
+  if (direction === 'SELL') {
+    // Bearish SFP: Wick pierced ABOVE prior swing high / Asian high, but close rejected back BELOW it
+    const recentHighs = swings.filter((s) => s.kind === 'H').slice(-6);
+    const targetHigh = recentHighs.length > 0
+      ? Math.max(...recentHighs.map((h) => h.price))
+      : Math.max(...prevCandles.map((c) => c.high));
+
+    const swept = lastCandle.high > targetHigh && lastCandle.close < targetHigh;
+    if (swept) {
+      return {
+        hasSweep: true,
+        type: 'SWING_HIGH_SFP',
+        sweptPrice: targetHigh,
+        rejectionConfirmed: true,
+        description: `Bearish Liquidity Sweep / SFP: Wick pierced above $${targetHigh.toFixed(2)} taking buy-side liquidity, rejected back into range (Close: $${lastCandle.close.toFixed(2)}).`,
+      };
+    }
+  } else {
+    // Bullish SFP: Wick pierced BELOW prior swing low / Asian low, but close rejected back ABOVE it
+    const recentLows = swings.filter((s) => s.kind === 'L').slice(-6);
+    const targetLow = recentLows.length > 0
+      ? Math.min(...recentLows.map((l) => l.price))
+      : Math.min(...prevCandles.map((c) => c.low));
+
+    const swept = lastCandle.low < targetLow && lastCandle.close > targetLow;
+    if (swept) {
+      return {
+        hasSweep: true,
+        type: 'SWING_LOW_SFP',
+        sweptPrice: targetLow,
+        rejectionConfirmed: true,
+        description: `Bullish Liquidity Sweep / SFP: Wick pierced below $${targetLow.toFixed(2)} taking sell-side liquidity, rejected back into range (Close: $${lastCandle.close.toFixed(2)}).`,
+      };
+    }
+  }
+
+  return { hasSweep: false };
 }
 
 export function hasRecentCandleGap(candles: Candle[], intervalMs: number, lookback: number = 4): boolean {
@@ -483,9 +562,27 @@ export function evaluateConfluence(
     }
   }
 
+  // Liquidity Sweep / Swing Failure Pattern (SFP) Gate Engine
+  const sweep = detectLiquiditySweep(dfExec, ms.swings, direction);
+  if (sweep.hasSweep) {
+    score += 1.5;
+    reasons.push(`${sweep.description} (+1.5)`);
+  }
+
   if (!sess.tradable) return null;
   score += 0.5;
   reasons.push(`Inside active ${sess.activeSessionName} (+0.5)`);
+
+  // Asian session consolidation suppression (21:00 - 05:00 UTC / 00:00 - 08:00 EAT)
+  // Suppress low-liquidity false breakouts, unless an exceptional high-profit signal exception applies
+  const inAsianConsolidation = Boolean(sess.asianConsolidation);
+  const isHighProfitException = score >= 6.5;
+  if (inAsianConsolidation && !isHighProfitException) {
+    return null;
+  }
+  if (inAsianConsolidation && isHighProfitException) {
+    reasons.push('⭐ High-Profit Exception: Out-of-session institutional setup approved during Asian consolidation');
+  }
 
   // Mastered Gold Candlestick Pattern Engine
   const csAnalysis = analyzeGoldCandlestickPatterns(dfExec);
@@ -562,6 +659,8 @@ export function evaluateConfluence(
     perfectEntryReason,
     candlestickPattern: activePattern,
     humanExplanation,
+    liquiditySweep: sweep,
+    isOutOfSessionException: inAsianConsolidation && isHighProfitException,
     triggerPattern: {
       name: patternName,
       bias: isBear ? 'bearish' : 'bullish',

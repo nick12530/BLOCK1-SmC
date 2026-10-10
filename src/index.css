@@ -31,6 +31,14 @@
     --accent-amber: #f59e0b;
   }
 
+  html, body {
+    overflow-x: hidden;
+    width: 100%;
+    max-width: 100vw;
+    margin: 0;
+    padding: 0;
+  }
+
   html {
     color-scheme: light;
   }
@@ -48,6 +56,13 @@
     min-height: 100vh;
   }
 
+  #root {
+    overflow-x: hidden;
+    width: 100%;
+    max-width: 100vw;
+    min-height: 100vh;
+  }
+
   code, pre, .font-mono, .tabular-nums {
     font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
     font-variant-numeric: tabular-nums;
@@ -55,14 +70,16 @@
 }
 
 @media (max-width: 640px) {
-  html {
-    font-size: 18px;
+  html, body {
+    font-size: 14px;
+    font-weight: 550;
+    overflow-x: hidden;
   }
 
   [class*="text-[10px]"],
   [class*="text-[11px]"] {
-    font-size: 0.75rem !important;
-    line-height: 1.1rem;
+    font-size: 0.72rem !important;
+    line-height: 1.05rem;
   }
 }
 

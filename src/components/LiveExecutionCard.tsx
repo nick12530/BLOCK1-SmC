@@ -23,6 +23,8 @@ import {
   Clock,
   Timer,
   Bot,
+  Scissors,
+  CheckCircle2,
 } from 'lucide-react';
 
 interface LiveExecutionCardProps {
@@ -82,6 +84,10 @@ export const LiveExecutionCard: React.FC<LiveExecutionCardProps> = React.memo(({
       );
       tradingEngine.modifyPositionStops(pos.ticket, bePrice, pos.tp);
     });
+  };
+
+  const handleScaleOut = (ticket: number) => {
+    tradingEngine.scaleOutPosition(ticket, 0.5);
   };
 
   const handleClose = (ticket: number) => {
@@ -323,15 +329,29 @@ export const LiveExecutionCard: React.FC<LiveExecutionCardProps> = React.memo(({
                     <span className="text-slate-500 text-xs">
                       #{pos.ticket}
                     </span>
+
+                    {pos.partialTaken && (
+                      <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/30 flex items-center gap-1">
+                        <CheckCircle2 className="w-3 h-3 text-amber-500" />
+                        <span>50% Scaled (1.5R)</span>
+                      </span>
+                    )}
+
+                    {pos.trailLocked && (
+                      <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-purple-500/15 text-purple-700 dark:text-purple-300 border border-purple-500/30">
+                        OB Trailed SL
+                      </span>
+                    )}
+
                     <span className="ml-auto inline-flex items-center gap-1 text-xs font-semibold text-sky-700 dark:text-sky-300">
                       <Crosshair className="h-4 w-4" />
                       {selectedTicket === pos.ticket ? 'Focused' : 'Chart'}
                     </span>
                   </button>
 
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1.5 flex-wrap">
                     <span
-                      className={`font-black text-sm tabular-nums ${
+                      className={`font-black text-sm tabular-nums px-2 py-1 ${
                         pos.profit >= 0
                           ? 'text-emerald-600 dark:text-emerald-400'
                           : 'text-rose-600 dark:text-rose-400'
@@ -341,10 +361,26 @@ export const LiveExecutionCard: React.FC<LiveExecutionCardProps> = React.memo(({
                     </span>
 
                     <button
+                      type="button"
+                      onClick={() => handleScaleOut(pos.ticket)}
+                      disabled={pos.partialTaken || pos.volume < 0.02}
+                      aria-label={`Scale out 50% of position ${pos.ticket}`}
+                      className={`min-h-10 px-2.5 rounded border text-[10px] font-bold transition-colors cursor-pointer flex items-center gap-1 ${
+                        pos.partialTaken || pos.volume < 0.02
+                          ? 'border-zinc-300 dark:border-zinc-800 text-zinc-400 dark:text-zinc-600 cursor-default opacity-50'
+                          : 'border-amber-500/40 bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 dark:text-amber-300'
+                      }`}
+                      title={pos.partialTaken ? '50% scale-out already executed' : 'Close 50% volume and lock BE+2pts'}
+                    >
+                      <Scissors className="w-3 h-3 text-amber-500" />
+                      <span>50% Scale</span>
+                    </button>
+
+                    <button
                       onClick={() => handleLockBE(pos.ticket)}
                       disabled={pos.beLocked}
                       aria-label={`Move ${pos.type} position ${pos.ticket} stop to break-even`}
-                      className={`min-h-10 min-w-10 rounded border text-[10px] font-bold transition-colors cursor-pointer flex items-center justify-center ${
+                      className={`min-h-10 min-w-10 px-2 rounded border text-[10px] font-bold transition-colors cursor-pointer flex items-center justify-center ${
                         pos.beLocked
                           ? 'border-zinc-300 dark:border-zinc-800 text-zinc-400 dark:text-zinc-600 cursor-default'
                           : 'border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 hover:bg-slate-100 text-zinc-700 dark:text-zinc-200'

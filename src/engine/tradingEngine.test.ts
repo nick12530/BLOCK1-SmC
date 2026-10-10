@@ -292,4 +292,165 @@ describe('TradingEngine Store Architecture', () => {
     engine.setAutoSelectBestScenario(false);
     expect(engine.autoSelectBestScenario).toBe(false);
   });
+
+  it('scales out 50% of volume at 1.5R and moves SL to breakeven + 2 points', () => {
+    engine.positions = [{
+      ticket: 99,
+      symbol: 'XAUUSD',
+      time: '12:00',
+      type: 'BUY',
+      volume: 0.10,
+      initialVolume: 0.10,
+      price_open: 2000.0,
+      sl: 1995.0,
+      initialSl: 1995.0,
+      tp: 2015.0,
+      initialTp: 2015.0,
+      profit: 0,
+      pips: 0,
+      magic: 10001,
+      comment: 'test',
+    }];
+    engine.bid = 2007.5; // +7.5 pts = 1.5R on 5 pt risk
+    engine.ask = 2007.7;
+
+    const scaled = engine.scaleOutPosition(99, 0.5);
+    expect(scaled).toBe(true);
+
+    const pos = engine.positions.find((p) => p.ticket === 99);
+    expect(pos?.volume).toBe(0.05);
+    expect(pos?.partialTaken).toBe(true);
+    expect(pos?.beLocked).toBe(true);
+    expect(pos?.sl).toBeGreaterThan(2000.0);
+    expect(engine.closedTrades[0].reason).toBe('PARTIAL_TP');
+    expect(engine.closedTrades[0].volume).toBe(0.05);
+  });
+
+  it('automatically triggers multi-tier 1.5R scale-out and trails stop during price ticks', () => {
+    engine.autoBeEnabled = true;
+    engine.account.balance = 10_000;
+    engine.positions = [{
+      ticket: 101,
+      symbol: 'XAUUSD',
+      time: '12:00',
+      type: 'BUY',
+      volume: 0.10,
+      initialVolume: 0.10,
+      price_open: 2000.0,
+      sl: 1996.0, // Risk = 4 pts. 1.5R = +6.0 pts -> Price 2006.0
+      initialSl: 1996.0,
+      tp: 2012.0,
+      initialTp: 2012.0,
+      profit: 0,
+      pips: 0,
+      magic: 10001,
+      comment: 'auto-scale-test',
+    }];
+    engine.bid = 2006.5; // Reaches 1.5R+
+    engine.ask = 2006.7;
+
+    // Simulate tick update
+    engine.simulatePriceTick();
+
+    const pos = engine.positions.find((p) => p.ticket === 101);
+    expect(pos?.partialTaken).toBe(true);
+    expect(pos?.volume).toBe(0.05);
+    // Stop loss automatically moved to entry + 2 buffer points
+    expect(pos?.sl).toBeGreaterThanOrEqual(2000.02);
+    expect(pos?.beLocked).toBe(true);
+    expect(engine.closedTrades.some((t) => t.reason === 'PARTIAL_TP' && t.positionTicket === 101)).toBe(true);
+  });
+
+  it('trails stop loss to base of newly confirmed Order Block swings', () => {
+    engine.autoBeEnabled = true;
+    engine.account.balance = 10_000;
+    engine.positions = [{
+      ticket: 102,
+      symbol: 'XAUUSD',
+      time: '12:00',
+      type: 'BUY',
+      volume: 0.05,
+      initialVolume: 0.05,
+      price_open: 2000.0,
+      sl: 2000.2, // Already at BE
+      initialSl: 1996.0,
+      tp: 2025.0,
+      profit: 10,
+      pips: 10,
+      magic: 10001,
+      comment: 'ob-trail-test',
+      beLocked: true,
+    }];
+    engine.bid = 2015.0;
+    engine.ask = 2015.2;
+
+    // Supply market snapshot with confirmed Bullish Order Block at 2008.0-2010.0
+    (engine as any)._cachedMarket = {
+      ...engine.getMarketSnapshot(),
+      zones: [{
+        kind: 'OB',
+        bullish: true,
+        bottom: 2008.0,
+        top: 2010.0,
+        born: Date.now() - 60000,
+        filled: false,
+        tests: 0,
+      }],
+      signal: {
+        atr: 2.0,
+        reasons: ['OB Bullish Retest'],
+      } as any,
+    };
+
+    engine.simulatePriceTick();
+
+    const pos = engine.positions.find((p) => p.ticket === 102);
+    // Trailed SL should be base of OB (2008.0 - 0.25*2.0 = 2007.5)
+    expect(pos?.sl).toBe(2007.5);
+    expect(pos?.trailLocked).toBe(true);
+  });
+
+  it('validates Asian consolidation suppression and high-profit out-of-session exceptions', () => {
+    // Reset closed trades so daily trade limit is clear
+    engine.account.balance = 1000;
+    engine.account.equity = 1000;
+    engine.closedTrades = [];
+    (engine as any).entryHistory = [];
+    // 23:00 UTC is inside Asian consolidation (21:00 - 05:00 UTC / 00:00 - 08:00 EAT)
+    const asianDate = new Date('2026-10-10T23:00:00Z');
+
+    // Standard low-score signal in Asian session should be suppressed
+    const lowSignal: any = {
+      direction: 'BUY',
+      timeframe: 'M5',
+      score: 4.5,
+      entry: 2000,
+      sl: 1995,
+      tp: 2005,
+      atr: 2.0,
+      reasons: ['Consolidation'],
+      timestamp: asianDate.toISOString(),
+    };
+
+    // Simulate entry block check during Asian session
+    const reason = engine.getEntryBlockReason('BUY', lowSignal, asianDate.getTime());
+    expect(reason).toContain('ASIAN_CONSOLIDATION_SUPPRESSED');
+
+    // High-profit exceptional signal (Score >= 6.5 or isOutOfSessionException) authorized
+    const highProfitSignal: any = {
+      direction: 'BUY',
+      timeframe: 'M5',
+      score: 7.2,
+      entry: 2000,
+      sl: 1995,
+      tp: 2018, // 18 pts reward / 5 pts risk = 3.6 RR
+      atr: 2.0,
+      reasons: ['HTF Order Block', 'SFP Wick Sweep'],
+      isOutOfSessionException: true,
+      timestamp: asianDate.toISOString(),
+    };
+
+    const allowedReason = engine.getEntryBlockReason('BUY', highProfitSignal, asianDate.getTime());
+    expect(allowedReason).toBeNull();
+  });
 });

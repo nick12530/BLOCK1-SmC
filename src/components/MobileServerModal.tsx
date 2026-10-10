@@ -25,9 +25,12 @@ import {
   RefreshCw,
   Cpu,
   Layers,
+  Activity,
+  CheckCircle2,
 } from 'lucide-react';
 import { tradingEngine } from '../engine/tradingEngine';
 import { useEngine, useMarket } from '../hooks/useTradingStore';
+import { mt5Bridge, normalizeTailscaleUrl } from '../engine/mt5Bridge';
 
 interface MobileServerModalProps {
   isOpen: boolean;
@@ -42,9 +45,50 @@ export const MobileServerModal: React.FC<MobileServerModalProps> = ({ isOpen, on
   const [isStandalone, setIsStandalone] = useState(false);
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [customIp, setCustomIp] = useState('192.168.1.100');
+  const [tailscaleAddress, setTailscaleAddress] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('smc_tailscale_url') || 'http://100.85.120.45:8000';
+    }
+    return 'http://100.85.120.45:8000';
+  });
+  const [tailscalePing, setTailscalePing] = useState<{ testing: boolean; ok?: boolean; latencyMs?: number; error?: string } | null>(null);
+  const [connectingTailscale, setConnectingTailscale] = useState(false);
+  const [tailscaleMsg, setTailscaleMsg] = useState<string | null>(null);
 
   const engine = useEngine();
   const market = useMarket();
+  const bridgeStatus = mt5Bridge.getStatus();
+
+  const handleTestTailscale = async () => {
+    setTailscalePing({ testing: true });
+    setTailscaleMsg(null);
+    const res = await mt5Bridge.ping(tailscaleAddress);
+    setTailscalePing({ testing: false, ...res });
+  };
+
+  const handleConnectTailscale = async () => {
+    setConnectingTailscale(true);
+    setTailscaleMsg(null);
+    try {
+      const url = normalizeTailscaleUrl(tailscaleAddress);
+      const snapshot = await mt5Bridge.connectAccount({
+        baseUrl: url,
+        symbol: 'XAUUSD',
+        instrumentType: 'standard',
+      });
+      tradingEngine.linkMt5Account(
+        String(snapshot.account.login),
+        snapshot.account.server,
+        snapshot.account.balance,
+        snapshot.account.equity
+      );
+      setTailscaleMsg(`✓ MT5 Connected! Account #${snapshot.account.login} on ${snapshot.account.server}`);
+    } catch (err) {
+      setTailscaleMsg(`✗ Connection failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
+    } finally {
+      setConnectingTailscale(false);
+    }
+  };
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -186,7 +230,7 @@ npm run mobile`;
             }`}
           >
             <Wifi className="w-3.5 h-3.5" />
-            <span>4. Wi-Fi / Local Network</span>
+            <span>4. Tailscale &amp; LAN Sync</span>
           </button>
 
           <button
@@ -401,21 +445,110 @@ npm run mobile`;
             </div>
           )}
 
-          {/* TAB 4: WI-FI LOCAL NETWORK */}
+          {/* TAB 4: TAILSCALE & WI-FI LOCAL NETWORK */}
           {activeTab === 'wifi_lan' && (
             <div className="space-y-4">
-              <div className="p-3.5 rounded-xl bg-blue-500/10 border border-blue-500/20 text-blue-200 space-y-1">
-                <div className="flex items-center gap-2 font-bold text-blue-400">
-                  <Wifi className="w-4 h-4" />
-                  <span>Host on PC / Mac / VPS and Connect from Phone on Wi-Fi</span>
+              {/* Tailscale Section */}
+              <div className="p-3.5 rounded-xl bg-sky-500/10 border border-sky-500/20 text-sky-200 space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 font-bold text-sky-400">
+                    <Wifi className="w-4 h-4" />
+                    <span>Tailscale Private Mesh · Remote Phone Synchronization</span>
+                  </div>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-sky-500/20 text-sky-300 font-mono font-bold">
+                    Zero Ports Exposed
+                  </span>
                 </div>
                 <p className="text-[11px] text-slate-300 font-sans leading-relaxed">
-                  Start the server on your computer with <code className="text-white bg-slate-800 px-1 py-0.5 rounded">npm run dev</code>. The server is configured to bind to <code className="text-white bg-slate-800 px-1 py-0.5 rounded">0.0.0.0</code>, allowing any phone on your local Wi-Fi to connect instantly.
+                  Tailscale creates a secure, encrypted WireGuard VPN mesh between your phone and your Windows MT5 PC. You can trade securely from anywhere in the world on mobile data or public Wi-Fi.
                 </p>
               </div>
 
+              {/* Tailscale Tester & Connect Card */}
               <div className="p-4 rounded-xl bg-slate-950/70 border border-slate-800 space-y-3">
-                <span className="font-bold text-white block">Generate Your Phone Connection Link</span>
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-white block">Tailscale Bridge Address</span>
+                  {bridgeStatus.connected && (
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 font-mono font-bold border border-emerald-500/30">
+                      ✓ MT5 Connected ({bridgeStatus.latencyMs ? `${bridgeStatus.latencyMs}ms` : 'Active'})
+                    </span>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={tailscaleAddress}
+                    onChange={(e) => setTailscaleAddress(e.target.value)}
+                    className="flex-1 min-h-10 px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-white font-mono text-xs outline-none focus:border-sky-500"
+                    placeholder="http://100.85.120.45:8000"
+                  />
+                  <button
+                    onClick={handleTestTailscale}
+                    disabled={tailscalePing?.testing}
+                    className="px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-sky-400 font-bold transition-colors cursor-pointer text-xs flex items-center gap-1.5 shrink-0"
+                  >
+                    {tailscalePing?.testing ? (
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Activity className="w-3.5 h-3.5" />
+                    )}
+                    <span>{tailscalePing?.testing ? 'Testing…' : 'Ping Link'}</span>
+                  </button>
+                  <button
+                    onClick={handleConnectTailscale}
+                    disabled={connectingTailscale}
+                    className="px-3.5 py-2 rounded-lg bg-sky-500 hover:bg-sky-400 text-slate-950 font-bold transition-colors cursor-pointer text-xs flex items-center gap-1.5 shrink-0"
+                  >
+                    {connectingTailscale ? (
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                    )}
+                    <span>{connectingTailscale ? 'Connecting…' : 'Connect MT5'}</span>
+                  </button>
+                </div>
+
+                {tailscalePing && !tailscalePing.testing && (
+                  <div
+                    className={`p-2.5 rounded-lg text-xs font-mono flex items-center justify-between border ${
+                      tailscalePing.ok
+                        ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
+                        : 'bg-rose-500/10 border-rose-500/30 text-rose-400'
+                    }`}
+                  >
+                    <span>
+                      {tailscalePing.ok
+                        ? `✓ Tailscale Bridge reachable! Latency: ${tailscalePing.latencyMs}ms`
+                        : `✗ Reachability test failed: ${tailscalePing.error}`}
+                    </span>
+                    {tailscalePing.ok && (
+                      <span className="text-[10px] font-bold uppercase">
+                        {tailscalePing.latencyMs! < 60 ? 'Direct P2P' : 'DERP Relay'}
+                      </span>
+                    )}
+                  </div>
+                )}
+
+                {tailscaleMsg && (
+                  <div className="p-2.5 rounded-lg bg-slate-900 border border-slate-700 text-xs font-mono text-slate-200">
+                    {tailscaleMsg}
+                  </div>
+                )}
+
+                <div className="p-2.5 rounded-lg bg-slate-900/60 border border-slate-800 text-[11px] text-slate-400 font-sans space-y-1">
+                  <span className="font-bold text-slate-300 font-mono block">3-Step Setup for Phone:</span>
+                  <ol className="list-decimal list-inside space-y-0.5">
+                    <li>Install <strong>Tailscale</strong> from App Store (iOS) or Play Store (Android).</li>
+                    <li>Sign into the same Tailscale account on your PC and phone.</li>
+                    <li>Copy your PC’s 100.x.y.z IP into the box above and tap <strong>Connect MT5</strong>!</li>
+                  </ol>
+                </div>
+              </div>
+
+              {/* Local Wi-Fi Section */}
+              <div className="p-4 rounded-xl bg-slate-950/70 border border-slate-800 space-y-3">
+                <span className="font-bold text-white block">Alternative: Local Wi-Fi Access (Same Router)</span>
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="text-slate-400">Computer Local IP:</span>
                   <input
@@ -437,10 +570,6 @@ npm run mobile`;
                     <span>{copiedKey === 'lan_url' ? 'Copied' : 'Copy URL'}</span>
                   </button>
                 </div>
-
-                <p className="text-[11px] text-slate-400 font-sans">
-                  💡 Type this exact URL into Safari or Chrome on your phone while connected to the same Wi-Fi router.
-                </p>
               </div>
             </div>
           )}

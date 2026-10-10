@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { calculateATR, detectFVGs, evaluateConfluence, hasRecentCandleGap, MarketStructureEngine, sessionFilter } from './smcCore';
-import { Candle } from '../types/smc';
+import {
+  calculateATR,
+  detectFVGs,
+  detectLiquiditySweep,
+  evaluateConfluence,
+  hasRecentCandleGap,
+  MarketStructureEngine,
+  sessionFilter,
+} from './smcCore';
+import { Candle, Swing } from '../types/smc';
 import { isWithinConfiguredNewsBlackout } from './riskConfig';
 
 const rangingCandles = (count: number): Candle[] =>
@@ -83,6 +91,36 @@ describe('SMC signal filters', () => {
       expect(laterNewYork.tradable).toBe(true);
       expect(laterNewYork.activeSessionName).toBe('New York Session');
       expect(outsideSessions.tradable).toBe(false);
+    });
+
+    it('quotes East Africa Time (EAT) and detects high-volume London Open and NY Silver Bullet windows', () => {
+      const londonOpen = sessionFilter(Date.parse('2026-07-13T08:30:00Z'));
+      expect(londonOpen.currentEatTime).toContain('EAT');
+      expect(londonOpen.londonOpenWindow).toBe(true);
+      expect(londonOpen.isHighVolumeWindow).toBe(true);
+
+      const nySilverBullet = sessionFilter(Date.parse('2026-07-13T14:30:00Z'));
+      expect(nySilverBullet.newYorkSilverBullet).toBe(true);
+      expect(nySilverBullet.isHighVolumeWindow).toBe(true);
+
+      const asianConsolidation = sessionFilter(Date.parse('2026-07-13T23:30:00Z'));
+      expect(asianConsolidation.asianConsolidation).toBe(true);
+    });
+
+    it('detects Bearish and Bullish Liquidity Sweep / SFP rejections', () => {
+      const baseCandles: Candle[] = [
+        { time: 1000, timeStr: '10:00', open: 100, high: 105, low: 99, close: 104, volume: 10 },
+        { time: 2000, timeStr: '10:01', open: 104, high: 106, low: 103, close: 105, volume: 10 },
+        { time: 3000, timeStr: '10:02', open: 105, high: 107, low: 104, close: 106, volume: 10 },
+        { time: 4000, timeStr: '10:03', open: 106, high: 108, low: 105, close: 107, volume: 10 },
+        // Sweep candle: wicks above previous high (108) to 110, but closes below at 106.5
+        { time: 5000, timeStr: '10:04', open: 107, high: 110, low: 106, close: 106.5, volume: 20 },
+      ];
+      const swings: Swing[] = [{ idx: 3, price: 108, kind: 'H', time: 4000 }];
+      const sweep = detectLiquiditySweep(baseCandles, swings, 'SELL');
+      expect(sweep.hasSweep).toBe(true);
+      expect(sweep.type).toBe('SWING_HIGH_SFP');
+      expect(sweep.rejectionConfirmed).toBe(true);
     });
 
     it('applies configured news blackout times using New York daylight-saving rules', () => {

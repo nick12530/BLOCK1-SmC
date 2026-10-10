@@ -132,7 +132,7 @@ export function findCorrespondingOrderBlock(
 
 export function buildSignalRationale(signal: Signal): string {
   const explanation = signal.humanExplanation?.tradeRationale || signal.actionReason;
-  const reasons = signal.reasons.filter(Boolean);
+  const reasons = (signal.reasons || []).filter(Boolean);
   const details = explanation ? [explanation, ...reasons] : reasons;
   const uniqueDetails = [...new Set(details)];
   const rationale = `${signal.direction} ${signal.timeframe} signal (score ${signal.score}): ${

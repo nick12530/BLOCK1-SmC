@@ -81,7 +81,7 @@ export const PairsSignalDeck: React.FC<PairsSignalDeckProps> = React.memo(({
       </div>
 
       {/* Grid: 4 Elegantly Arranged Currency Pair Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-3.5">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
         {scannerAnalyses.map((item) => {
           const isActive = item.symbol === activeSymbol;
           const isBull = item.bias === 'BUY';
@@ -92,7 +92,7 @@ export const PairsSignalDeck: React.FC<PairsSignalDeckProps> = React.memo(({
             <div
               key={item.symbol}
               onClick={() => onSelectSymbol(item.symbol)}
-              className={`rounded-xl p-3 sm:p-3.5 border transition-all cursor-pointer flex flex-col justify-between gap-2.5 font-mono relative ${
+              className={`rounded-xl p-3.5 sm:p-4 border transition-all cursor-pointer flex flex-col justify-between gap-3 font-mono relative ${
                 isActive
                   ? 'bg-sky-500/[0.04] dark:bg-[#0e1f30] border-sky-500 dark:border-sky-500 shadow-md ring-1 ring-sky-500/40'
                   : 'bg-slate-50/70 dark:bg-[#09121c] border-slate-200 dark:border-[#172736] hover:border-slate-300 dark:hover:border-slate-600 hover:bg-white dark:hover:bg-[#0c1622]'
@@ -102,36 +102,36 @@ export const PairsSignalDeck: React.FC<PairsSignalDeckProps> = React.memo(({
               <div className="flex items-start justify-between gap-2">
                 <div>
                   <div className="flex items-center gap-1.5">
-                    <span className="text-sm sm:text-base font-black text-slate-900 dark:text-white tracking-tight">
+                    <span className="text-base font-black text-slate-900 dark:text-white tracking-tight">
                       {item.symbol}
                     </span>
-                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold">
+                    <span className="text-[11px] px-1.5 py-0.5 rounded bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold">
                       {item.symbol === 'XAUUSD' ? 'GOLD' : item.displayName.split('/')[0].trim()}
                     </span>
                     {isActive && (
                       <span className="w-2 h-2 rounded-full bg-sky-400 animate-pulse" title="Active in workstation" />
                     )}
                   </div>
-                  <div className="text-[10px] sm:text-[11px] text-slate-500 dark:text-slate-400 font-semibold mt-0.5">
+                  <div className="text-xs text-slate-500 dark:text-slate-400 font-medium mt-0.5">
                     Spread: {item.spreadPips} pips ({item.spreadPoints} pts)
                   </div>
                 </div>
 
                 <div className="text-right">
-                  <div className="text-xs sm:text-sm font-black text-slate-900 dark:text-white tabular-nums">
+                  <div className="text-sm font-black text-slate-900 dark:text-white tabular-nums">
                     ${item.price.toFixed(item.symbol === 'XAUUSD' || item.symbol === 'USDJPY' ? 2 : 4)}
                   </div>
-                  <div className="text-[9px] sm:text-[10px] font-bold text-sky-600 dark:text-sky-400">
+                  <div className="text-[11px] font-bold text-sky-600 dark:text-sky-400">
                     {item.rank === 1 ? '★ TOP CONFLUENCE' : `Rank #${item.rank}`}
                   </div>
                 </div>
               </div>
 
               {/* Row 2: Signal Bias & Confluence Score */}
-              <div className="flex items-center justify-between gap-2 p-1.5 sm:p-2 rounded-lg bg-white dark:bg-[#060c14] border border-slate-200/80 dark:border-[#142232]">
+              <div className="flex items-center justify-between gap-2 p-2 rounded-lg bg-white dark:bg-[#060c14] border border-slate-200/80 dark:border-[#142232]">
                 <div className="flex items-center gap-1.5">
                   <span
-                    className={`px-1.5 sm:px-2 py-0.5 rounded text-[10px] font-black uppercase flex items-center gap-1 ${
+                    className={`px-2 py-0.5 rounded text-[11px] font-black uppercase flex items-center gap-1 ${
                       isBull
                         ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30'
                         : isBear
@@ -139,16 +139,16 @@ export const PairsSignalDeck: React.FC<PairsSignalDeckProps> = React.memo(({
                         : 'bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
                     }`}
                   >
-                    {isBull ? <TrendingUp className="w-3 h-3" /> : isBear ? <TrendingDown className="w-3 h-3" /> : null}
+                    {isBull ? <TrendingUp className="w-3.5 h-3.5" /> : isBear ? <TrendingDown className="w-3.5 h-3.5" /> : null}
                     <span>{item.bias}</span>
                   </span>
-                  <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400">
+                  <span className="text-xs font-bold text-slate-500 dark:text-slate-400">
                     {item.status}
                   </span>
                 </div>
 
                 <div className="text-right">
-                  <span className="text-[10px] text-slate-400 uppercase font-medium">Score: </span>
+                  <span className="text-xs text-slate-400 uppercase font-medium">Score: </span>
                   <strong className="text-xs font-black text-slate-900 dark:text-white tabular-nums">
                     {item.confluenceScore}/100
                   </strong>
@@ -156,11 +156,11 @@ export const PairsSignalDeck: React.FC<PairsSignalDeckProps> = React.memo(({
               </div>
 
               {/* Row 3: Key Order Block & Risk:Reward Details */}
-              <div className="text-[10px] sm:text-[11px] space-y-1 sm:space-y-1.5 text-slate-600 dark:text-slate-300 bg-slate-100/60 dark:bg-[#071018] p-2 sm:p-2.5 rounded-lg border border-slate-200/60 dark:border-[#142232]">
-                <div className="flex items-center justify-between">
-                  <span className="text-slate-500 dark:text-slate-400">Order Block:</span>
-                  <span className="font-bold text-slate-900 dark:text-slate-100 truncate max-w-[140px]">
-                    {obZone ? `${obZone.bullish ? '+OB' : '-OB'} $${obZone.bottom.toFixed(item.symbol === 'XAUUSD' ? 1 : 3)}` : 'Scanning Order Block'}
+              <div className="text-xs space-y-1.5 text-slate-600 dark:text-slate-300 bg-slate-100/60 dark:bg-[#071018] p-2.5 rounded-lg border border-slate-200/60 dark:border-[#142232]">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-slate-500 dark:text-slate-400 shrink-0">Order Block:</span>
+                  <span className="font-bold text-slate-900 dark:text-slate-100 truncate text-right">
+                    {obZone ? `${obZone.bullish ? '+OB' : '-OB'} $${obZone.bottom.toFixed(item.symbol === 'XAUUSD' ? 1 : 3)}` : 'Scanning OB'}
                   </span>
                 </div>
 
@@ -182,8 +182,8 @@ export const PairsSignalDeck: React.FC<PairsSignalDeckProps> = React.memo(({
               {/* Row 4: Action Button */}
               <div>
                 {isActive ? (
-                  <div className="w-full py-1.5 sm:py-2 px-3 rounded-lg bg-sky-500/10 border border-sky-500/30 text-sky-600 dark:text-sky-300 text-xs font-bold text-center flex items-center justify-center gap-1.5">
-                    <Check className="w-3.5 h-3.5" />
+                  <div className="w-full py-2 px-3 rounded-lg bg-sky-500/10 border border-sky-500/30 text-sky-600 dark:text-sky-300 text-xs font-bold text-center flex items-center justify-center gap-1.5">
+                    <Check className="w-4 h-4" />
                     <span>Active Workstation</span>
                   </div>
                 ) : (
@@ -196,10 +196,10 @@ export const PairsSignalDeck: React.FC<PairsSignalDeckProps> = React.memo(({
                         onExecuteTrade(item);
                       }
                     }}
-                    className="w-full py-1.5 sm:py-2 px-3 rounded-lg bg-slate-900 hover:bg-slate-800 text-white dark:bg-slate-800 dark:hover:bg-slate-700 text-xs font-bold text-center flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                    className="w-full py-2 px-3 rounded-lg bg-slate-900 hover:bg-slate-800 text-white dark:bg-slate-800 dark:hover:bg-slate-700 text-xs font-bold text-center flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
                   >
                     <span>{item.status === 'READY' ? `Trade ${item.symbol}` : `Focus ${item.symbol}`}</span>
-                    <ArrowRight className="w-3.5 h-3.5" />
+                    <ArrowRight className="w-4 h-4" />
                   </button>
                 )}
               </div>

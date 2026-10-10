@@ -57,8 +57,21 @@ export interface SessionInfo {
   sydney: boolean;
   tradable: boolean;
   currentUtcTime: string;
+  currentEatTime?: string; // East Africa Time (UTC+3)
   activeSessionName: string;
+  londonOpenWindow?: boolean; // 07:00 – 10:00 UTC / 10:00 – 13:00 EAT
+  newYorkSilverBullet?: boolean; // 13:00 – 16:00 UTC / 16:00 – 19:00 EAT
+  asianConsolidation?: boolean; // 21:00 – 05:00 UTC / 00:00 – 08:00 EAT (suppressed)
+  isHighVolumeWindow?: boolean; // true during London Open or NY Silver Bullet
   sessions: SessionItem[];
+}
+
+export interface LiquiditySweepInfo {
+  hasSweep: boolean;
+  type?: 'ASIAN_HIGH_SWEEP' | 'ASIAN_LOW_SWEEP' | 'SWING_HIGH_SFP' | 'SWING_LOW_SFP';
+  sweptPrice?: number;
+  rejectionConfirmed?: boolean;
+  description?: string;
 }
 
 export interface TriggerPattern {
@@ -102,6 +115,8 @@ export interface Signal {
   triggerPattern?: TriggerPattern;
   candlestickPattern?: CandlestickPatternMatch;
   humanExplanation?: HumanSignalExplanation;
+  liquiditySweep?: LiquiditySweepInfo;
+  isOutOfSessionException?: boolean;
 }
 
 export interface Position {
@@ -110,15 +125,21 @@ export interface Position {
   time: string;
   type: TradeDirection;
   volume: number; // lots
+  initialVolume?: number;
   price_open: number;
   sl: number;
+  initialSl?: number;
   tp: number;
+  initialTp?: number;
   profit: number;
   pips: number;
   magic: number;
   comment: string;
   beLocked?: boolean;
   trailLocked?: boolean;
+  partialTaken?: boolean; // 50% scale-out executed at 1.5R
+  partialProfitLocked?: number;
+  trailedOrderBlockId?: string; // ID of OB currently anchoring trailed SL
   strategyRationale?: string;
   strategyOrderBlock?: Zone;
 }
@@ -162,7 +183,7 @@ export interface ClosedTrade {
   tp?: number;
   profit: number;
   pips: number;
-  reason: 'TP' | 'SL' | 'Manual' | 'KillSwitch';
+  reason: 'TP' | 'SL' | 'Manual' | 'KillSwitch' | 'PARTIAL_TP';
   comment?: string;
   strategyRationale?: string;
   strategyOrderBlock?: Zone;

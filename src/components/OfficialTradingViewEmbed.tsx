@@ -9,7 +9,7 @@ import React, { useEffect, useRef, memo } from 'react';
 interface OfficialTradingViewEmbedProps {
   symbol: string;
   isDark?: boolean;
-  interval?: '1' | '5' | '15' | '60' | 'D';
+  interval?: '1' | '5' | '15' | '60' | '240' | 'D';
   height?: number | string;
 }
 

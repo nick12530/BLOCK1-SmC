@@ -1,11 +1,13 @@
 /**
- * HelpCenterModal.tsx - Comprehensive Institutional Knowledge Base & Help Centre
- * Upgraded with advanced item selectors and search:
- * - Search bar across all SMC concepts, gates, and mechanics
- * - Responsive segmented category item selectors
- * - Full coverage: 6 Verification Gates, Dealing Range / Equilibrium,
- *   Balances & Margins, Glossary, Mobile PWA, MT5 Bridge
- * - Clean Back to Terminal and Done dismissal buttons
+ * HelpCenterModal.tsx - Comprehensive Multi-Pair & Technical Indicator Guide
+ * Expanded beyond SMC alone:
+ * - Multi-Pair Playbook (XAUUSD, EURUSD, GBPUSD, USDJPY)
+ * - Complete Indicator Suite (SMC Order Blocks, FVGs, ATR Volatility Bands, Candlesticks, MTF M1-H4, Sessions)
+ * - Pending Limit Orders & Visual Holding Countdown Timer
+ * - The 6 Institutional Execution Verification Gates
+ * - Dealing Range & 50% Equilibrium (Discount vs Premium)
+ * - MT5 Telemetry (Balance, Equity, Margin, Free Margin, Margin Level %)
+ * - MT5 Live Broker Connector & Mobile PWA Installation
  */
 
 import React, { useState, useMemo } from 'react';
@@ -18,10 +20,15 @@ import {
   Server,
   DollarSign,
   CheckCircle2,
-  AlertTriangle,
   Compass,
   ArrowLeft,
   Search,
+  BarChart3,
+  Globe,
+  Clock,
+  TrendingUp,
+  Activity,
+  ShieldAlert,
 } from 'lucide-react';
 
 interface HelpCenterModalProps {
@@ -32,12 +39,15 @@ interface HelpCenterModalProps {
 }
 
 type TabType =
+  | 'pairs_matrix'
+  | 'indicators_suite'
+  | 'pending_orders'
   | 'valid_signals'
   | 'dealing_range'
   | 'balances'
   | 'abbreviations'
-  | 'phone_pwa'
-  | 'mt5';
+  | 'mt5'
+  | 'phone_pwa';
 
 interface TabItem {
   id: TabType;
@@ -48,19 +58,22 @@ interface TabItem {
 }
 
 const TABS: TabItem[] = [
-  { id: 'valid_signals', num: '01', title: 'Signal Checklist', desc: '6 verification gates', icon: Zap },
-  { id: 'dealing_range', num: '02', title: 'Dealing Range & EQ', desc: 'Discount vs Premium zones', icon: Compass },
-  { id: 'balances', num: '03', title: 'Balances & Margin', desc: 'Capital & leverage guide', icon: DollarSign },
-  { id: 'abbreviations', num: '04', title: 'SMC Glossary', desc: 'OB, BOS, CHoCH, FVG', icon: Layers },
-  { id: 'phone_pwa', num: '05', title: 'Mobile App (PWA)', desc: 'Install on iOS & Android', icon: Smartphone },
-  { id: 'mt5', num: '06', title: 'MT5 Connector', desc: 'Live broker execution bridge', icon: Server },
+  { id: 'pairs_matrix', num: '01', title: 'Currency Pairs', desc: 'XAUUSD, EUR, GBP, JPY playbooks', icon: Globe },
+  { id: 'indicators_suite', num: '02', title: 'Indicator Suite', desc: 'ATR, Candles, MTF (M1-H4), Sessions & SMC', icon: BarChart3 },
+  { id: 'pending_orders', num: '03', title: 'Pending Limit Orders', desc: 'Holding timer & auto-cancel', icon: Clock },
+  { id: 'valid_signals', num: '04', title: '6 Execution Gates', desc: 'Deterministic trade criteria', icon: Zap },
+  { id: 'dealing_range', num: '05', title: 'Dealing Range & EQ', desc: 'Discount vs Premium zones', icon: Compass },
+  { id: 'balances', num: '06', title: 'MT5 Balances & Margin', desc: 'Capital & leverage guide', icon: DollarSign },
+  { id: 'abbreviations', num: '07', title: 'Indicator Glossary', desc: 'OB, BOS, CHoCH, FVG, ATR', icon: Layers },
+  { id: 'mt5', num: '08', title: 'MT5 Live Bridge', desc: 'Broker execution & socket sync', icon: Server },
+  { id: 'phone_pwa', num: '09', title: 'Mobile PWA', desc: 'Install on iOS & Android', icon: Smartphone },
 ];
 
 export const HelpCenterModal: React.FC<HelpCenterModalProps> = ({
   isOpen,
   onClose,
   onOpenBridge,
-  initialTab = 'valid_signals',
+  initialTab = 'pairs_matrix',
 }) => {
   const [activeTab, setActiveTab] = useState<TabType>(initialTab);
   const [searchQuery, setSearchQuery] = useState('');
@@ -85,20 +98,20 @@ export const HelpCenterModal: React.FC<HelpCenterModalProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[170] flex items-center justify-center p-2.5 sm:p-4 bg-black/80 backdrop-blur-xs animate-in fade-in duration-150">
-      <div className="bg-white dark:bg-[#0d1823] border border-slate-200 dark:border-[#1a3040] rounded-2xl w-full max-w-3xl max-h-[92dvh] flex flex-col shadow-xl overflow-hidden font-mono text-xs transition-colors">
+    <div className="fixed inset-0 z-[170] flex items-center justify-center p-2 sm:p-4 bg-black/80 backdrop-blur-xs animate-in fade-in duration-150">
+      <div className="bg-white dark:bg-[#0d1823] border border-slate-200 dark:border-[#1a3040] rounded-2xl w-full max-w-4xl max-h-[92dvh] flex flex-col shadow-xl overflow-hidden font-mono text-xs transition-colors">
         {/* Header */}
         <div className="flex items-center justify-between px-4 sm:px-6 py-3.5 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-950/50 shrink-0">
           <div className="flex items-center gap-2.5">
-            <div className="p-1.5 rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+            <div className="p-1.5 rounded-lg bg-sky-500/10 text-sky-600 dark:text-sky-400 border border-sky-500/20">
               <BookOpen className="w-4 h-4" />
             </div>
             <div>
               <h2 className="font-extrabold text-sm sm:text-base text-zinc-950 dark:text-white uppercase tracking-wider">
-                Institutional Help Center & Guide
+                Multi-Asset Trading Terminal Guide
               </h2>
               <p className="text-[11px] text-zinc-500 dark:text-zinc-400">
-                Deterministic SMC gates, dealing ranges, and broker bridge instructions
+                Playbooks for all 4 pairs, full indicators suite, pending limit orders &amp; MT5 execution
               </p>
             </div>
           </div>
@@ -111,14 +124,14 @@ export const HelpCenterModal: React.FC<HelpCenterModalProps> = ({
           </button>
         </div>
 
-        {/* Search Bar & Item Selectors Strip */}
+        {/* Search Bar & Grid Tab Selectors */}
         <div className="p-3 sm:px-6 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950/80 space-y-2.5 shrink-0">
           {/* Quick Search Input */}
           <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800">
             <Search className="w-3.5 h-3.5 text-zinc-400" />
             <input
               type="text"
-              placeholder="Search concepts (e.g. discount, drawdown, spread, FVG, MT5)..."
+              placeholder="Search pairs, indicators (e.g. EURUSD, ATR, countdown, discount, MT5)..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="bg-transparent outline-none text-xs text-zinc-900 dark:text-white w-full font-sans"
@@ -131,7 +144,7 @@ export const HelpCenterModal: React.FC<HelpCenterModalProps> = ({
           </div>
 
           {/* Upgraded Grid Item Selectors */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-1.5">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-1.5">
             {filteredTabs.map((tab) => {
               const Icon = tab.icon;
               const isActive = activeTab === tab.id;
@@ -139,9 +152,9 @@ export const HelpCenterModal: React.FC<HelpCenterModalProps> = ({
                 <button
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id)}
-                  className={`py-2 px-2 rounded-xl text-left border transition-all cursor-pointer flex flex-col justify-between ${
+                  className={`py-2 px-2.5 rounded-xl text-left border transition-all cursor-pointer flex flex-col justify-between ${
                     isActive
-                      ? 'bg-zinc-950 text-white dark:bg-white dark:text-black border-zinc-950 dark:border-white shadow-xs'
+                      ? 'bg-zinc-950 text-white dark:bg-sky-500 dark:text-slate-950 border-zinc-950 dark:border-sky-400 shadow-xs'
                       : 'bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400 hover:border-zinc-400 dark:hover:border-zinc-600'
                   }`}
                 >
@@ -160,7 +173,213 @@ export const HelpCenterModal: React.FC<HelpCenterModalProps> = ({
 
         {/* Body Content */}
         <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 font-sans text-xs">
-          {/* TAB 1: HOW TO KNOW A SIGNAL IS VALID & PROFITABLE */}
+          {/* TAB 1: CURRENCY PAIRS PLAYBOOK */}
+          {activeTab === 'pairs_matrix' && (
+            <div className="space-y-3.5">
+              <div className="p-3.5 rounded-xl bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-800 space-y-1">
+                <span className="font-bold text-zinc-950 dark:text-white font-mono text-xs block">
+                  Institutional Multi-Pair Playbook (4 Supported Instruments)
+                </span>
+                <p className="text-[11px] text-zinc-600 dark:text-zinc-400 leading-relaxed">
+                  The terminal scans, scores, and executes across 4 distinct financial markets. Each pair has its own volatility profile, pip calculation, and prime trading hours:
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-[11px]">
+                {/* Gold */}
+                <div className="p-3.5 rounded-xl border border-amber-500/30 bg-amber-500/[0.03] space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div className="font-bold text-zinc-950 dark:text-white flex items-center gap-1.5 font-mono text-xs">
+                      <span className="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-600 dark:text-amber-400 font-black">XAUUSD</span>
+                      <span>Gold Spot / USD</span>
+                    </div>
+                    <span className="font-mono text-xs font-bold text-amber-500">Commodity Metal</span>
+                  </div>
+                  <ul className="space-y-1 text-zinc-600 dark:text-zinc-300 leading-relaxed list-disc list-inside">
+                    <li><strong>Point Value:</strong> $1.00 per point per 1.0 standard lot.</li>
+                    <li><strong>Key Drivers:</strong> US CPI, Non-Farm Payrolls, Treasury Yields, and Safe-Haven flows.</li>
+                    <li><strong>Prime Window:</strong> London/New York Overlap (13:00 - 16:00 UTC) produces the highest volatility.</li>
+                    <li><strong>Execution Rule:</strong> Enter at unmitigated 15m/1h Order Blocks in deep Discount/Premium dealing ranges.</li>
+                  </ul>
+                </div>
+
+                {/* EURUSD */}
+                <div className="p-3.5 rounded-xl border border-sky-500/30 bg-sky-500/[0.03] space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div className="font-bold text-zinc-950 dark:text-white flex items-center gap-1.5 font-mono text-xs">
+                      <span className="px-1.5 py-0.5 rounded bg-sky-500/20 text-sky-600 dark:text-sky-400 font-black">EURUSD</span>
+                      <span>Euro / US Dollar</span>
+                    </div>
+                    <span className="font-mono text-xs font-bold text-sky-500">FX Major #1</span>
+                  </div>
+                  <ul className="space-y-1 text-zinc-600 dark:text-zinc-300 leading-relaxed list-disc list-inside">
+                    <li><strong>Pip Value:</strong> $10.00 per pip (0.0001) per 1.0 standard lot. Lowest broker spreads (0.6 - 1.2 pips).</li>
+                    <li><strong>Key Drivers:</strong> ECB rate decisions, Federal Reserve rate differentials, Eurozone manufacturing PMIs.</li>
+                    <li><strong>Prime Window:</strong> London Open (07:00 - 10:00 UTC) sets the directional trend of the day.</li>
+                    <li><strong>Execution Rule:</strong> Look for session liquidity sweeps followed by clean Fair Value Gap imbalances.</li>
+                  </ul>
+                </div>
+
+                {/* GBPUSD */}
+                <div className="p-3.5 rounded-xl border border-indigo-500/30 bg-indigo-500/[0.03] space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div className="font-bold text-zinc-950 dark:text-white flex items-center gap-1.5 font-mono text-xs">
+                      <span className="px-1.5 py-0.5 rounded bg-indigo-500/20 text-indigo-600 dark:text-indigo-400 font-black">GBPUSD</span>
+                      <span>British Pound / USD (&quot;Cable&quot;)</span>
+                    </div>
+                    <span className="font-mono text-xs font-bold text-indigo-500">High-Beta FX</span>
+                  </div>
+                  <ul className="space-y-1 text-zinc-600 dark:text-zinc-300 leading-relaxed list-disc list-inside">
+                    <li><strong>Pip Value:</strong> $10.00 per pip per 1.0 lot. Higher ATR (Average True Range) than EURUSD.</li>
+                    <li><strong>Key Drivers:</strong> Bank of England MPC decisions, UK GDP, US Dollar DXY strength.</li>
+                    <li><strong>Prime Window:</strong> Frankfurt/London open (06:30 - 11:00 UTC). Known for aggressive stop sweeps.</li>
+                    <li><strong>Execution Rule:</strong> Wait for Breaker Blocks and clear CHoCH structural reversals after liquidity pools.</li>
+                  </ul>
+                </div>
+
+                {/* USDJPY */}
+                <div className="p-3.5 rounded-xl border border-rose-500/30 bg-rose-500/[0.03] space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div className="font-bold text-zinc-950 dark:text-white flex items-center gap-1.5 font-mono text-xs">
+                      <span className="px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-600 dark:text-rose-400 font-black">USDJPY</span>
+                      <span>US Dollar / Japanese Yen</span>
+                    </div>
+                    <span className="font-mono text-xs font-bold text-rose-500">Asian Benchmark</span>
+                  </div>
+                  <ul className="space-y-1 text-zinc-600 dark:text-zinc-300 leading-relaxed list-disc list-inside">
+                    <li><strong>Pip Value:</strong> 0.01 = 1 pip. Multi-hour clean trend continuation characteristics.</li>
+                    <li><strong>Key Drivers:</strong> US 10Y Treasury Yield correlation, Bank of Japan policy adjustments.</li>
+                    <li><strong>Prime Window:</strong> Tokyo Asian Session (00:00 - 09:00 UTC) and NY open (13:00 - 17:00 UTC).</li>
+                    <li><strong>Execution Rule:</strong> Trend-following pullback entries at 50% Equilibrium during strong bond yield moves.</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* TAB 2: TECHNICAL & INDICATOR SUITE */}
+          {activeTab === 'indicators_suite' && (
+            <div className="space-y-3.5">
+              <div className="p-3.5 rounded-xl bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-800 space-y-1">
+                <span className="font-bold text-zinc-950 dark:text-white font-mono text-xs block">
+                  Comprehensive Technical Indicators Suite (Beyond SMC Alone)
+                </span>
+                <p className="text-[11px] text-zinc-600 dark:text-zinc-400 leading-relaxed">
+                  The terminal integrates institutional Smart Money Concepts with classical quantitative indicators to filter false signals and maximize win rates:
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-[11px]">
+                <div className="p-3 rounded-xl bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 space-y-1">
+                  <span className="font-mono font-bold text-sky-600 dark:text-sky-400 text-xs block flex items-center gap-1.5">
+                    <Activity className="w-3.5 h-3.5" />
+                    <span>1. ATR (Average True Range) Dynamic Volatility Stops</span>
+                  </span>
+                  <p className="text-zinc-600 dark:text-zinc-400 leading-relaxed">
+                    Stops are not static! The engine measures 14-period market volatility in real time. During volatility expansions, stop losses adapt dynamically to prevent premature stop hunts while keeping risk exposure strictly bounded.
+                  </p>
+                </div>
+
+                <div className="p-3 rounded-xl bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 space-y-1">
+                  <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400 text-xs block flex items-center gap-1.5">
+                    <TrendingUp className="w-3.5 h-3.5" />
+                    <span>2. Candlestick &amp; Price Action Pattern Confirmation</span>
+                  </span>
+                  <p className="text-zinc-600 dark:text-zinc-400 leading-relaxed">
+                    Automated pattern detection checks for <strong>Pinbars</strong> (&gt;65% rejection wick), <strong>Bullish/Bearish Engulfing</strong>, and <strong>Momentum Exhaustion</strong> candles directly at key levels before executing.
+                  </p>
+                </div>
+
+                <div className="p-3 rounded-xl bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 space-y-1">
+                  <span className="font-mono font-bold text-amber-600 dark:text-amber-400 text-xs block flex items-center gap-1.5">
+                    <Layers className="w-3.5 h-3.5" />
+                    <span>3. Multi-Timeframe (MTF) Alignment: 1m, 5m, 15m, 1h, 4h</span>
+                  </span>
+                  <p className="text-zinc-600 dark:text-zinc-400 leading-relaxed">
+                    Includes the newly added <strong>4-hour (H4) macro timeframe</strong> alongside 1h, 15m, 5m, and 1m. Trades require higher-timeframe trend alignment with lower-timeframe execution triggers.
+                  </p>
+                </div>
+
+                <div className="p-3 rounded-xl bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 space-y-1">
+                  <span className="font-mono font-bold text-purple-600 dark:text-purple-400 text-xs block flex items-center gap-1.5">
+                    <Clock className="w-3.5 h-3.5" />
+                    <span>4. Session Kill-Zones &amp; Dual Real-Time Clocks</span>
+                  </span>
+                  <p className="text-zinc-600 dark:text-zinc-400 leading-relaxed">
+                    Tracks London Open (07:00-16:00 UTC), New York Cash (13:00-22:00 UTC), and Asian Tokyo (00:00-09:00 UTC) with dual clocks in Server time and East Africa / Kenya time (EAT).
+                  </p>
+                </div>
+
+                <div className="p-3 rounded-xl bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 space-y-1">
+                  <span className="font-mono font-bold text-emerald-500 text-xs block flex items-center gap-1.5">
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    <span>5. Pure Coloured Lines (Zero Obscuring Bars)</span>
+                  </span>
+                  <p className="text-zinc-600 dark:text-zinc-400 leading-relaxed">
+                    All indicator overlays render as crisp horizontal dotted lines with centered text labels. No opaque or colored bars cover candlesticks, keeping price action 100% visible and clean.
+                  </p>
+                </div>
+
+                <div className="p-3 rounded-xl bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 space-y-1">
+                  <span className="font-mono font-bold text-rose-500 text-xs block flex items-center gap-1.5">
+                    <ShieldAlert className="w-3.5 h-3.5" />
+                    <span>6. Live Broker Spread &amp; Tick-Value Sizing</span>
+                  </span>
+                  <p className="text-zinc-600 dark:text-zinc-400 leading-relaxed">
+                    Direct broker quotes provide real-time point-to-pip spreads and contract sizing per currency pair, freezing execution if spreads widen during sudden news releases.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* TAB 3: PENDING LIMIT ORDERS & COUNTDOWN TIMER */}
+          {activeTab === 'pending_orders' && (
+            <div className="space-y-3.5">
+              <div className="p-3.5 rounded-xl bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-800 space-y-1">
+                <span className="font-bold text-zinc-950 dark:text-white font-mono text-xs block">
+                  Pending Limit Orders &amp; Visual Holding Countdown Timer
+                </span>
+                <p className="text-[11px] text-zinc-600 dark:text-zinc-400 leading-relaxed">
+                  Institutional trading does not chase market price. The engine queues pending limit orders at confirmed Order Blocks and POI levels:
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 text-[11px]">
+                <div className="p-3 rounded-xl bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 space-y-1">
+                  <span className="font-mono font-bold text-amber-500 text-xs block flex items-center gap-1.5">
+                    <Clock className="w-3.5 h-3.5" />
+                    <span>1. Minimalist Visual Countdown</span>
+                  </span>
+                  <p className="text-zinc-600 dark:text-zinc-400 leading-relaxed">
+                    The <code>LiveExecutionCard</code> features a sleek countdown timer (e.g. <code>03:00</code> hold window). It shows exactly how long the engine will hold an entry before cancelling.
+                  </p>
+                </div>
+
+                <div className="p-3 rounded-xl bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 space-y-1">
+                  <span className="font-mono font-bold text-rose-500 text-xs block flex items-center gap-1.5">
+                    <ShieldAlert className="w-3.5 h-3.5" />
+                    <span>2. Automatic Drift Invalidation</span>
+                  </span>
+                  <p className="text-zinc-600 dark:text-zinc-400 leading-relaxed">
+                    If market price moves away from entry beyond the allowed drift threshold (&gt;15 pips on FX, &gt;25 points on Gold), the order is automatically cancelled to prevent poor fills.
+                  </p>
+                </div>
+
+                <div className="p-3 rounded-xl bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 space-y-1">
+                  <span className="font-mono font-bold text-emerald-500 text-xs block flex items-center gap-1.5">
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    <span>3. Instant Fill or User Cancel</span>
+                  </span>
+                  <p className="text-zinc-600 dark:text-zinc-400 leading-relaxed">
+                    If price sweeps the POI level, the order fills into an active broker trade immediately. Traders can also click <code>Fill Now</code> for immediate market entry or <code>Cancel</code> at any time.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* TAB 4: 6 VERIFICATION GATES */}
           {activeTab === 'valid_signals' && (
             <div className="space-y-3.5">
               <div className="p-3.5 rounded-xl bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-800 space-y-1">
@@ -179,7 +398,7 @@ export const HelpCenterModal: React.FC<HelpCenterModalProps> = ({
                     <span>Gate 1: Minimum 1:2.0 Risk/Reward</span>
                   </div>
                   <p className="text-zinc-600 dark:text-zinc-400 leading-relaxed">
-                    Stop loss is capped tightly (4.0 pts / 40 pips) while Take Profit targets at least 8.0 pts (+80 pips), ensuring positive mathematical expectancy.
+                    Stop loss is capped tightly while Take Profit targets at least 2x risk, ensuring positive long-term mathematical expectancy.
                   </p>
                 </div>
 
@@ -189,7 +408,7 @@ export const HelpCenterModal: React.FC<HelpCenterModalProps> = ({
                     <span>Gate 2: Order Block Confluence (+OB / -OB)</span>
                   </div>
                   <p className="text-zinc-600 dark:text-zinc-400 leading-relaxed">
-                    Buys occur only at validated Bullish Order Blocks (+OB) where institutions injected capital; Sells only at Bearish Order Blocks (-OB).
+                    Buys occur only at validated Bullish Order Blocks (+OB); Sells only at Bearish Order Blocks (-OB). Order block always renders for active trades.
                   </p>
                 </div>
 
@@ -209,7 +428,7 @@ export const HelpCenterModal: React.FC<HelpCenterModalProps> = ({
                     <span>Gate 4: Fair Value Gap Displacement</span>
                   </div>
                   <p className="text-zinc-600 dark:text-zinc-400 leading-relaxed">
-                    Requires a 3-candle imbalance (FVG) confirming aggressive institutional buying or selling volume behind the move.
+                    Requires a 3-candle imbalance (FVG) confirming aggressive institutional volume behind the move.
                   </p>
                 </div>
 
@@ -219,7 +438,7 @@ export const HelpCenterModal: React.FC<HelpCenterModalProps> = ({
                     <span>Gate 5: Low Spread Gate (&le; 40 pts)</span>
                   </div>
                   <p className="text-zinc-600 dark:text-zinc-400 leading-relaxed">
-                    Execution automatically freezes if live broker spread exceeds 40 points (4.0 pips) to protect from news slippage.
+                    Execution automatically freezes if live broker spread exceeds safe thresholds to protect from news slippage.
                   </p>
                 </div>
 
@@ -236,7 +455,7 @@ export const HelpCenterModal: React.FC<HelpCenterModalProps> = ({
             </div>
           )}
 
-          {/* TAB 2: DEALING RANGE & EQUILIBRIUM */}
+          {/* TAB 5: DEALING RANGE & EQUILIBRIUM */}
           {activeTab === 'dealing_range' && (
             <div className="space-y-3.5">
               <div className="p-3.5 rounded-xl bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-800 space-y-1">
@@ -244,7 +463,7 @@ export const HelpCenterModal: React.FC<HelpCenterModalProps> = ({
                   Auction Market Dealing Range &amp; Equilibrium
                 </span>
                 <p className="text-[11px] text-zinc-600 dark:text-zinc-400 leading-relaxed">
-                  The Dealing Range defines the active price boundaries between the most recent major <strong>Swing High</strong> and <strong>Swing Low</strong>.
+                  The Dealing Range defines active price boundaries between the most recent major <strong>Swing High</strong> and <strong>Swing Low</strong>:
                 </p>
               </div>
 
@@ -254,7 +473,7 @@ export const HelpCenterModal: React.FC<HelpCenterModalProps> = ({
                     Discount Zone (&lt; 50% Equilibrium)
                   </span>
                   <p className="text-zinc-600 dark:text-zinc-400 leading-relaxed">
-                    Any price below 50% Equilibrium is wholesale pricing ("cheap"). <strong>Smart money only accumulates long/buy positions in Discount</strong>. Buying in discount maximizes upside expansion to the opposing swing high.
+                    Any price below 50% Equilibrium is wholesale pricing. Smart money accumulates long/buy positions in Discount, maximizing upside expansion toward swing highs.
                   </p>
                 </div>
 
@@ -263,65 +482,65 @@ export const HelpCenterModal: React.FC<HelpCenterModalProps> = ({
                     Premium Zone (&gt; 50% Equilibrium)
                   </span>
                   <p className="text-zinc-600 dark:text-zinc-400 leading-relaxed">
-                    Any price above 50% Equilibrium is retail markup ("expensive"). <strong>Smart money only distributes short/sell positions in Premium</strong>. Selling in premium offers the highest risk-to-reward for downward displacement.
+                    Any price above 50% Equilibrium is retail markup. Smart money distributes short/sell positions in Premium, offering maximum risk-to-reward for downward moves.
                   </p>
                 </div>
               </div>
             </div>
           )}
 
-          {/* TAB 3: GOLD SPOT VS MT5 ACCOUNT BALANCE */}
+          {/* TAB 6: MT5 BALANCES & MARGIN */}
           {activeTab === 'balances' && (
             <div className="space-y-3.5">
               <div className="p-3.5 rounded-xl bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-800 space-y-1">
                 <span className="font-bold text-zinc-950 dark:text-white font-mono text-xs block">
-                  Account Capital, Equity &amp; Free Margin
+                  Account Capital, Equity &amp; Free Margin (MetaTrader 5 Format)
                 </span>
                 <p className="text-[11px] text-zinc-600 dark:text-zinc-400 leading-relaxed">
-                  Key financial telemetry explained for small and large accounts:
+                  The top telemetry bar and live execution monitor display exact MT5 terminal metrics formatted identically to the MetaTrader 5 Toolbox trade bar:
                 </p>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 text-[11px]">
                 <div className="p-3 rounded-xl bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 space-y-1">
                   <span className="font-mono font-bold text-zinc-950 dark:text-white text-xs block">
-                    1. Cash Balance
+                    1. Balance (USD)
                   </span>
                   <p className="text-zinc-600 dark:text-zinc-400 leading-relaxed">
-                    Settled cash funds in your broker account. Changes only when a trade is closed.
+                    Settled cash balance in your broker account (e.g. <code>10,000.00 USD</code>). Changes only upon closing positions.
                   </p>
                 </div>
 
                 <div className="p-3 rounded-xl bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 space-y-1">
                   <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400 text-xs block">
-                    2. Live Floating Equity
+                    2. Live Equity
                   </span>
                   <p className="text-zinc-600 dark:text-zinc-400 leading-relaxed">
-                    Real-time account value: <code>Balance + Open Trades P&amp;L</code>. Reflects exact cash value if all trades were closed immediately.
+                    Real-time account value: <code>Balance + Floating P&amp;L</code>. Represents exact liquidation value at this instant.
                   </p>
                 </div>
 
                 <div className="p-3 rounded-xl bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 space-y-1">
-                  <span className="font-mono font-bold text-blue-600 dark:text-blue-400 text-xs block">
-                    3. Free Margin
+                  <span className="font-mono font-bold text-sky-600 dark:text-sky-400 text-xs block">
+                    3. Margin &amp; Free Margin
                   </span>
                   <p className="text-zinc-600 dark:text-zinc-400 leading-relaxed">
-                    Available collateral to open new positions after subtracting used margin required by your broker.
+                    Margin used by open positions and Free Margin available for new trades. Margin Level % indicates safety threshold.
                   </p>
                 </div>
               </div>
             </div>
           )}
 
-          {/* TAB 4: SMC ABBREVIATIONS GLOSSARY */}
+          {/* TAB 7: GLOSSARY */}
           {activeTab === 'abbreviations' && (
             <div className="space-y-3.5">
               <div className="p-3.5 rounded-xl bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-800 space-y-1">
                 <span className="font-bold text-zinc-950 dark:text-white font-mono text-xs block">
-                  Institutional Smart Money Concepts (SMC) Glossary
+                  Indicators &amp; Market Structure Glossary
                 </span>
                 <p className="text-[11px] text-zinc-600 dark:text-zinc-400 leading-relaxed">
-                  Industry-standard abbreviations used across terminal alerts and signal readouts:
+                  Key abbreviations and concepts used across signal decks and chart overlays:
                 </p>
               </div>
 
@@ -352,14 +571,37 @@ export const HelpCenterModal: React.FC<HelpCenterModalProps> = ({
                 </div>
 
                 <div className="p-2.5 rounded-xl bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 space-y-0.5">
-                  <strong className="font-mono text-zinc-900 dark:text-zinc-100 block">BE (Break-Even Lock)</strong>
-                  <span className="text-zinc-500 text-[11px]">Stop loss moved to entry price + 0.3 to eliminate downside risk.</span>
+                  <strong className="font-mono text-zinc-900 dark:text-zinc-100 block">ATR (Volatility)</strong>
+                  <span className="text-zinc-500 text-[11px]">Average True Range used to dynamically size protective stop distances.</span>
                 </div>
               </div>
             </div>
           )}
 
-          {/* TAB 5: PHONE PWA INSTALLATION */}
+          {/* TAB 8: MT5 CONNECTOR */}
+          {activeTab === 'mt5' && (
+            <div className="space-y-3.5">
+              <div className="p-3.5 rounded-xl bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-800 space-y-2">
+                <span className="font-bold text-zinc-950 dark:text-white font-mono text-xs block">
+                  Link with MetaTrader 5 (MT5) Broker
+                </span>
+                <p className="text-[11px] text-zinc-600 dark:text-zinc-400 leading-relaxed">
+                  Stream live broker ticks and execute signals directly into your real or demo broker terminal via the 1-click Python bridge or native MQL5 Expert Advisor:
+                </p>
+                <button
+                  onClick={() => {
+                    onClose();
+                    onOpenBridge();
+                  }}
+                  className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold font-mono transition-colors text-xs cursor-pointer"
+                >
+                  Open MT5 Bridge Setup Window
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* TAB 9: MOBILE PWA */}
           {activeTab === 'phone_pwa' && (
             <div className="space-y-3.5">
               <div className="p-3.5 rounded-xl bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-800 space-y-1">
@@ -398,28 +640,19 @@ export const HelpCenterModal: React.FC<HelpCenterModalProps> = ({
                   </ol>
                 </div>
               </div>
-            </div>
-          )}
 
-          {/* TAB 6: MT5 CONNECTOR */}
-          {activeTab === 'mt5' && (
-            <div className="space-y-3.5">
-              <div className="p-3.5 rounded-xl bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-800 space-y-2">
-                <span className="font-bold text-zinc-950 dark:text-white font-mono text-xs block">
-                  Link with MetaTrader 5 (MT5) Broker
-                </span>
-                <p className="text-[11px] text-zinc-600 dark:text-zinc-400 leading-relaxed">
-                  Stream live broker ticks and execute signals directly into your real or demo broker terminal via the 1-click Windows batch script or native MQL5 Expert Advisor.
-                </p>
-                <button
-                  onClick={() => {
-                    onClose();
-                    onOpenBridge();
-                  }}
-                  className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold font-mono transition-colors text-xs cursor-pointer"
-                >
-                  Open MT5 Bridge Setup Window
-                </button>
+              {/* Start Local Server Directly on Phone */}
+              <div className="p-3.5 rounded-xl bg-slate-900/80 border border-slate-800 space-y-2 font-mono text-[11px]">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-sky-400">Start Server on Android Phone (Termux)</span>
+                  <span className="text-[10px] text-zinc-400">No computer required</span>
+                </div>
+                <div className="p-2.5 rounded-lg bg-black/80 text-emerald-400 text-[10px] font-mono leading-relaxed border border-zinc-800 overflow-x-auto">
+                  pkg update &amp;&amp; pkg install nodejs git<br />
+                  git clone https://github.com/nick12530/BLOCK1-SmC.git &amp;&amp; cd BLOCK1-SmC<br />
+                  npm install &amp;&amp; npm run mobile<br />
+                  # Open http://localhost:3000 in your phone&apos;s browser
+                </div>
               </div>
             </div>
           )}

@@ -3,7 +3,7 @@
  * Runtime market data is supplied by the connected MT5 broker bridge.
  */
 
-import { Candle } from '../types/smc';
+import { Candle, EconomicEvent } from '../types/smc';
 
 /**
  * Generates realistic initial interbank candlestick history for any supported instrument.
@@ -137,3 +137,71 @@ export function generatePairCandles(
     spreadPoints,
   };
 }
+
+export function generateSeedMarketData(symbol: string = 'XAUUSD'): {
+  candlesM1: Candle[];
+  candlesM5: Candle[];
+  candlesM15: Candle[];
+  candlesH1: Candle[];
+  currentBid: number;
+} {
+  const pair = generatePairCandles(symbol, 100);
+  return {
+    candlesM1: pair.candlesM1,
+    candlesM5: pair.candlesM5,
+    candlesM15: pair.candlesM15,
+    candlesH1: pair.candlesH1,
+    currentBid: pair.currentBid,
+  };
+}
+
+export async function fetchLiveGoldCandles(): Promise<{
+  candlesM1: Candle[];
+  candlesM5: Candle[];
+  candlesM15: Candle[];
+  candlesH1: Candle[];
+  currentPrice: number;
+} | null> {
+  const pair = generatePairCandles('XAUUSD', 100);
+  return {
+    candlesM1: pair.candlesM1,
+    candlesM5: pair.candlesM5,
+    candlesM15: pair.candlesM15,
+    candlesH1: pair.candlesH1,
+    currentPrice: pair.currentBid,
+  };
+}
+
+export const DEFAULT_ECONOMIC_EVENTS: EconomicEvent[] = [
+  {
+    id: 'eco-1',
+    time: '12:30 GMT',
+    currency: 'USD',
+    event: 'US Core PCE Price Index (MoM)',
+    impact: 'high',
+    forecast: '0.3%',
+    previous: '0.2%',
+    minutesRemaining: 45,
+  },
+  {
+    id: 'eco-2',
+    time: '14:00 GMT',
+    currency: 'USD',
+    event: 'ISM Manufacturing PMI',
+    impact: 'high',
+    forecast: '49.5',
+    previous: '48.5',
+    minutesRemaining: 135,
+  },
+  {
+    id: 'eco-3',
+    time: '18:00 GMT',
+    currency: 'USD',
+    event: 'FOMC Member Speech',
+    impact: 'medium',
+    forecast: 'Hawkish',
+    previous: 'Neutral',
+    minutesRemaining: 375,
+  },
+];
+

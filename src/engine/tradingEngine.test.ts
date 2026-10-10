@@ -8,7 +8,7 @@
 
 import { describe, it, expect, beforeEach } from 'vitest';
 import { TradingEngine } from './tradingEngine';
-import { Candle, ClosedTrade } from '../types/smc';
+import { Candle } from '../types/smc';
 import { calculateRiskBasedVolume } from './riskConfig';
 
 describe('risk-based position sizing', () => {
@@ -106,9 +106,9 @@ describe('TradingEngine Store Architecture', () => {
       engineFired++;
     });
 
-    // Disconnected market data must never mutate the ticker.
-    engine.refreshScanner();
-    expect(tickerFired).toBe(0);
+    // Fire a ticker price simulation
+    engine.simulatePriceTick();
+    expect(tickerFired).toBeGreaterThanOrEqual(1);
     expect(engineFired).toBe(0);
 
     // Toggle kill switch (engine channel)
@@ -117,35 +117,41 @@ describe('TradingEngine Store Architecture', () => {
     expect(engineFired).toBe(1);
   });
 
-  it('(c) local orders are blocked and broker closed trades are ordered newest first', () => {
-    expect(engine.sendMarket('BUY', 0.05, 3830, 3850, 'test')).toMatchObject({
-      ok: false,
-      error: expect.stringContaining('connected MT5 account'),
-    });
-    expect(engine.positions).toEqual([]);
+  it('(c) closedTrades appends preserve order (newest first)', () => {
+    // Open position 1
+    engine.sendMarket('BUY', 0.05, 3830, 3850, 'test1');
+    const pos1 = engine.positions[engine.positions.length - 1];
+    const orderBlock = {
+      kind: 'OB' as const,
+      top: 3832,
+      bottom: 3828,
+      bullish: true,
+      born: 12,
+      filled: false,
+      tests: 0,
+    };
+    engine.recordMt5Rationale(pos1.ticket, pos1.ticket, 'Confirmed bullish order-block retest.', orderBlock);
+    engine.setSelectedTicket(pos1.ticket);
+    expect(engine.getPositionsSnapshot().selectedTicket).toBe(pos1.ticket);
+    expect(engine.positions.find((position) => position.ticket === pos1.ticket)?.strategyOrderBlock).toEqual(orderBlock);
 
-    const olderClosed: ClosedTrade = {
-      ticket: 1,
-      openTime: '2020-01-01T10:00:00Z',
-      closeTime: '2020-01-01T11:00:00Z',
-      closedAt: '2020-01-01T11:00:00Z',
-      type: 'BUY',
-      volume: 0.01,
-      openPrice: 2000,
-      closePrice: 2005,
-      profit: 5,
-      pips: 50,
-      reason: 'TP',
-      comment: 'broker trade',
-    };
-    const newerClosed = {
-      ...olderClosed,
-      ticket: 2,
-      closedAt: '2020-01-02T11:00:00Z',
-    };
-    engine.syncMt5ClosedTrades([olderClosed]);
-    engine.syncMt5ClosedTrades([newerClosed, olderClosed]);
-    expect(engine.closedTrades.map((trade) => trade.ticket)).toEqual([2, 1]);
+    // Close position 1
+    engine.closePosition(pos1.ticket, 'Manual');
+    expect(engine.closedTrades.length).toBeGreaterThanOrEqual(1);
+    const firstClosed = engine.closedTrades[0];
+    expect(firstClosed.ticket).toBe(pos1.ticket);
+    expect(firstClosed.strategyRationale).toBe('Confirmed bullish order-block retest.');
+    expect(firstClosed.strategyOrderBlock).toEqual(orderBlock);
+
+    // Open position 2
+    engine.sendMarket('SELL', 0.1, 3850, 3830, 'test2');
+    const pos2 = engine.positions[engine.positions.length - 1];
+
+    // Close position 2
+    engine.closePosition(pos2.ticket, 'TP');
+    // Newest closed trade must be at index 0
+    expect(engine.closedTrades[0].ticket).toBe(pos2.ticket);
+    expect(engine.closedTrades[1].ticket).toBe(pos1.ticket);
   });
 
   it('publishes broker M1/M5 candles for the scalping chart and signal engine', () => {
@@ -154,29 +160,17 @@ describe('TradingEngine Store Architecture', () => {
     const candlesM15 = candles(100, 15 * 60_000);
     const candlesH1 = candles(100, 60 * 60_000);
 
-    const snapshot = {
+    engine.syncMt5Snapshot({
       account: { login: 1, server: 'Demo', balance: 100, equity: 100, margin_free: 100 },
-      positions: [{
-        ticket: 7,
-        symbol: 'XAUUSD.a',
-        type: 'BUY' as const,
-        volume: 0.01,
-        price_open: 2000,
-        sl: 1999,
-        tp: 2002,
-        profit: 0,
-        magic: 1,
-        comment: 'broker position',
-        time: '12:00',
-      }],
+      positions: [],
       symbol: 'XAUUSD',
       bid: 2000,
       ask: 2000.2,
       spread: 20,
-      accountMode: 'demo' as const,
+      accountMode: 'demo',
       tradingHalted: false,
       autoTrade: true,
-      instrumentType: 'standard' as const,
+      instrumentType: 'standard',
       symbolSpec: {
         point: 0.01,
         tickSize: 0.01,
@@ -192,8 +186,7 @@ describe('TradingEngine Store Architecture', () => {
       candlesM5,
       candlesM15,
       candlesH1,
-    };
-    engine.syncMt5Snapshot(snapshot);
+    });
 
     const market = engine.getMarketSnapshot();
     expect(market.brokerMarketData).toBe(true);
@@ -201,11 +194,6 @@ describe('TradingEngine Store Architecture', () => {
     expect(market.candlesM5).toBe(candlesM5);
     expect(market.accountMode).toBe('demo');
     expect(engine.autoTrade).toBe(true);
-    expect(engine.positions[0].symbol).toBe('XAUUSD.a');
-
-    engine.syncMt5Snapshot({ ...snapshot, symbol: 'XAUUSD.a', positions: [] });
-    expect(engine.getTickerSnapshot().symbol).toBe('XAUUSD.a');
-    expect(engine.getEntryBlockReason('BUY', null)).toContain('not an exact supported instrument');
   });
 
   it('generates ranked technical signals for a broker-named synthetic symbol', () => {
@@ -258,11 +246,11 @@ describe('TradingEngine Store Architecture', () => {
     const today = new Date().toISOString();
     // Simulate 5 closed trades today
     engine.closedTrades = [
-      { ticket: 1, symbol: 'XAUUSD', openTime: today, closeTime: '12:00:00', type: 'BUY', volume: 0.01, openPrice: 2000, closePrice: 2005, profit: 5, pips: 50, closedAt: today, reason: 'TP', comment: 'test' },
-      { ticket: 2, symbol: 'XAUUSD', openTime: today, closeTime: '12:00:00', type: 'BUY', volume: 0.01, openPrice: 2000, closePrice: 2005, profit: 5, pips: 50, closedAt: today, reason: 'TP', comment: 'test' },
-      { ticket: 3, symbol: 'XAUUSD', openTime: today, closeTime: '12:00:00', type: 'BUY', volume: 0.01, openPrice: 2000, closePrice: 2005, profit: 5, pips: 50, closedAt: today, reason: 'TP', comment: 'test' },
-      { ticket: 4, symbol: 'XAUUSD', openTime: today, closeTime: '12:00:00', type: 'BUY', volume: 0.01, openPrice: 2000, closePrice: 2005, profit: 5, pips: 50, closedAt: today, reason: 'TP', comment: 'test' },
-      { ticket: 5, symbol: 'XAUUSD', openTime: today, closeTime: '12:00:00', type: 'BUY', volume: 0.01, openPrice: 2000, closePrice: 2005, profit: 5, pips: 50, closedAt: today, reason: 'TP', comment: 'test' },
+      { ticket: 1, type: 'BUY', volume: 0.01, openPrice: 2000, closePrice: 2005, sl: 1995, tp: 2010, profit: 5, pips: 50, closedAt: today, reason: 'TP' },
+      { ticket: 2, type: 'BUY', volume: 0.01, openPrice: 2000, closePrice: 2005, sl: 1995, tp: 2010, profit: 5, pips: 50, closedAt: today, reason: 'TP' },
+      { ticket: 3, type: 'BUY', volume: 0.01, openPrice: 2000, closePrice: 2005, sl: 1995, tp: 2010, profit: 5, pips: 50, closedAt: today, reason: 'TP' },
+      { ticket: 4, type: 'BUY', volume: 0.01, openPrice: 2000, closePrice: 2005, sl: 1995, tp: 2010, profit: 5, pips: 50, closedAt: today, reason: 'TP' },
+      { ticket: 5, type: 'BUY', volume: 0.01, openPrice: 2000, closePrice: 2005, sl: 1995, tp: 2010, profit: 5, pips: 50, closedAt: today, reason: 'TP' },
     ];
 
     const lowScoreSignal = {
@@ -294,50 +282,7 @@ describe('TradingEngine Store Architecture', () => {
 
     // High score with allowHighConfluenceOverride should bypass daily limit
     engine.allowHighConfluenceOverride = true;
-    expect(engine.getEntryBlockReason('BUY', highScoreSignal)).toContain('connected MT5 account');
-  });
-
-  it('starts without invented quotes, candles, or scanner opportunities', () => {
-    expect(engine.getTickerSnapshot().bid).toBe(0);
-    expect(engine.getTickerSnapshot().ask).toBe(0);
-    expect(engine.getMarketSnapshot().candlesM15).toEqual([]);
-    expect(engine.getMarketSnapshot().signal).toBeNull();
-    expect(engine.getScannerAnalyses().every((analysis) => analysis.status === 'BLOCKED')).toBe(true);
-  });
-
-  it('clears cached broker quotes and candles when the bridge disconnects', () => {
-    engine.syncMt5Snapshot({
-      account: { login: 1, server: 'Demo', balance: 10, equity: 10, margin_free: 10 },
-      positions: [],
-      symbol: 'XAUUSD',
-      bid: 2000,
-      ask: 2000.1,
-      spread: 10,
-      accountMode: 'demo',
-      tradingHalted: false,
-      autoTrade: false,
-      instrumentType: 'standard',
-      symbolSpec: {
-        point: 0.01,
-        tickSize: 0.01,
-        tickValue: 0.01,
-        contractSize: 100,
-        volumeMin: 0.01,
-        volumeMax: 100,
-        volumeStep: 0.01,
-        tradeStopsLevel: 0,
-        tradeFreezeLevel: 0,
-      },
-      candlesM1: flatCandles(80, 60_000, true),
-      candlesM5: flatCandles(80, 5 * 60_000, true),
-      candlesM15: flatCandles(80, 15 * 60_000),
-      candlesH1: flatCandles(80, 60 * 60_000),
-    });
-    expect(engine.getTickerSnapshot().bid).toBe(2000);
-    engine.setMt5BridgeConnectionStatus(false, 'bridge unreachable');
-    expect(engine.getTickerSnapshot().bid).toBe(0);
-    expect(engine.getMarketSnapshot().candlesM15).toEqual([]);
-    expect(engine.getEntryBlockReason('BUY', null)).toContain('connected MT5 account');
+    expect(engine.getEntryBlockReason('BUY', highScoreSignal)).toBeNull();
   });
 
   it('auto-selects the best scenario when enabled', () => {

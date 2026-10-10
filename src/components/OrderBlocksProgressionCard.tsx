@@ -37,8 +37,37 @@ export const OrderBlocksProgressionCard: React.FC = React.memo(() => {
     equilibrium: entryPrice,
   };
 
-  // Derive the active formed Order Block
+  // Derive the active formed Order Block, prioritizing real active zones from the engine
   const ob = useMemo(() => {
+    const realOB = market.zones.find(
+      (z) => z.kind === 'OB' && (isBuy ? z.bullish : !z.bullish) && !z.filled
+    );
+    if (realOB) {
+      const obHigh = Number(realOB.top.toFixed(2));
+      const obLow = Number(realOB.bottom.toFixed(2));
+      const obMT = Number(((obHigh + obLow) / 2).toFixed(2));
+      const distFromMT = Number((isBuy ? currentSpot - obMT : obMT - currentSpot).toFixed(2));
+      return {
+        type: isBuy ? '+OB (Swing Low Demand Block)' : '-OB (Swing High Supply Block)',
+        direction: isBuy ? 'BULLISH' : 'BEARISH',
+        high: obHigh,
+        low: obLow,
+        mt: obMT,
+        distFromMT,
+        status: isBuy
+          ? currentSpot > obHigh
+            ? 'Displacing Away'
+            : currentSpot >= obLow
+            ? 'Retesting 50% MT'
+            : 'Invalidated'
+          : currentSpot < obLow
+          ? 'Displacing Away'
+          : currentSpot <= obHigh
+          ? 'Retesting 50% MT'
+          : 'Invalidated',
+      };
+    }
+
     const obSpan = 2.4; // Points width of the institutional candle
     if (isBuy) {
       const baseLow = Number((entryPrice - 4.0).toFixed(2));
@@ -71,7 +100,7 @@ export const OrderBlocksProgressionCard: React.FC = React.memo(() => {
         status: currentSpot < obLow ? 'Displacing Away' : currentSpot <= obHigh ? 'Retesting 50% MT' : 'Invalidated',
       };
     }
-  }, [isBuy, entryPrice, currentSpot]);
+  }, [market.zones, isBuy, entryPrice, currentSpot]);
 
   // Trade progression stage calculation
   const progression = useMemo(() => {

@@ -123,22 +123,47 @@ export interface Position {
   strategyOrderBlock?: Zone;
 }
 
+export interface PendingOrder {
+  ticket: number;
+  symbol: string;
+  type: 'BUY_LIMIT' | 'SELL_LIMIT';
+  direction: TradeDirection;
+  volume: number;
+  entry: number;
+  sl: number;
+  tp: number;
+  score: number;
+  strategy: string;
+  timeframe?: string;
+  createdTime: number; // timestamp ms
+  ttlSeconds: number; // total hold duration in seconds
+  expiresAt: number; // timestamp ms
+  remainingSeconds: number;
+  maxDriftPips: number;
+  currentDriftPips: number;
+  status: 'PENDING' | 'TRIGGERED' | 'CANCELLED';
+  strategyRationale?: string;
+  strategyOrderBlock?: Zone;
+}
+
 export interface ClosedTrade {
   ticket: number;
   symbol?: string;
   orderTicket?: number;
   positionTicket?: number;
-  openTime: string;
-  closeTime: string;
+  openTime?: string;
+  closeTime?: string;
   closedAt?: string;
   type: TradeDirection;
   volume: number;
   openPrice: number;
   closePrice: number;
+  sl?: number;
+  tp?: number;
   profit: number;
   pips: number;
   reason: 'TP' | 'SL' | 'Manual' | 'KillSwitch';
-  comment: string;
+  comment?: string;
   strategyRationale?: string;
   strategyOrderBlock?: Zone;
 }
@@ -162,7 +187,7 @@ export interface EconomicEvent {
 }
 
 export interface MultiTimeframeAlignment {
-  tf: 'M5' | 'M15' | 'H1' | 'H4';
+  tf: 'M1' | 'M5' | 'M15' | 'H1' | 'H4';
   bias: 'bullish' | 'bearish' | 'ranging';
   lastEvent: 'BOS' | 'CHoCH' | 'SWING';
   status: string;
@@ -200,6 +225,19 @@ export interface TickerState {
   volume24h: string;
 }
 
+export type ChartTimeframe = 'M1' | 'M5' | 'M15' | 'H1' | 'H4';
+
+export interface TimeframeIndicatorData {
+  timeframe: ChartTimeframe;
+  zones: Zone[];
+  dealing_range: DealingRange | null;
+  bias: 'bullish' | 'bearish' | 'ranging';
+  bos: StructureEvent | null;
+  choch: StructureEvent | null;
+  price_pos: number | null;
+  atr: number;
+}
+
 export interface MarketState {
   activeSymbol?: string;
   bias: 'bullish' | 'bearish' | 'ranging';
@@ -215,10 +253,13 @@ export interface MarketState {
   brokerMarketData: boolean;
   accountMode: 'demo' | 'live' | 'contest' | 'unknown' | null;
   symbolSpec: SymbolTradingSpec | null;
+  currentTimeframe: ChartTimeframe;
   candlesM1: Candle[];
   candlesM5: Candle[];
   candlesM15: Candle[];
   candlesH1: Candle[];
+  candlesH4?: Candle[];
+  timeframeData?: Record<ChartTimeframe, TimeframeIndicatorData>;
   mtfAlignment: MultiTimeframeAlignment[];
   candlestickAnalysis?: CandlestickAnalysis;
   scannerAnalyses?: PairAnalysis[];
@@ -240,6 +281,7 @@ export interface SymbolTradingSpec {
 export interface PositionsState {
   positions: Position[];
   closedTrades: ClosedTrade[];
+  pendingOrders?: PendingOrder[];
   selectedTicket?: number | null;
 }
 
@@ -280,6 +322,8 @@ export interface EngineState {
   };
   allowHighConfluenceOverride?: boolean;
   autoSelectBestScenario?: boolean;
+  tradingViewSynced?: boolean;
+  tradingViewLastSync?: number;
 }
 
 export interface EventsState {

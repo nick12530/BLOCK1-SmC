@@ -24,7 +24,7 @@ import {
 } from 'lucide-react';
 
 interface SignalToastNotificationProps {
-  onExecuteSignal: (customVolume?: number, positionCount?: number, signal?: Signal) => void | Promise<void>;
+  onExecuteSignal?: (customVolume?: number, positionCount?: number, signal?: Signal) => void | Promise<void>;
 }
 
 export const SignalToastNotification: React.FC<SignalToastNotificationProps> = ({ onExecuteSignal }) => {
@@ -90,7 +90,18 @@ export const SignalToastNotification: React.FC<SignalToastNotificationProps> = (
   const handleExecute = () => {
     if (!signal || !riskLimitedLotSize) return;
     setIsOpen(false);
-    onExecuteSignal(riskLimitedLotSize, 1, signal);
+    if (onExecuteSignal) {
+      onExecuteSignal(riskLimitedLotSize, 1, signal);
+    } else {
+      tradingEngine.tradeSignal({
+        direction: signal.direction,
+        volume: riskLimitedLotSize,
+        entry: signal.entry,
+        sl: signal.sl,
+        tp: signal.tp,
+        comment: `user_${signal.direction.toLowerCase()}`,
+      });
+    }
   };
 
   const handleAdjustLot = (delta: number) => {

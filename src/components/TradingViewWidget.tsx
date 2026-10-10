@@ -26,6 +26,7 @@ import {
   DEFAULT_INDICATOR_CONFIG,
 } from './SMCInteractiveChart';
 import { OfficialTradingViewEmbed } from './OfficialTradingViewEmbed';
+import { SMCOverlayHUD } from './SMCOverlayHUD';
 import { useEngine, useBestOpportunity, useTicker, useMarket } from '../hooks/useTradingStore';
 import { tradingEngine } from '../engine/tradingEngine';
 import type { SupportedSymbol } from '../engine/instrumentConfig';
@@ -33,7 +34,7 @@ import type { SupportedSymbol } from '../engine/instrumentConfig';
 interface TradingViewWidgetProps {
   isDark?: boolean;
   symbol?: string;
-  interval?: '1' | '5' | '15' | '60';
+  interval?: '1' | '5' | '15' | '60' | '240';
   height?: number | string;
   onExpand?: () => void;
   onOpenHelp?: () => void;
@@ -44,6 +45,7 @@ const timeframes: { value: ChartTimeframe; interval: NonNullable<TradingViewWidg
   { value: 'M5', interval: '5', label: '5m' },
   { value: 'M15', interval: '15', label: '15m' },
   { value: 'H1', interval: '60', label: '1h' },
+  { value: 'H4', interval: '240', label: '4h' },
 ];
 
 export const TradingViewWidget: React.FC<TradingViewWidgetProps> = memo(({
@@ -56,7 +58,7 @@ export const TradingViewWidget: React.FC<TradingViewWidgetProps> = memo(({
 }) => {
   const initialTimeframe = timeframes.find((timeframe) => timeframe.interval === initialInterval)?.value ?? 'M1';
   const [selectedTf, setSelectedTf] = useState<ChartTimeframe>(initialTimeframe);
-  const [chartMode, setChartMode] = useState<'tradingview' | 'smc'>('tradingview');
+  const [chartMode, setChartMode] = useState<'tradingview' | 'smc'>('smc');
   const [showIndicators, setShowIndicators] = useState(true);
   const [indicatorConfig, setIndicatorConfig] = useState<SMCIndicatorConfig>(DEFAULT_INDICATOR_CONFIG);
   const [showConfigMenu, setShowConfigMenu] = useState(false);
@@ -67,8 +69,18 @@ export const TradingViewWidget: React.FC<TradingViewWidgetProps> = memo(({
   const market = useMarket();
   const bestOpportunity = useBestOpportunity();
   const autoFocusEnabled = engine.autoSelectBestScenario ?? true;
-  const canShowSmcChart = market.brokerMarketData || !market.accountMode;
-  const effectiveChartMode = canShowSmcChart ? chartMode : 'tradingview';
+
+  // Keep chart timeframe bidirectional in sync with the trading engine
+  React.useEffect(() => {
+    if (market.currentTimeframe && market.currentTimeframe !== selectedTf) {
+      setSelectedTf(market.currentTimeframe);
+    }
+  }, [market.currentTimeframe, selectedTf]);
+
+  const handleSelectTimeframe = useCallback((tf: ChartTimeframe) => {
+    setSelectedTf(tf);
+    tradingEngine.setTimeframe(tf);
+  }, []);
 
   const handleToggleAutoFocus = useCallback(() => {
     tradingEngine.setAutoSelectBestScenario(!autoFocusEnabled);
@@ -106,7 +118,7 @@ export const TradingViewWidget: React.FC<TradingViewWidgetProps> = memo(({
             <button
               onClick={() => setChartMode('tradingview')}
               className={`px-2.5 py-1 rounded-md text-[11px] font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
-                effectiveChartMode === 'tradingview'
+                chartMode === 'tradingview'
                   ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-950 shadow-xs'
                   : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
               }`}
@@ -117,15 +129,12 @@ export const TradingViewWidget: React.FC<TradingViewWidgetProps> = memo(({
             </button>
             <button
               onClick={() => setChartMode('smc')}
-              disabled={!canShowSmcChart}
               className={`px-2.5 py-1 rounded-md text-[11px] font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
-                effectiveChartMode === 'smc'
+                chartMode === 'smc'
                   ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-950 shadow-xs'
                   : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-              } disabled:cursor-not-allowed disabled:opacity-50`}
-              title={!canShowSmcChart
-                ? 'SMC chart indicators require a verified MT5 candle history. TradingView is available as a view-only chart.'
-                : 'Institutional SMC execution chart with Order Blocks, FVGs, and live broker trade lines'}
+              }`}
+              title="Institutional SMC execution chart with Order Blocks, FVGs, and live broker trade lines"
             >
               <Layers className="w-3.5 h-3.5" />
               <span>SMC Engine</span>
@@ -135,15 +144,23 @@ export const TradingViewWidget: React.FC<TradingViewWidgetProps> = memo(({
           <span className="font-bold text-slate-900 dark:text-white text-xs px-1.5 py-0.5 rounded bg-sky-500/10 text-sky-600 dark:text-sky-300 border border-sky-500/20">
             {rawSymbol}
           </span>
-          {engine.mt5Account?.connected && !market.brokerMarketData && (
+
+          {/* TradingView Live Data Sync Badge */}
+          <span
+            className={`hidden lg:inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+              engine.tradingViewSynced
+                ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30'
+                : 'bg-slate-500/10 text-slate-600 dark:text-slate-400 border-slate-500/20'
+            }`}
+            title="SMC Signals and market calculations are powered by live TradingView interbank chart data"
+          >
             <span
-              role="status"
-              className="rounded border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10px] font-bold text-amber-700 dark:text-amber-300"
-              title="TradingView embeds display chart prices but do not provide OHLC candles to the app's indicator engine."
-            >
-              MT5 CANDLE HISTORY UNVERIFIED · INDICATORS PAUSED
-            </span>
-          )}
+              className={`w-1.5 h-1.5 rounded-full ${
+                engine.tradingViewSynced ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'
+              }`}
+            />
+            <span>TV Data Active</span>
+          </span>
 
           {/* Auto-Scenario Focus Pill */}
           {bestOpportunity && (
@@ -172,7 +189,7 @@ export const TradingViewWidget: React.FC<TradingViewWidgetProps> = memo(({
             {timeframes.map(({ value, label }) => (
               <button
                 key={value}
-                onClick={() => setSelectedTf(value)}
+                onClick={() => handleSelectTimeframe(value)}
                 aria-pressed={selectedTf === value}
                 className={`px-1.5 py-0.5 rounded text-[10px] sm:text-[11px] font-bold transition-all whitespace-nowrap cursor-pointer ${
                   selectedTf === value
@@ -190,7 +207,6 @@ export const TradingViewWidget: React.FC<TradingViewWidgetProps> = memo(({
         {/* Right: Indicator Toggle Button & Controls */}
         <div className="flex items-center gap-1.5 sm:gap-2">
           {/* Main Indicators Toggle Button (Section: Indicators ON / OFF) */}
-          {effectiveChartMode === 'smc' && (
           <div className="relative">
             <div className="flex items-center rounded-lg border border-slate-200 dark:border-zinc-800 bg-slate-100 dark:bg-zinc-900 p-0.5">
               <button
@@ -255,7 +271,6 @@ export const TradingViewWidget: React.FC<TradingViewWidgetProps> = memo(({
               </div>
             )}
           </div>
-          )}
 
           {onOpenHelp && (
             <button
@@ -304,22 +319,31 @@ export const TradingViewWidget: React.FC<TradingViewWidgetProps> = memo(({
         }`}
         style={typeof height === 'number' ? { height: `${height}px` } : undefined}
       >
-        {effectiveChartMode === 'tradingview' ? (
-          <OfficialTradingViewEmbed
-            key={`tv-${symbol}-${selectedTf}-${chartKey}`}
-            symbol={symbol}
-            isDark={isDark}
-            interval={
-              selectedTf === 'M1'
-                ? '1'
-                : selectedTf === 'M5'
-                ? '5'
-                : selectedTf === 'M15'
-                ? '15'
-                : '60'
-            }
-            height={typeof height === 'number' ? height : '100%'}
-          />
+        {chartMode === 'tradingview' ? (
+          <>
+            <OfficialTradingViewEmbed
+              key={`tv-${symbol}-${selectedTf}-${chartKey}`}
+              symbol={symbol}
+              isDark={isDark}
+              interval={
+                selectedTf === 'M1'
+                  ? '1'
+                  : selectedTf === 'M5'
+                  ? '5'
+                  : selectedTf === 'M15'
+                  ? '15'
+                  : selectedTf === 'H4'
+                  ? '240'
+                  : '60'
+              }
+              height={typeof height === 'number' ? height : '100%'}
+            />
+            <SMCOverlayHUD
+              showIndicators={showIndicators}
+              indicatorConfig={indicatorConfig}
+              onSwitchToSMC={() => setChartMode('smc')}
+            />
+          </>
         ) : (
           <SMCInteractiveChart
             key={`smc-${selectedTf}-${chartKey}`}

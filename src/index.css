@@ -81,3 +81,17 @@
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(148, 163, 184, 0.45);
 }
+
+/* Enhanced mobile visibility and bold typography */
+@media (max-width: 640px) {
+  html, body {
+    font-size: 14px;
+    font-weight: 550;
+  }
+  .font-mono {
+    font-weight: 600;
+  }
+  button {
+    font-weight: 700;
+  }
+}

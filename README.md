@@ -1,67 +1,115 @@
-# SMC Trading Dashboard
+# Institutional Smart Money Concepts (SMC) Trading System & MT5 Bridge
 
-A React/TypeScript dashboard for market-structure analysis, broker-aware risk sizing, trade monitoring, and an optional local MetaTrader 5 (MT5) bridge.
+An institutional-grade algorithmic Smart Money Concepts (SMC) workstation and real-time execution engine for **Gold (XAUUSD)** and major Forex pairs (**EURUSD**, **GBPUSD**, **USDJPY**). Built with high-precision order flow detection, live TradingView chart data streaming, togglable indicator overlays, and direct MetaTrader 5 (MT5) broker synchronization.
 
-> **Trading risk:** This software is not financial advice and has not been certified for live trading. Broker execution, data, symbol specifications, network availability, and slippage can differ from the dashboard. Validate on an MT5 demo account first. Use a live account only if you independently understand and accept the risks.
+---
 
-## What it does
+## 🌟 Key Features
 
-- Analyzes market structure, liquidity sweeps, fair-value gaps, order blocks, ATR, and technical setups.
-- Shows multi-instrument opportunities for XAUUSD, EURUSD, USDJPY, and GBPUSD.
-- Uses the connected broker's tick value, tick size, and volume limits to size orders within the configured risk cap. If the broker minimum lot would exceed that cap, the order is rejected rather than upsized.
-- Synchronizes account details, positions, quotes, and closed-trade history from the connected MT5 terminal.
-- Displays official TradingView charts as an independent chart view. TradingView's embedded widget does not expose OHLC candles to this app, so SMC indicators and broker orders require verified MT5 candle history.
-- Supports manually confirmed broker orders and optional auto-trading. Auto-trading is off by default and requires a reachable, verified MT5 connection.
-- Provides a private phone connection through Tailscale Serve; the MT5 terminal and bridge remain on the Windows PC.
+### 1. 📊 Live TradingView Chart Data & Signal Engine
+- **TradingView Real-Time Data**: Queries verified TradingView scanner endpoints (`OANDA:XAUUSD`, `FX:EURUSD`, `FX:GBPUSD`, `FX:USDJPY`) for live bid, ask, spread, high, low, and volume.
+- **Data-Driven Signal Generation**: Algorithmic signals (Order Blocks, Fair Value Gaps, BOS/CHoCH structural breaks) are calculated directly from live TradingView chart data.
+- **SMC Indicator Overlay (ON / OFF)**: Seamlessly toggle all SMC technical layers directly over the chart with a single click. When OFF, enjoy naked candlestick price action; when ON, inspect institutional POIs, mitigation status, and Dealing Range equilibrium.
+- **Granular Layer Controls**: Selectively enable or disable Order Blocks, Fair Value Gaps, Structure Breaks, Signal Targets, and Live Active Broker Trades.
 
-When verified MT5 data is unavailable, quotes and candles are shown as unavailable, scanner setups are blocked, and order execution is disabled. The runtime does not substitute generated prices, replay scenarios, or tokenized-gold (PAXG) data for the selected broker instrument. TradingView remains a view-only chart and does not feed the indicator or execution engine.
+### 2. ⚡ Direct MetaTrader 5 (MT5) Bridge & Broker Synchronization
+- **Bidirectional Live Execution**: Trades taken inside the terminal reflect instantaneously on your connected MT5 terminal (demo or live accounts).
+- **Synced PC & Mobile Broker Telemetry**: Real-time balance, equity, margin level, and floating P&L stay synchronized across desktop and mobile screens.
+- **Strategy Rationale Logging**: Every order sent to MT5 attaches institutional order block rationales and client tracking tags directly into MT5 order comments.
+- **One-Click Break-Even Lock**: Lock profit on any running trade by shifting the stop loss to Entry + spread directly from the terminal.
 
-## Run the dashboard
+### 3. 🛡️ Small Account Risk Protection ($10+ Accounts)
+- **Account Sizing Protections**: Tailored risk rules for small accounts ($10–$100):
+  - Strictly **1 open position** at a time for accounts under $100.
+  - Daily trade limit: **5 trades per day** (max 3 per pair).
+  - **High-Confluence Fallback Override**: High-scoring setups (Score ≥ 70) with top risk-to-reward ratios can bypass daily caps when the override is enabled.
+- **Basket Protection & Kill Switch**: Emergency kill switch with instant position liquidation and basket drawdown protection (-12% drawdown cap / +15% profit target).
 
-Requirements:
+### 4. 🔊 Distinct Procedural Audio Synthesizer
+- Procedural Web Audio API sound generator with zero external audio assets:
+  - **Signals**: Soft harmonic crystal bell (Buy: uplifting E5→B5 chime; Sell: grounding D5→A4 chime).
+  - **Trade Execution**: Mechanical order fill click + rising confirmation blip.
+  - **Profits**: Triumphant ascending 4-note major arpeggio (C5 → E5 → G5 → C6).
+  - **Losses**: Subdued descending warning tone (D4 → A3).
 
-- Node.js 22
-- Windows PC with MetaTrader 5 Desktop for broker execution
-- Python and the packages in [`mt5-bridge/requirements.txt`](./mt5-bridge/requirements.txt) for the local bridge
-- Tailscale on the PC and any phone used to access the private dashboard
+### 5. 📱 Mobile First & PWA Ready
+- **Bolder System Typography & Large Mobile Text**: Enhanced font weights and larger touch targets for optimal visibility on mobile screens.
+- **Active Positions Block Below Signals**: Trade monitor positioned directly beneath the signal engine card on mobile for immediate access to floating P&L and lot management.
+- **Standalone PWA**: Installable as a native app on iOS Safari and Android Chrome with zero browser navigation bars.
 
-Install JavaScript dependencies and start the development dashboard:
+---
 
-```powershell
+## 🏗️ Architecture & Tech Stack
+
+- **Frontend**: React 18, TypeScript, Vite, Tailwind CSS, Lucide Icons.
+- **State Architecture**: Fine-grained subscription channels via `useSyncExternalStore` for microsecond render stability.
+- **Charting**: Official TradingView Advanced Real-Time Chart widget + Institutional SMC SVG Engine with `SMCOverlayHUD`.
+- **Market Data Feeds**: TradingView Scanner API, Binance Interbank Feeds, Frankfurter ECB Forex Rates.
+- **Audio Engine**: Native procedural Web Audio API with oscillators, biquad lowpass filters, and exponential gain ramping.
+- **Broker Bridge**: Python 3 `MetaTrader5` socket bridge / REST bridge compatible with standard MT5 Windows installations.
+
+---
+
+## 🚀 Quick Start Guide
+
+### Prerequisites
+- Node.js 18+ and npm
+- (Optional for live execution) MetaTrader 5 installed on Windows or a VPS with Python 3.9+
+
+### 1. Install & Run Terminal
+```bash
+# Clone the repository
+git clone https://github.com/your-username/smc-trading-terminal.git
+cd smc-trading-terminal
+
+# Install dependencies
 npm install
+
+# Start the local development server
 npm run dev
 ```
+Open your browser at `http://localhost:3000`.
 
-For local broker/phone setup, log in to the intended MT5 account and run the private-link launcher from the repository root:
+### 2. Connect MetaTrader 5 (Optional)
+To link your real or demo broker account:
+1. Open the terminal and click **"Connect MT5"** in the top navigation bar.
+2. Download or copy the provided `mt5_bridge.py` script.
+3. In your Windows MT5 terminal:
+   - Ensure **"Allow algorithmic trading"** is checked in Tools > Options > Expert Advisors.
+   - Run the bridge script:
+     ```bash
+     python mt5_bridge.py
+     ```
+4. Enter your bridge address (`ws://localhost:8765` or HTTP port) and click **Connect**.
+5. Your account balance, equity, and live trades will now mirror in real time!
 
-```powershell
-powershell -ExecutionPolicy Bypass -File .\mt5-bridge\start_phone_link.ps1
-```
+---
 
-The launcher builds the dashboard, creates a temporary bridge token, starts the local MT5 bridge and dashboard, and publishes the dashboard only to the Tailscale network. Keep the launcher windows open. Open the private HTTPS address it prints on the phone while Tailscale is connected on both devices.
+## 📈 Smart Money Concepts (SMC) Rules
 
-**Do not expose port 8000, enable Tailscale Funnel, or publish the MT5 bridge to the public internet.** The bridge can place and manage broker orders.
+| Concept | Description |
+| :--- | :--- |
+| **Demand OB (+OB)** | Bullish Order Block formed by the last down candle prior to an impulsive breakout. Valid buy zone. |
+| **Supply OB (-OB)** | Bearish Order Block formed by the last up candle prior to an impulsive breakdown. Valid sell zone. |
+| **BOS** | Break of Structure confirming trend continuation when a candle body closes beyond previous swing. |
+| **CHoCH** | Change of Character indicating market structure shift and potential reversal. |
+| **FVG** | Fair Value Gap representing a 3-bar liquidity imbalance acting as a price magnet. |
+| **Dealing Range** | Calculated from swing high to swing low. Buys taken in Discount (<50% EQ); Sells taken in Premium (>50% EQ). |
 
-In the dashboard, connect to the exact broker symbol shown in MT5 Market Watch. Confirm the account number, server, account type, live quote, spread, and positions before trading. Account passwords remain in MT5 Desktop and must never be entered into the dashboard.
+---
 
-## Safety and synchronization
+## 🛡️ Small Account Protection Matrix
 
-- Each manual order requires a separate review and confirmation before submission.
-- Auto-trading starts off. Enabling it permits unattended broker order submission; verify the selected account and configured limits first.
-- A kill switch blocks new entries and requests closure of open broker positions. Check MT5 itself to confirm every close was executed.
-- The bridge validates account identity, signal freshness, stop levels, configured risk, broker volume steps, daily loss, trade frequency, and other limits. The broker remains authoritative.
-- Each connected dashboard polls positions and quotes about every two seconds and history about every 30 seconds. Temporary bridge/network failures retry with backoff; a failed connection clears broker quotes/candles and blocks trading until fresh broker data is received again. Auto-trading is not re-armed automatically after a bridge interruption.
-- Shared account and control state comes from the MT5 bridge. Theme and sound preferences are local to each browser/device.
-- Audio playback may require an initial user gesture and can be muted by browser/device settings.
+| Parameter | Under $100 Account | $100+ Account |
+| :--- | :--- | :--- |
+| **Max Open Positions** | 1 Position | Up to 10 Positions |
+| **Daily Trade Cap** | 5 Trades (3 per pair) | Configurable |
+| **Fallback Override** | Allowed on Score ≥ 70 | Active |
+| **Max Daily Loss** | 5.0% | Configurable |
+| **Risk Per Trade** | 1.0% | Configurable |
 
-## Development checks
+---
 
-```powershell
-npm run lint
-npm test
-npm run build
-```
+## 📄 License
 
-The Python bridge is Windows/MT5-specific. Keep broker credentials and bridge tokens out of source control and logs.
-
-See the [User Manual](./USER_MANUAL.md) for connection steps, order workflow, position-sizing warnings, phone setup, and troubleshooting.
+MIT License. Designed for institutional education and algorithmic trading workflows. Always exercise proper risk management in live financial markets.

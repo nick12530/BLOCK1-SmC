@@ -8,7 +8,7 @@
  */
 
 import React, { useState, useMemo } from 'react';
-import { useMarket, useTicker } from '../hooks/useTradingStore';
+import { useMarket, useTicker, useEngine } from '../hooks/useTradingStore';
 import { tradingEngine } from '../engine/tradingEngine';
 import {
   ArrowRight,
@@ -20,6 +20,7 @@ import {
   Minus,
   Plus,
   Compass,
+  Bot,
 } from 'lucide-react';
 import { Signal, TradeDirection } from '../types/smc';
 import { buildSignalRationale } from '../engine/tradeJournal';
@@ -32,6 +33,7 @@ interface SignalEngineCardProps {
 export const SignalEngineCard: React.FC<SignalEngineCardProps> = React.memo(({ onExecuteSignal }) => {
   const market = useMarket();
   const ticker = useTicker();
+  const engine = useEngine();
 
   // Execution parameters
   const [lotSize, setLotSize] = useState<number>(0.01);
@@ -134,10 +136,10 @@ export const SignalEngineCard: React.FC<SignalEngineCardProps> = React.memo(({ o
   };
 
   return (
-    <div className="bg-white dark:bg-[#0d1823] border border-slate-200/90 dark:border-[#1a3040] rounded-2xl p-4 sm:p-5 flex flex-col justify-between shadow-xs space-y-4 font-mono text-xs transition-colors">
-      {/* Header: Title, Direction Switcher & Copy */}
+    <div className="bg-white dark:bg-[#0d1823] border border-slate-200/90 dark:border-[#1a3040] rounded-xl sm:rounded-2xl p-2.5 sm:p-4.5 flex flex-col justify-between shadow-xs space-y-2.5 sm:space-y-4 font-mono text-xs transition-colors">
+      {/* Header: Title, Status Badge, Auto-Trader Toggle & Copy Action */}
       <div className="flex items-center justify-between border-b border-slate-100 dark:border-zinc-800/80 pb-3 flex-wrap gap-2">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <Zap className="w-4 h-4 text-emerald-500" />
           <h2 className="font-extrabold text-sm text-slate-900 dark:text-zinc-100 uppercase tracking-wider">
             Multi-Strategy Signal Deck
@@ -151,45 +153,33 @@ export const SignalEngineCard: React.FC<SignalEngineCardProps> = React.memo(({ o
               ? `${rawSig.direction} · ${rawSig.strategy} · ${ticker.spread} PTS`
               : market.brokerMarketData
                 ? `SCANNING · ${ticker.spread} PTS`
-                : 'WAITING FOR VERIFIED MT5 DATA'}
+                : `WAITING FOR VERIFIED MT5 DATA · ${ticker.spread} PTS`}
           </span>
-        </div>
 
-        <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3" aria-label="Ranked strategy signals">
-          {market.signals.map((signal, index) => {
-            const id = `${signal.strategy}:${signal.direction}:${signal.timeframe}:${signal.timestamp}`;
-            const isSelected = rawSig === signal;
-            return (
-              <button
-                key={id}
-                type="button"
-                onClick={() => setSelectedSignalId(id)}
-                aria-pressed={isSelected}
-                className={`rounded-xl border p-3 text-left transition-colors ${
-                  isSelected
-                    ? 'border-sky-500 bg-sky-50 dark:bg-sky-950/30'
-                    : 'border-slate-200 bg-slate-50 hover:border-slate-400 dark:border-zinc-800 dark:bg-zinc-900/60 dark:hover:border-zinc-600'
-                }`}
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-[10px] font-bold uppercase tracking-wide text-slate-500 dark:text-zinc-400">
-                    #{index + 1} · {signal.strategy}
-                  </span>
-                  <span className={`font-bold ${signal.direction === 'BUY' ? 'text-emerald-600' : 'text-rose-600'}`}>
-                    {signal.direction} · {signal.score.toFixed(1)}
-                  </span>
-                </div>
-                <div className="mt-1 text-[11px] text-slate-600 dark:text-zinc-300">
-                  {signal.timeframe} · Entry {signal.entry} · SL {signal.sl} · TP {signal.tp}
-                </div>
-              </button>
-            );
-          })}
-          {market.signals.length === 0 && (
-            <div className="rounded-xl border border-dashed border-slate-300 p-3 text-[11px] text-slate-500 dark:border-zinc-700 dark:text-zinc-400 sm:col-span-2 xl:col-span-3">
-              Scanning SMC, trend-pullback, and volatility-breakout setups from closed broker candles.
-            </div>
-          )}
+          {/* Dedicated Auto-Trader Toggle Button */}
+          <button
+            type="button"
+            onClick={() => tradingEngine.toggleAutoTrade()}
+            aria-pressed={engine.auto_trade}
+            className={`flex items-center gap-1.5 px-3 py-1 rounded-lg border text-xs font-bold transition-all cursor-pointer ${
+              engine.auto_trade
+                ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-600 dark:text-emerald-400 shadow-xs ring-1 ring-emerald-500/20'
+                : 'bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 border-slate-200 dark:border-zinc-700 text-slate-700 dark:text-zinc-300'
+            }`}
+            title={
+              engine.auto_trade
+                ? 'Auto-Trader is ACTIVE (Automatically executes verified institutional setups). Click to turn OFF.'
+                : 'Auto-Trader is OFF (Manual orders only). Click to turn ON.'
+            }
+          >
+            <span
+              className={`w-2 h-2 rounded-full ${
+                engine.auto_trade ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400 dark:bg-zinc-500'
+              }`}
+            />
+            <Bot className="w-3.5 h-3.5" />
+            <span>Auto-Trader: {engine.auto_trade ? 'ON' : 'OFF'}</span>
+          </button>
         </div>
 
         <div className="flex items-center gap-2">
@@ -202,6 +192,44 @@ export const SignalEngineCard: React.FC<SignalEngineCardProps> = React.memo(({ o
             {copied ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
           </button>
         </div>
+      </div>
+
+      {/* Ranked Strategy Signals Grid (Dedicated Row) */}
+      <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3" aria-label="Ranked strategy signals">
+        {market.signals.map((signal, index) => {
+          const id = `${signal.strategy}:${signal.direction}:${signal.timeframe}:${signal.timestamp}`;
+          const isSelected = rawSig === signal;
+          return (
+            <button
+              key={id}
+              type="button"
+              onClick={() => setSelectedSignalId(id)}
+              aria-pressed={isSelected}
+              className={`rounded-xl border p-3 text-left transition-colors cursor-pointer ${
+                isSelected
+                  ? 'border-sky-500 bg-sky-50 dark:bg-sky-950/30 ring-1 ring-sky-500/30'
+                  : 'border-slate-200 bg-slate-50 hover:border-slate-400 dark:border-zinc-800 dark:bg-zinc-900/60 dark:hover:border-zinc-600'
+              }`}
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[10px] font-bold uppercase tracking-wide text-slate-500 dark:text-zinc-400">
+                  #{index + 1} · {signal.strategy}
+                </span>
+                <span className={`font-bold ${signal.direction === 'BUY' ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
+                  {signal.direction} · {signal.score.toFixed(1)}
+                </span>
+              </div>
+              <div className="mt-1 text-[11px] text-slate-600 dark:text-zinc-300">
+                {signal.timeframe} · Entry {signal.entry} · SL {signal.sl} · TP {signal.tp}
+              </div>
+            </button>
+          );
+        })}
+        {market.signals.length === 0 && (
+          <div className="rounded-xl border border-dashed border-slate-300 p-3 text-[11px] text-slate-500 dark:border-zinc-700 dark:text-zinc-400 sm:col-span-2 xl:col-span-3">
+            Scanning SMC, trend-pullback, and volatility-breakout setups from closed broker candles.
+          </div>
+        )}
       </div>
 
       <div

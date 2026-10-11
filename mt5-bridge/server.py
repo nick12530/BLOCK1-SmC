@@ -94,9 +94,71 @@ def initialize_state_database() -> None:
 initialize_state_database()
 
 
+def get_safe_timezone(tz_name: str) -> timezone:
+    try:
+        from zoneinfo import ZoneInfo
+        return ZoneInfo(tz_name)
+    except Exception:
+        # Fallback for Windows systems without tzdata installed
+        # America/New_York is UTC-4 in summer (EDT), UTC-5 in winter (EST)
+        now_utc = datetime.now(timezone.utc)
+        month = now_utc.month
+        is_dst = 3 < month < 11
+        if month == 3:
+            is_dst = now_utc.day >= 8 and (now_utc.weekday() == 6 or now_utc.day >= 14)
+        elif month == 11:
+            is_dst = now_utc.day < 7 and now_utc.weekday() != 6
+        offset_hours = -4 if is_dst else -5
+        return timezone(timedelta(hours=offset_hours))
+
+
 def configured_news_blackout(now: datetime) -> bool:
-    local_time = now.astimezone(ZoneInfo(RISK_CONFIG["newsBlackoutTimeZone"])).strftime("%H:%M")
-    return any(window["start"] <= local_time < window["end"] for window in RISK_CONFIG["newsBlackoutWindows"])
+    try:
+        tz = get_safe_timezone(RISK_CONFIG.get("newsBlackoutTimeZone", "America/New_York"))
+        local_time = now.astimezone(tz).strftime("%H:%M")
+        return any(window["start"] <= local_time < window["end"] for window in RISK_CONFIG.get("newsBlackoutWindows", []))
+    except Exception:
+        return False
+
+
+def resolve_broker_symbol(symbol: str) -> str:
+    cleaned = (symbol or "").strip()
+    if not cleaned:
+        return cleaned
+
+    # 1. Exact match in MT5
+    info = mt5.symbol_info(cleaned)
+    if info is not None:
+        return cleaned
+
+    try:
+        all_symbols = mt5.symbols_get()
+        if not all_symbols:
+            return cleaned
+
+        upper_clean = cleaned.upper().replace("/", "")
+
+        # 2. Case-insensitive exact match
+        for s in all_symbols:
+            if s.name.upper() == upper_clean:
+                return s.name
+
+        # 3. Match broker suffix (e.g. XAUUSD matches XAUUSD.vx, XAUUSDm, XAUUSD.r)
+        candidates = [s.name for s in all_symbols if s.name.upper().startswith(upper_clean)]
+        if candidates:
+            visible = [c for c in candidates if (sym_info := mt5.symbol_info(c)) and sym_info.visible]
+            return visible[0] if visible else candidates[0]
+
+        # 4. Gold alias match (e.g. XAUUSD <-> GOLD)
+        if "XAU" in upper_clean or "GOLD" in upper_clean:
+            gold_candidates = [s.name for s in all_symbols if "XAUUSD" in s.name.upper() or "GOLD" in s.name.upper()]
+            if gold_candidates:
+                visible = [c for c in gold_candidates if (sym_info := mt5.symbol_info(c)) and sym_info.visible]
+                return visible[0] if visible else gold_candidates[0]
+    except Exception:
+        pass
+
+    return cleaned
 
 
 def get_symbol_spec(login: int, server: str, symbol: str, info: Any) -> dict:
@@ -276,15 +338,16 @@ def read_positions() -> list[dict]:
 def read_snapshot(symbol: str) -> dict:
     account = require_account()
     positions = read_positions()
-    if not mt5.symbol_select(symbol, True):
-        raise HTTPException(status_code=400, detail=f"MT5 could not select symbol {symbol!r}.")
-    info = mt5.symbol_info(symbol)
-    tick = mt5.symbol_info_tick(symbol)
+    resolved_symbol = resolve_broker_symbol(symbol)
+    if not mt5.symbol_select(resolved_symbol, True):
+        raise HTTPException(status_code=400, detail=f"MT5 could not select symbol {resolved_symbol!r} (requested as {symbol!r}).")
+    info = mt5.symbol_info(resolved_symbol)
+    tick = mt5.symbol_info_tick(resolved_symbol)
     if info is None or tick is None:
-        raise HTTPException(status_code=503, detail=f"No current MT5 quote for {symbol!r}.")
-    symbol_spec = get_symbol_spec(account["login"], account["server"], symbol, info)
+        raise HTTPException(status_code=503, detail=f"No current MT5 quote for {resolved_symbol!r}.")
+    symbol_spec = get_symbol_spec(account["login"], account["server"], resolved_symbol, info)
     if info.point <= 0 or tick.bid <= 0 or tick.ask <= 0:
-        raise HTTPException(status_code=503, detail=f"MT5 returned an invalid quote for {symbol!r}.")
+        raise HTTPException(status_code=503, detail=f"MT5 returned an invalid quote for {resolved_symbol!r}.")
     account_mode = {
         mt5.ACCOUNT_TRADE_MODE_DEMO: "demo",
         mt5.ACCOUNT_TRADE_MODE_REAL: "live",
@@ -307,7 +370,7 @@ def read_snapshot(symbol: str) -> dict:
         ).fetchone()[0] == "true"
 
     def candles(timeframe: int) -> list[dict]:
-        rates = mt5.copy_rates_from_pos(symbol, timeframe, 0, 100)
+        rates = mt5.copy_rates_from_pos(resolved_symbol, timeframe, 0, 100)
         if rates is None:
             return []
         return [
@@ -326,7 +389,7 @@ def read_snapshot(symbol: str) -> dict:
     return {
          "account": account,
          "positions": positions,
-         "symbol": symbol,
+         "symbol": resolved_symbol,
          "accountMode": account_mode,
          "tradingHalted": trading_halted,
          "autoTrade": auto_trade,
@@ -366,8 +429,10 @@ def read_closed_trades(days: int, symbol: str) -> list[dict]:
         raise HTTPException(status_code=503, detail=f"MT5 positions unavailable: {mt5.last_error()}")
     open_position_ids = {int(position.ticket) for position in open_positions}
     deals_by_position: dict[int, list[Any]] = {}
+    resolved_symbol = resolve_broker_symbol(symbol)
     for deal in deals:
-        if str(deal.symbol) == symbol:
+        deal_sym = str(deal.symbol)
+        if deal_sym == symbol or deal_sym == resolved_symbol or deal_sym.startswith(symbol):
             deals_by_position.setdefault(int(deal.position_id), []).append(deal)
 
     exits_by_position: dict[int, list[Any]] = {}
@@ -532,9 +597,10 @@ def place_trade(payload: TradeRequest, request: Request) -> dict:
     if payload.instrumentType == "standard" and configured_news_blackout(now):
         raise HTTPException(status_code=423, detail="Configured high-impact news blackout window is active.")
 
-    symbol = payload.symbol.strip()
+    raw_symbol = payload.symbol.strip()
+    symbol = resolve_broker_symbol(raw_symbol)
     if not mt5.symbol_select(symbol, True):
-        raise HTTPException(status_code=400, detail=f"MT5 could not select symbol {symbol!r}.")
+        raise HTTPException(status_code=400, detail=f"MT5 could not select symbol {symbol!r} (requested as {raw_symbol!r}).")
 
     info = mt5.symbol_info(symbol)
     tick = mt5.symbol_info_tick(symbol)

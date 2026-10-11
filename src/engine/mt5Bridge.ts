@@ -240,7 +240,13 @@ export class MT5BridgeConnector {
 
   setSymbol(newSymbol: string) {
     if (!newSymbol) return;
-    this.symbol = newSymbol.trim();
+    const clean = newSymbol.trim();
+    const saved = typeof window !== 'undefined' ? localStorage.getItem('smc_mt5_symbol') : null;
+    if (saved && saved.toUpperCase().startsWith(clean.toUpperCase())) {
+      this.symbol = saved;
+    } else {
+      this.symbol = clean;
+    }
     if (this.isConnected) {
       void this.refreshAccount();
       void this.refreshClosedTrades();
@@ -415,6 +421,11 @@ export class MT5BridgeConnector {
     if (!this.expectedAccount || !this.isConnected) {
       throw new Error('MT5 account identity is not verified. Reconnect to the currently logged-in terminal account.');
     }
+    const brokerSymbol =
+      this.symbol && this.symbol.toUpperCase().startsWith(trade.symbol.toUpperCase())
+        ? this.symbol
+        : trade.symbol;
+
     const response = await this.request<{
       ok: true;
       ticket: number;
@@ -441,6 +452,7 @@ export class MT5BridgeConnector {
       method: 'POST',
       body: JSON.stringify({
         ...trade,
+        symbol: brokerSymbol,
         clientOrderId: trade.clientOrderId,
         poiKey: trade.poiKey,
         expectedLogin: this.expectedAccount.login,

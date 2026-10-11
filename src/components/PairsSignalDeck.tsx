@@ -10,7 +10,7 @@
  * - Responsive 4-column desktop / 2-column tablet / mobile-stacked deck
  */
 
-import React from 'react';
+import React, { useState } from 'react';
 import type { PairAnalysis } from '../engine/multiPairScanner';
 import type { SupportedSymbol } from '../engine/instrumentConfig';
 import {
@@ -21,6 +21,8 @@ import {
   ArrowRight,
   Crosshair,
   Check,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 import { useEngine, useTicker } from '../hooks/useTradingStore';
 import { tradingEngine } from '../engine/tradingEngine';
@@ -41,47 +43,95 @@ export const PairsSignalDeck: React.FC<PairsSignalDeckProps> = React.memo(({
   const engine = useEngine();
   const ticker = useTicker();
   const autoSelectEnabled = engine.autoSelectBestScenario ?? true;
+  const [isCollapsed, setIsCollapsed] = useState(false);
 
   if (!scannerAnalyses.length) return null;
 
   return (
-    <div className="bg-white dark:bg-[#0c141d] border border-slate-200/90 dark:border-[#1a2d3e] rounded-xl sm:rounded-2xl p-2.5 sm:p-4 shadow-xs flex flex-col gap-2.5 sm:gap-3.5 font-sans transition-colors">
-      {/* Top Header: Title, Active Status & Auto-Select Toggle */}
-      <div className="flex items-center justify-between gap-2 border-b border-slate-100 dark:border-[#162736] pb-2.5 sm:pb-3 flex-wrap">
-        <div className="flex items-center gap-2.5">
-          <div className="p-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-sky-500">
-            <Layers className="w-5 h-5" />
+    <div className="bg-white dark:bg-[#0c141d] border border-slate-200/90 dark:border-[#1a2d3e] rounded-xl sm:rounded-2xl p-2 sm:p-3.5 shadow-xs flex flex-col gap-2.5 font-sans transition-colors">
+      {/* Top Header: Title, Active Status, Auto-Select Toggle & Collapse Toggle */}
+      <div className="flex items-center justify-between gap-2 border-b border-slate-100 dark:border-[#162736] pb-2 sm:pb-2.5 flex-wrap">
+        <div className="flex items-center gap-2">
+          <div className="p-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-sky-500">
+            <Layers className="w-4 h-4" />
           </div>
-          <div className="flex items-center gap-2 flex-wrap">
-            <h2 className="text-sm sm:text-base font-black text-slate-900 dark:text-white uppercase tracking-wider">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <h2 className="text-xs sm:text-sm font-black text-slate-900 dark:text-white uppercase tracking-wider">
               Multi-Pair Signal Deck
             </h2>
-            <span className="text-xs font-mono px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold border border-slate-200 dark:border-slate-700 whitespace-nowrap">
+            <span className="text-[10px] font-mono px-1.5 py-0.2 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold border border-slate-200 dark:border-slate-700 whitespace-nowrap">
               4 Pairs
             </span>
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5">
           {/* Auto-Select in Chart Toggle */}
           <button
             type="button"
             onClick={() => tradingEngine.setAutoSelectBestScenario(!autoSelectEnabled)}
-            className={`text-xs font-mono font-bold px-3 py-1.5 rounded-lg border transition-all cursor-pointer flex items-center gap-1.5 ${
+            className={`text-[11px] font-mono font-bold px-2.5 py-1 rounded-lg border transition-all cursor-pointer flex items-center gap-1.5 ${
               autoSelectEnabled
                 ? 'bg-sky-500/10 text-sky-600 dark:text-sky-300 border-sky-500/30'
                 : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-700'
             }`}
             title="Automatically focus the highest-scoring currency pair on the chart"
           >
-            <Sparkles className="w-4 h-4 text-sky-400" />
-            <span>Auto-Align: {autoSelectEnabled ? 'ON' : 'OFF'}</span>
+            <Sparkles className="w-3.5 h-3.5 text-sky-400" />
+            <span className="hidden sm:inline">Auto-Align: {autoSelectEnabled ? 'ON' : 'OFF'}</span>
+            <span className="sm:hidden">{autoSelectEnabled ? 'Auto ON' : 'Auto OFF'}</span>
+          </button>
+
+          {/* Minimize / Expand Toggle */}
+          <button
+            type="button"
+            onClick={() => setIsCollapsed(!isCollapsed)}
+            className="p-1 rounded-lg text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+            title={isCollapsed ? 'Expand Signal Deck Cards' : 'Collapse to Compact Deck Bar'}
+          >
+            {isCollapsed ? <ChevronDown className="w-4 h-4" /> : <ChevronUp className="w-4 h-4" />}
           </button>
         </div>
       </div>
 
-      {/* Grid: 4 Elegantly Arranged Currency Pair Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+      {/* When Collapsed: Sleek Single-Line Horizontal Deck for Maximum Space */}
+      {isCollapsed ? (
+        <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-0.5 font-mono text-xs">
+          {scannerAnalyses.map((item) => {
+            const isActive = item.symbol === activeSymbol;
+            const isBull = item.bias === 'BUY';
+            const isBear = item.bias === 'SELL';
+            return (
+              <button
+                key={item.symbol}
+                type="button"
+                onClick={() => onSelectSymbol(item.symbol)}
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border transition-all cursor-pointer whitespace-nowrap ${
+                  isActive
+                    ? 'bg-sky-500/10 text-sky-600 dark:text-sky-400 border-sky-500 ring-1 ring-sky-500/40 shadow-xs'
+                    : 'bg-slate-50 dark:bg-[#071018] border-slate-200 dark:border-[#142232] text-slate-700 dark:text-slate-300 hover:border-slate-300 dark:hover:border-slate-600'
+                }`}
+              >
+                <span className="font-black">{item.symbol === 'XAUUSD' ? 'GOLD' : item.symbol}</span>
+                <span className="tabular-nums font-bold text-[11px]">${item.price.toFixed(item.symbol === 'XAUUSD' || item.symbol === 'USDJPY' ? 2 : 4)}</span>
+                <span
+                  className={`text-[10px] font-black px-1.5 py-0.2 rounded ${
+                    isBull
+                      ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
+                      : isBear
+                      ? 'bg-rose-500/15 text-rose-600 dark:text-rose-400'
+                      : 'bg-slate-200 dark:bg-slate-800'
+                  }`}
+                >
+                  {item.bias} ({item.confluenceScore}%)
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      ) : (
+        /* Grid: 4 Elegantly Arranged Currency Pair Cards */
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4">
         {scannerAnalyses.map((item) => {
           const isActive = item.symbol === activeSymbol;
           const isBull = item.bias === 'BUY';
@@ -207,6 +257,7 @@ export const PairsSignalDeck: React.FC<PairsSignalDeckProps> = React.memo(({
           );
         })}
       </div>
+      )}
     </div>
   );
 });

@@ -42,7 +42,18 @@ import type { Signal } from './types/smc';
 import type { SupportedSymbol } from './engine/instrumentConfig';
 import { getInstrumentConfig } from './engine/instrumentConfig';
 import type { PairAnalysis } from './engine/multiPairScanner';
-import { BarChart3, Layers, Activity } from 'lucide-react';
+import {
+  BarChart3,
+  Layers,
+  Activity,
+  Zap,
+  Briefcase,
+  Columns,
+  LayoutGrid,
+  Maximize2,
+  TrendingUp,
+  TrendingDown,
+} from 'lucide-react';
 import {
   buildSignalRationale,
   findCorrespondingOrderBlock,
@@ -70,6 +81,15 @@ const HelpCenterModal = lazy(() =>
 const MobileServerModal = lazy(() =>
   import('./components/MobileServerModal').then((module) => ({ default: module.MobileServerModal }))
 );
+
+export type WorkspaceTab =
+  | 'split'
+  | 'chart'
+  | 'signals'
+  | 'positions'
+  | 'zones'
+  | 'scanner'
+  | 'overview';
 
 export default function App() {
   const { isDark, toggleTheme } = useTheme();
@@ -105,8 +125,16 @@ export default function App() {
     onConfirm: () => void;
   } | null>(null);
 
-  // Workspace tab to offload screen-cluttering widgets while keeping them running in background
-  const [workspaceTab, setWorkspaceTab] = useState<'chart' | 'zones' | 'scanner'>('chart');
+  // Master workspace tab: defaults to 'chart' on mobile and 'split' on desktop
+  const [workspaceTab, setWorkspaceTab] = useState<WorkspaceTab>(() => {
+    if (typeof window !== 'undefined' && window.innerWidth < 1024) {
+      return 'chart';
+    }
+    return 'split';
+  });
+
+  // Secondary sub-tab for Left Pane within PC Dual Split Workstation mode
+  const [splitLeftTab, setSplitLeftTab] = useState<'chart' | 'zones' | 'scanner'>('chart');
 
   // Global audio alerts & chime listener for institutional signals
   useAudioNotifications();
@@ -345,117 +373,418 @@ export default function App() {
             />
           </section>
 
-          {/* Institutional Split Workstation: Chart Hub on Left, Signals & Execution on Right */}
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 sm:gap-4 lg:gap-5 items-start">
-            {/* Left Column (lg:col-span-7 xl:col-span-8): Primary Chart Terminal & Visualizer */}
-            <div className="lg:col-span-7 xl:col-span-8 flex flex-col gap-3 sm:gap-4 order-2 lg:order-1">
-              {/* Workspace Navigation Bar: Focused Chart vs Zones vs Background Scanner */}
-              <div className="flex items-center justify-between border-b border-slate-200/80 dark:border-[#1a3040] pb-2.5 pt-0.5 flex-wrap gap-2 font-mono text-xs">
-                <div className="flex items-center gap-1 bg-slate-100 dark:bg-[#0c141d] p-0.5 rounded-lg border border-slate-200 dark:border-[#1a3040]">
-                  <button
-                    type="button"
-                    onClick={() => setWorkspaceTab('chart')}
-                    className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
-                      workspaceTab === 'chart'
-                        ? 'bg-slate-900 text-white dark:bg-sky-500 dark:text-slate-950 shadow-xs'
-                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-                    }`}
-                    title="Focused high-resolution candlestick chart with SMC overlay"
-                  >
-                    <BarChart3 className="w-3.5 h-3.5" />
-                    <span>Primary Chart Terminal</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setWorkspaceTab('zones')}
-                    className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
-                      workspaceTab === 'zones'
-                        ? 'bg-slate-900 text-white dark:bg-sky-500 dark:text-slate-950 shadow-xs'
-                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-                    }`}
-                    title="Deep dive into dealing ranges, equilibrium, and order block progression"
-                  >
-                    <Layers className="w-3.5 h-3.5" />
-                    <span>Zones &amp; Order Blocks</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setWorkspaceTab('scanner')}
-                    className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
-                      workspaceTab === 'scanner'
-                        ? 'bg-slate-900 text-white dark:bg-sky-500 dark:text-slate-950 shadow-xs'
-                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-                    }`}
-                    title="Multi-pair scanner matrix (runs continuously in background)"
-                  >
-                    <Activity className="w-3.5 h-3.5" />
-                    <span>Cross-Pair Scanner Matrix</span>
-                  </button>
-                </div>
-                <div className="hidden sm:flex items-center gap-2 text-[11px] text-slate-500">
+          {/* Master Workspace Navigation Bar: PC & Mobile Optimized Tabs Arrangement */}
+          <div className="w-full bg-white dark:bg-[#0c141d] border border-slate-200/90 dark:border-[#1a3040] rounded-xl sm:rounded-2xl p-1.5 sm:p-2 shadow-xs transition-colors">
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              {/* Responsive Tabs Strip with smooth touch scrolling and no scrollbar */}
+              <div className="flex items-center gap-1 sm:gap-1.5 overflow-x-auto no-scrollbar w-full lg:w-auto font-mono text-xs p-0.5">
+                {/* 1. PC: Dual Split Workstation */}
+                <button
+                  type="button"
+                  onClick={() => setWorkspaceTab('split')}
+                  className={`hidden lg:flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-bold transition-all cursor-pointer whitespace-nowrap ${
+                    workspaceTab === 'split'
+                      ? 'bg-slate-900 text-white dark:bg-sky-500 dark:text-slate-950 shadow-xs'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-[#12202e]'
+                  }`}
+                  title="Institutional Dual-Pane Workstation: Chart on Left, Signals & Execution on Right"
+                >
+                  <Columns className="w-3.5 h-3.5" />
+                  <span>Dual Split Workstation</span>
+                </button>
+
+                {/* 2. Primary Chart Terminal */}
+                <button
+                  type="button"
+                  onClick={() => setWorkspaceTab('chart')}
+                  className={`flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg font-bold transition-all cursor-pointer whitespace-nowrap ${
+                    workspaceTab === 'chart'
+                      ? 'bg-slate-900 text-white dark:bg-sky-500 dark:text-slate-950 shadow-xs'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-[#12202e]'
+                  }`}
+                  title="Focused High-Resolution Candlestick Chart Terminal"
+                >
+                  <BarChart3 className="w-3.5 h-3.5" />
+                  <span>Chart</span>
+                  <span className="hidden sm:inline">Terminal</span>
+                </button>
+
+                {/* 3. Signal Engine */}
+                <button
+                  type="button"
+                  onClick={() => setWorkspaceTab('signals')}
+                  className={`flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg font-bold transition-all cursor-pointer whitespace-nowrap relative ${
+                    workspaceTab === 'signals'
+                      ? 'bg-slate-900 text-white dark:bg-sky-500 dark:text-slate-950 shadow-xs'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-[#12202e]'
+                  }`}
+                  title="Multi-Strategy Signal Engine & 1-Click Execution"
+                >
+                  <Zap className="w-3.5 h-3.5 text-amber-500" />
+                  <span>Signals</span>
+                  {market.signal && (
+                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse ml-0.5" />
+                  )}
+                </button>
+
+                {/* 4. Live Positions */}
+                <button
+                  type="button"
+                  onClick={() => setWorkspaceTab('positions')}
+                  className={`flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg font-bold transition-all cursor-pointer whitespace-nowrap ${
+                    workspaceTab === 'positions'
+                      ? 'bg-slate-900 text-white dark:bg-sky-500 dark:text-slate-950 shadow-xs'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-[#12202e]'
+                  }`}
+                  title="Open Positions, Trailing Stop, P&L & Trade Ledger"
+                >
+                  <Briefcase className="w-3.5 h-3.5 text-sky-400" />
+                  <span>Positions</span>
+                  {positionsState.positions.length > 0 && (
+                    <span className="px-1.5 py-0.2 rounded-full text-[10px] font-mono bg-sky-500 text-slate-950 font-black">
+                      {positionsState.positions.length}
+                    </span>
+                  )}
+                </button>
+
+                {/* 5. Zones & Order Blocks */}
+                <button
+                  type="button"
+                  onClick={() => setWorkspaceTab('zones')}
+                  className={`flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg font-bold transition-all cursor-pointer whitespace-nowrap ${
+                    workspaceTab === 'zones'
+                      ? 'bg-slate-900 text-white dark:bg-sky-500 dark:text-slate-950 shadow-xs'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-[#12202e]'
+                  }`}
+                  title="Dealing Ranges, Equilibrium, and Order Block Progression"
+                >
+                  <Layers className="w-3.5 h-3.5 text-indigo-400" />
+                  <span>Zones</span>
+                  <span className="hidden sm:inline">&amp; OBs</span>
+                </button>
+
+                {/* 6. Cross-Pair Scanner */}
+                <button
+                  type="button"
+                  onClick={() => setWorkspaceTab('scanner')}
+                  className={`flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg font-bold transition-all cursor-pointer whitespace-nowrap ${
+                    workspaceTab === 'scanner'
+                      ? 'bg-slate-900 text-white dark:bg-sky-500 dark:text-slate-950 shadow-xs'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-[#12202e]'
+                  }`}
+                  title="Multi-Pair SMC Scanner Matrix (4 Instruments)"
+                >
+                  <Activity className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>Scanner</span>
+                  <span className="hidden sm:inline">Matrix</span>
+                </button>
+
+                {/* 7. Overview (All) - visible on mobile / tablet */}
+                <button
+                  type="button"
+                  onClick={() => setWorkspaceTab('overview')}
+                  className={`lg:hidden flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg font-bold transition-all cursor-pointer whitespace-nowrap ${
+                    workspaceTab === 'overview'
+                      ? 'bg-slate-900 text-white dark:bg-sky-500 dark:text-slate-950 shadow-xs'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-[#12202e]'
+                  }`}
+                  title="Display all components stacked together in single scroll"
+                >
+                  <LayoutGrid className="w-3.5 h-3.5" />
+                  <span>All</span>
+                </button>
+              </div>
+
+              {/* Right Desktop Telemetry */}
+              <div className="hidden lg:flex items-center gap-2 text-xs font-mono">
+                <div className="flex items-center gap-2 text-[11px] text-slate-500 dark:text-slate-400 bg-slate-100/60 dark:bg-[#071018] px-2.5 py-1 rounded-lg border border-slate-200/60 dark:border-[#142232]">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
                   <span>Continuous 4-Pair SMC Scanner Engine</span>
                 </div>
               </div>
+            </div>
+          </div>
 
-              {/* Dynamic Workstation Component View */}
-              {workspaceTab === 'chart' && (
-                <section id="price-structure-chart" aria-label="FX chart" className="w-full">
-                  <TradingViewWidget
-                    isDark={isDark}
-                    symbol={getInstrumentConfig(ticker.symbol).tvSymbol}
-                    interval="1"
-                    height={560}
-                    onExpand={() => setActiveModal('tradingview')}
-                    onOpenHelp={() => setActiveModal('help')}
+          {/* VIEW 1: DUAL SPLIT WORKSTATION (PC Institutional Layout) */}
+          {workspaceTab === 'split' && (
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 sm:gap-4 lg:gap-5 items-start">
+              {/* Left Column (lg:col-span-7 xl:col-span-8): Primary Chart Terminal & Visualizer */}
+              <div className="lg:col-span-7 xl:col-span-8 flex flex-col gap-3 sm:gap-4">
+                {/* Secondary Sub-Tabs for Left Pane */}
+                <div className="flex items-center justify-between border-b border-slate-200/80 dark:border-[#1a3040] pb-2 pt-0.5 flex-wrap gap-2 font-mono text-xs">
+                  <div className="flex items-center gap-1 bg-slate-100 dark:bg-[#0c141d] p-0.5 rounded-lg border border-slate-200 dark:border-[#1a3040]">
+                    <button
+                      type="button"
+                      onClick={() => setSplitLeftTab('chart')}
+                      className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                        splitLeftTab === 'chart'
+                          ? 'bg-slate-900 text-white dark:bg-sky-500 dark:text-slate-950 shadow-xs'
+                          : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                      }`}
+                      title="High-resolution candlestick chart with SMC overlay"
+                    >
+                      <BarChart3 className="w-3.5 h-3.5" />
+                      <span>Primary Chart Terminal</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSplitLeftTab('zones')}
+                      className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                        splitLeftTab === 'zones'
+                          ? 'bg-slate-900 text-white dark:bg-sky-500 dark:text-slate-950 shadow-xs'
+                          : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                      }`}
+                      title="Deep dive into dealing ranges, equilibrium, and order block progression"
+                    >
+                      <Layers className="w-3.5 h-3.5" />
+                      <span>Zones &amp; Order Blocks</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSplitLeftTab('scanner')}
+                      className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                        splitLeftTab === 'scanner'
+                          ? 'bg-slate-900 text-white dark:bg-sky-500 dark:text-slate-950 shadow-xs'
+                          : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                      }`}
+                      title="Multi-pair scanner matrix"
+                    >
+                      <Activity className="w-3.5 h-3.5" />
+                      <span>Scanner Matrix</span>
+                    </button>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setWorkspaceTab('chart')}
+                    className="text-[11px] text-sky-600 dark:text-sky-400 hover:underline flex items-center gap-1 font-bold cursor-pointer"
+                    title="Expand Chart to Full Screen Width"
+                  >
+                    <Maximize2 className="w-3 h-3" />
+                    <span>Focus Full Width</span>
+                  </button>
+                </div>
+
+                {splitLeftTab === 'chart' && (
+                  <section id="price-structure-chart" aria-label="FX chart" className="w-full">
+                    <TradingViewWidget
+                      isDark={isDark}
+                      symbol={getInstrumentConfig(ticker.symbol).tvSymbol}
+                      interval="1"
+                      height={560}
+                      onExpand={() => setActiveModal('tradingview')}
+                      onOpenHelp={() => setActiveModal('help')}
+                    />
+                  </section>
+                )}
+
+                {splitLeftTab === 'zones' && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4 w-full">
+                    <section aria-label="Dealing Range Zones" className="w-full">
+                      <DealingRangeZonesCard />
+                    </section>
+                    <section aria-label="Order Blocks Progression" className="w-full">
+                      <OrderBlocksProgressionCard />
+                    </section>
+                  </div>
+                )}
+
+                {splitLeftTab === 'scanner' && (
+                  <section aria-label="Multi-pair scanner" className="w-full">
+                    <MultiPairScannerPanel
+                      scannerAnalyses={scannerAnalyses}
+                      activeSymbol={ticker.symbol}
+                      onSelectSymbol={handleSelectSymbol}
+                      onExecuteTrade={handleExecuteAnalysis}
+                    />
+                  </section>
+                )}
+              </div>
+
+              {/* Right Column (lg:col-span-5 xl:col-span-4): Signals Deck & Live Execution Hub */}
+              <div className="lg:col-span-5 xl:col-span-4 flex flex-col gap-3 sm:gap-4">
+                <section aria-label="Trade signals" className="w-full">
+                  <SignalEngineCard onExecuteSignal={handleExecuteSignal} />
+                </section>
+                <section aria-label="Open positions" className="w-full">
+                  <LiveExecutionCard
+                    onFocusChart={() =>
+                      document
+                        .getElementById('price-structure-chart')
+                        ?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+                    }
+                    onOpenClosedTradesModal={() => setActiveModal('closed_trades')}
+                    onOpenDailyReportModal={() => setActiveModal('daily_report')}
                   />
                 </section>
-              )}
+              </div>
+            </div>
+          )}
 
-              {workspaceTab === 'zones' && (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4 w-full">
-                  <section aria-label="Dealing Range Zones" className="w-full">
-                    <DealingRangeZonesCard />
-                  </section>
-                  <section aria-label="Order Blocks Progression" className="w-full">
-                    <OrderBlocksProgressionCard />
-                  </section>
+          {/* VIEW 2: PRIMARY CHART TERMINAL (FOCUSED VIEW - PC FULL WIDTH & MOBILE) */}
+          {workspaceTab === 'chart' && (
+            <div className="flex flex-col gap-3 sm:gap-4 w-full">
+              <section id="price-structure-chart" aria-label="FX chart" className="w-full">
+                <TradingViewWidget
+                  isDark={isDark}
+                  symbol={getInstrumentConfig(ticker.symbol).tvSymbol}
+                  interval="1"
+                  height={560}
+                  onExpand={() => setActiveModal('tradingview')}
+                  onOpenHelp={() => setActiveModal('help')}
+                />
+              </section>
+
+              {/* Quick Signal Action Ribbon below chart */}
+              {market.signal && (
+                <div className="flex items-center justify-between p-3 rounded-xl bg-white dark:bg-[#0c141d] border border-slate-200 dark:border-[#1a3040] font-mono text-xs flex-wrap gap-2.5 shadow-xs transition-colors">
+                  <div className="flex items-center gap-2.5 flex-wrap">
+                    <span
+                      className={`px-2.5 py-1 rounded-lg text-xs font-black uppercase flex items-center gap-1 ${
+                        market.signal.direction === 'BUY'
+                          ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30'
+                          : 'bg-rose-500/15 text-rose-600 dark:text-rose-400 border border-rose-500/30'
+                      }`}
+                    >
+                      {market.signal.direction === 'BUY' ? (
+                        <TrendingUp className="w-3.5 h-3.5" />
+                      ) : (
+                        <TrendingDown className="w-3.5 h-3.5" />
+                      )}
+                      <span>{market.signal.direction} SIGNAL</span>
+                    </span>
+                    <span className="text-slate-600 dark:text-slate-300 font-bold">
+                      Entry: ${market.signal.entry.toFixed(2)} · SL: ${market.signal.sl.toFixed(2)} · TP: ${market.signal.tp.toFixed(2)}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handleExecuteSignal(undefined, 1)}
+                      className={`px-3 py-1.5 rounded-lg font-black text-xs transition-all cursor-pointer shadow-xs ${
+                        market.signal.direction === 'BUY'
+                          ? 'bg-emerald-600 hover:bg-emerald-500 text-white'
+                          : 'bg-rose-600 hover:bg-rose-500 text-white'
+                      }`}
+                    >
+                      1-Click Execute {market.signal.direction}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setWorkspaceTab('signals')}
+                      className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 font-bold cursor-pointer transition-colors"
+                    >
+                      Signal Details →
+                    </button>
+                  </div>
                 </div>
               )}
+            </div>
+          )}
 
-              {workspaceTab === 'scanner' && (
-                <section aria-label="Multi-pair scanner" className="w-full">
+          {/* VIEW 3: SIGNAL ENGINE & CONFLUENCE */}
+          {workspaceTab === 'signals' && (
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 sm:gap-4 lg:gap-5 items-start">
+              <div className="lg:col-span-7 xl:col-span-8 w-full">
+                <section aria-label="Trade signals" className="w-full">
+                  <SignalEngineCard onExecuteSignal={handleExecuteSignal} />
+                </section>
+              </div>
+              <div className="lg:col-span-5 xl:col-span-4 w-full">
+                <section aria-label="Open positions" className="w-full">
+                  <LiveExecutionCard
+                    onFocusChart={() => setWorkspaceTab('chart')}
+                    onOpenClosedTradesModal={() => setActiveModal('closed_trades')}
+                    onOpenDailyReportModal={() => setActiveModal('daily_report')}
+                  />
+                </section>
+              </div>
+            </div>
+          )}
+
+          {/* VIEW 4: LIVE POSITIONS & EXECUTION LEDGER */}
+          {workspaceTab === 'positions' && (
+            <div className="w-full">
+              <section aria-label="Open positions" className="w-full">
+                <LiveExecutionCard
+                  onFocusChart={() => setWorkspaceTab('chart')}
+                  onOpenClosedTradesModal={() => setActiveModal('closed_trades')}
+                  onOpenDailyReportModal={() => setActiveModal('daily_report')}
+                />
+              </section>
+            </div>
+          )}
+
+          {/* VIEW 5: ZONES & ORDER BLOCKS */}
+          {workspaceTab === 'zones' && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4 w-full">
+              <section aria-label="Dealing Range Zones" className="w-full">
+                <DealingRangeZonesCard />
+              </section>
+              <section aria-label="Order Blocks Progression" className="w-full">
+                <OrderBlocksProgressionCard />
+              </section>
+            </div>
+          )}
+
+          {/* VIEW 6: MULTI-PAIR SCANNER MATRIX */}
+          {workspaceTab === 'scanner' && (
+            <section aria-label="Multi-pair scanner" className="w-full">
+              <MultiPairScannerPanel
+                scannerAnalyses={scannerAnalyses}
+                activeSymbol={ticker.symbol}
+                onSelectSymbol={handleSelectSymbol}
+                onExecuteTrade={handleExecuteAnalysis}
+              />
+            </section>
+          )}
+
+          {/* VIEW 7: ALL-IN-ONE OVERVIEW (STACKED) */}
+          {workspaceTab === 'overview' && (
+            <div className="flex flex-col gap-3 sm:gap-4 lg:gap-5">
+              <section id="price-structure-chart" aria-label="FX chart" className="w-full">
+                <TradingViewWidget
+                  isDark={isDark}
+                  symbol={getInstrumentConfig(ticker.symbol).tvSymbol}
+                  interval="1"
+                  height={520}
+                  onExpand={() => setActiveModal('tradingview')}
+                  onOpenHelp={() => setActiveModal('help')}
+                />
+              </section>
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 sm:gap-4 lg:gap-5 items-start">
+                <div className="lg:col-span-7 xl:col-span-8 flex flex-col gap-3 sm:gap-4">
+                  <section aria-label="Trade signals" className="w-full">
+                    <SignalEngineCard onExecuteSignal={handleExecuteSignal} />
+                  </section>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4 w-full">
+                    <DealingRangeZonesCard />
+                    <OrderBlocksProgressionCard />
+                  </div>
+                </div>
+                <div className="lg:col-span-5 xl:col-span-4 flex flex-col gap-3 sm:gap-4">
+                  <section aria-label="Open positions" className="w-full">
+                    <LiveExecutionCard
+                      onFocusChart={() =>
+                        document
+                          .getElementById('price-structure-chart')
+                          ?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+                      }
+                      onOpenClosedTradesModal={() => setActiveModal('closed_trades')}
+                      onOpenDailyReportModal={() => setActiveModal('daily_report')}
+                    />
+                  </section>
                   <MultiPairScannerPanel
                     scannerAnalyses={scannerAnalyses}
                     activeSymbol={ticker.symbol}
                     onSelectSymbol={handleSelectSymbol}
                     onExecuteTrade={handleExecuteAnalysis}
                   />
-                </section>
-              )}
+                </div>
+              </div>
             </div>
-
-            {/* Right Column (lg:col-span-5 xl:col-span-4): Signals Deck & Live Execution Hub */}
-            <div className="lg:col-span-5 xl:col-span-4 flex flex-col gap-3 sm:gap-4 order-1 lg:order-2">
-              {/* Primary Signal Engine (Deterministic Verification & Execution) */}
-              <section aria-label="Trade signals" className="w-full">
-                <SignalEngineCard onExecuteSignal={handleExecuteSignal} />
-              </section>
-
-              {/* Active Trade Block (Live Positions, P&L, 1.5R Scale-Out, Trailing Stop) */}
-              <section aria-label="Open positions" className="w-full">
-                <LiveExecutionCard
-                  onFocusChart={() =>
-                    document
-                      .getElementById('price-structure-chart')
-                      ?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-                  }
-                  onOpenClosedTradesModal={() => setActiveModal('closed_trades')}
-                  onOpenDailyReportModal={() => setActiveModal('daily_report')}
-                />
-              </section>
-            </div>
-          </div>
+          )}
         </WorkspaceErrorBoundary>
       </main>
 

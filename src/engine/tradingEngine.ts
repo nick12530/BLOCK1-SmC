@@ -214,6 +214,7 @@ export class TradingEngine {
     balance: number;
     equity: number;
     freeMargin: number;
+    leverage?: number;
   } = {
     connected: false,
     login: '',
@@ -222,13 +223,17 @@ export class TradingEngine {
     balance: 10.0,
     equity: 10.0,
     freeMargin: 10.0,
+    leverage: RISK_CONFIG.brokerLeverage || 2000,
   };
+
+  leverage: number = RISK_CONFIG.brokerLeverage || 2000;
 
   account: AccountState = {
     balance: 10.0,
     equity: 10.0,
     margin_free: 10.0,
     margin_used: 0.0,
+    leverage: RISK_CONFIG.brokerLeverage || 2000,
     initial_balance: 10.0,
     daily_start_balance: 10.0,
     max_daily_loss_pct: RISK_CONFIG.maxDailyLossPercent,
@@ -341,6 +346,8 @@ export class TradingEngine {
     }
     this.autoTrade = this.pendingCentralAutoTrade ?? snapshot.autoTrade;
     if (this.killSwitch) this.autoTrade = false;
+    const brokerLeverage = (account as any).leverage || this.leverage || 2000;
+    this.leverage = brokerLeverage;
     this.mt5Account = {
       connected: true,
       login: String(account.login),
@@ -349,10 +356,12 @@ export class TradingEngine {
       balance: account.balance,
       equity: account.equity,
       freeMargin: account.margin_free,
+      leverage: brokerLeverage,
     };
     this.account.balance = account.balance;
     this.account.equity = account.equity;
     this.account.margin_free = account.margin_free;
+    this.account.leverage = brokerLeverage;
     if (!this.hasBrokerDayAnchor) {
       this.account.daily_start_balance = account.balance;
       this.dailyRiskDate = new Date().toISOString().slice(0, 10);
@@ -991,6 +1000,7 @@ export class TradingEngine {
         compoundingStage: this.getCompoundingStage(this.account.balance),
         marketSchedule: getGoldMarketSchedule(),
         mt5Account: this.mt5Account,
+        leverage: this.leverage,
         allowHighConfluenceOverride: this.allowHighConfluenceOverride,
         autoSelectBestScenario: this.autoSelectBestScenario,
         tradingViewSynced: tradingViewFeed.getState().connected,
@@ -1012,6 +1022,7 @@ export class TradingEngine {
       balance: bal,
       equity: eq,
       freeMargin: bal,
+      leverage: this.leverage,
     };
 
     this.account.balance = bal;
@@ -1639,11 +1650,16 @@ export class TradingEngine {
             partialTaken = true;
             partialProfitLocked = (partialProfitLocked || 0) + partialProfit;
 
-            // Automatically move Stop Loss to Breakeven + 2 points (or 2 pips)
-            const bePlus2 = p.type === 'BUY'
-              ? p.price_open + cfg.pipSize * 2
-              : p.price_open - cfg.pipSize * 2;
-            currentSl = Number(bePlus2.toFixed(cfg.digits));
+            // Spread-Compensated Safe Breakeven:
+            // Dynamic buffer covering broker spread + commission + market noise, preventing premature runner shakeout
+            const spreadPts = this.spread || 20;
+            const spreadDistance = (spreadPts * cfg.pipSize) / (cfg.digits === 2 ? 10 : 1);
+            const noiseDistance = 0.15 * (this._cachedMarket?.signal?.atr || cfg.pipSize * 5);
+            const safeBeOffset = Number(Math.max(cfg.pipSize * 3, spreadDistance + noiseDistance).toFixed(cfg.digits));
+            const beSafePrice = p.type === 'BUY'
+              ? p.price_open + safeBeOffset
+              : p.price_open - safeBeOffset;
+            currentSl = Number(beSafePrice.toFixed(cfg.digits));
             beLocked = true;
 
             // Extend target for runner 50% to full 3.0R+ institutional POI
@@ -1657,24 +1673,29 @@ export class TradingEngine {
             }
 
             this.slog(
-              `💰 MULTI-TIER SCALE-OUT (1.5R SECURED): Closed 50% (${halfVolume}L) for +$${partialProfit.toFixed(2)} USD (#${p.ticket}). SL moved to BE+2pts ($${currentSl.toFixed(cfg.digits)}). Runner (${currentVolume}L) targeting 3.0R+ ($${currentTp.toFixed(cfg.digits)})!`,
+              `💰 MULTI-TIER SCALE-OUT (1.5R SECURED): Closed 50% (${halfVolume}L) for +$${partialProfit.toFixed(2)} USD (#${p.ticket}). SL moved to Spread-Protected BE ($${currentSl.toFixed(cfg.digits)}). Runner (${currentVolume}L) targeting 3.0R+ ($${currentTp.toFixed(cfg.digits)})!`,
               'trade'
             );
 
             if (this.mt5Account.connected && mt5Bridge.getStatus().connected) {
-              void mt5Bridge.modifyPositionStops(p.ticket, currentSl, currentTp).catch(() => {});
+              const targetTicket = p.brokerTicket || p.positionTicket || p.ticket;
+              void mt5Bridge.modifyPositionStops(targetTicket, currentSl, currentTp).catch(() => {});
             }
           }
         }
 
-        // 2. Auto Break-Even (BE) Lock fallback: at 1:1 RR (or 15 pips) move SL to entry + 2 buffer
-        const beBuffer = cfg.pipSize * 2;
+        // 2. Auto Break-Even (BE) Lock fallback: at 1:1 RR (or 15 pips) move SL to spread-protected buffer
+        const spreadPts = this.spread || 20;
+        const spreadDistance = (spreadPts * cfg.pipSize) / (cfg.digits === 2 ? 10 : 1);
+        const noiseDistance = 0.15 * (this._cachedMarket?.signal?.atr || cfg.pipSize * 5);
+        const safeBeOffset = Number(Math.max(cfg.pipSize * 3, spreadDistance + noiseDistance).toFixed(cfg.digits));
         if (this.autoBeEnabled && !beLocked && (pts >= cfg.pipSize * 15 || rMultiple >= 1.0)) {
           beLocked = true;
-          currentSl = Number((p.type === 'BUY' ? p.price_open + beBuffer : p.price_open - beBuffer).toFixed(cfg.digits));
-          this.slog(`🛡️ ZERO-RISK BE LOCK: SL moved to $${currentSl.toFixed(cfg.digits)} (#${p.ticket}) · Trade cannot lose!`, 'trade');
+          currentSl = Number((p.type === 'BUY' ? p.price_open + safeBeOffset : p.price_open - safeBeOffset).toFixed(cfg.digits));
+          this.slog(`🛡️ ZERO-RISK BE LOCK: SL moved to $${currentSl.toFixed(cfg.digits)} (#${p.ticket}) · Spread protected!`, 'trade');
           if (this.mt5Account.connected && mt5Bridge.getStatus().connected) {
-            void mt5Bridge.modifyPositionStops(p.ticket, currentSl, currentTp).catch(() => {});
+            const targetTicket = p.brokerTicket || p.positionTicket || p.ticket;
+            void mt5Bridge.modifyPositionStops(targetTicket, currentSl, currentTp).catch(() => {});
           }
         }
 
@@ -1694,7 +1715,8 @@ export class TradingEngine {
                 trailLocked = true;
                 this.slog(`🏹 OB TRAILING STOP: SL trailed to base of confirmed Bullish Order Block ($${currentSl.toFixed(cfg.digits)}) (#${p.ticket})`, 'trade');
                 if (this.mt5Account.connected && mt5Bridge.getStatus().connected) {
-                  void mt5Bridge.modifyPositionStops(p.ticket, currentSl, currentTp).catch(() => {});
+                  const targetTicket = p.brokerTicket || p.positionTicket || p.ticket;
+                  void mt5Bridge.modifyPositionStops(targetTicket, currentSl, currentTp).catch(() => {});
                 }
               }
             }
@@ -1709,7 +1731,8 @@ export class TradingEngine {
                 trailLocked = true;
                 this.slog(`🏹 OB TRAILING STOP: SL trailed to base of confirmed Bearish Order Block ($${currentSl.toFixed(cfg.digits)}) (#${p.ticket})`, 'trade');
                 if (this.mt5Account.connected && mt5Bridge.getStatus().connected) {
-                  void mt5Bridge.modifyPositionStops(p.ticket, currentSl, currentTp).catch(() => {});
+                  const targetTicket = p.brokerTicket || p.positionTicket || p.ticket;
+                  void mt5Bridge.modifyPositionStops(targetTicket, currentSl, currentTp).catch(() => {});
                 }
               }
             }
@@ -1762,9 +1785,17 @@ export class TradingEngine {
       }
     }
 
-    // Recalculate floating PnL after any closes
+    // Recalculate floating PnL and margin used after any closes
     const currentFloatingPnl = this.positions.reduce((sum, p) => sum + p.profit, 0);
     this.account.equity = Number((this.account.balance + currentFloatingPnl).toFixed(2));
+    const totalMarginUsed = this.positions.reduce((sum, p) => {
+      const pSym = (p.symbol || this.activeSymbol) as SupportedSymbol;
+      const cSize = getInstrumentConfig(pSym).contractSize || 100;
+      const notional = p.volume * cSize * p.price_open;
+      return sum + notional / (this.leverage || 2000);
+    }, 0);
+    this.account.margin_used = Number(totalMarginUsed.toFixed(2));
+    this.account.margin_free = Number(Math.max(0, this.account.equity - this.account.margin_used).toFixed(2));
     this.refreshDailyRiskState();
 
     // Invalidate ticker cache and emit
@@ -2098,36 +2129,6 @@ export class TradingEngine {
         ? `Liquidity sweep into M5 Bullish Order Block (+OB) in Discount zone (<50% EQ) on ${this.activeSymbol}. Confirmed FVG displacement with 1:2.0 RR target.`
         : `Liquidity sweep into M5 Bearish Order Block (-OB) in Premium zone (>50% EQ) on ${this.activeSymbol}. Confirmed FVG displacement with 1:2.0 RR target.`);
 
-    // If MT5 bridge is actively connected, synchronize order to MT5 broker terminal for the selected currency pair
-    if (this.mt5Account.connected && mt5Bridge.getStatus().connected) {
-      mt5Bridge.setSymbol(this.activeSymbol);
-      void (async () => {
-        try {
-          const res = await mt5Bridge.sendTrade({
-            direction,
-            volume: riskVolume,
-            symbol: this.activeSymbol,
-            sl: Number(sl.toFixed(config.digits)),
-            tp: Number(tp.toFixed(config.digits)),
-            rationale,
-            clientOrderId: `${this.activeSymbol}:${direction}:${Date.now()}`,
-            poiKey: this.getSignalPoiKey(direction, openPrice),
-            instrumentType: this.instrumentType,
-            signalTimeframe: 'M5',
-            signalTimestamp: new Date().toISOString(),
-          });
-          this.recordMt5Rationale(
-            res.ticket,
-            res.positionTicket,
-            rationale,
-            findCorrespondingOrderBlock(direction, openPrice, market.zones)
-          );
-          this.slog(`MT5 Broker Fill #${res.ticket}: ${this.activeSymbol} ${direction} ${res.filledVolume}L @ ${res.price}`, 'trade');
-        } catch (err: any) {
-          this.slog(`MT5 Broker Execution Error on ${this.activeSymbol}: ${err?.message || 'Rejected'}`, 'error');
-        }
-      })();
-    }
     const newPos: Position = {
       ticket,
       symbol: this.activeSymbol,
@@ -2152,6 +2153,42 @@ export class TradingEngine {
       ),
     };
 
+    // If MT5 bridge is actively connected, synchronize order to MT5 broker terminal for the selected currency pair
+    if (this.mt5Account.connected && mt5Bridge.getStatus().connected) {
+      mt5Bridge.setSymbol(this.activeSymbol);
+      void (async () => {
+        try {
+          const res = await mt5Bridge.sendTrade({
+            direction,
+            volume: riskVolume,
+            symbol: this.activeSymbol,
+            sl: Number(sl.toFixed(config.digits)),
+            tp: Number(tp.toFixed(config.digits)),
+            rationale,
+            clientOrderId: `${this.activeSymbol}:${direction}:${Date.now()}`,
+            poiKey: this.getSignalPoiKey(direction, openPrice),
+            instrumentType: this.instrumentType,
+            signalTimeframe: 'M5',
+            signalTimestamp: new Date().toISOString(),
+          });
+          newPos.ticket = res.ticket;
+          newPos.brokerTicket = res.ticket;
+          newPos.positionTicket = res.positionTicket || res.ticket;
+          this.recordMt5Rationale(
+            res.ticket,
+            res.positionTicket,
+            rationale,
+            findCorrespondingOrderBlock(direction, openPrice, market.zones)
+          );
+          this.slog(`MT5 Broker Fill #${res.ticket}: ${this.activeSymbol} ${direction} ${res.filledVolume}L @ ${res.price}`, 'trade');
+          this.invalidatePositions();
+          this.emit('positions');
+        } catch (err: any) {
+          this.slog(`MT5 Broker Execution Error on ${this.activeSymbol}: ${err?.message || 'Rejected'}`, 'error');
+        }
+      })();
+    }
+
     this.positions = [...this.positions, newPos];
     this.selectedTicket = ticket; // Automatically focus the newly entered trade on the chart!
     this.recordAcceptedEntry(direction, market.signal);
@@ -2174,9 +2211,10 @@ export class TradingEngine {
         this.slog(`Unable to close MT5 position #${ticket}: bridge is offline.`, 'error');
         return;
       }
-      void mt5Bridge.closePosition(ticket).catch((error: unknown) => {
+      const targetBrokerTicket = pos.brokerTicket || pos.positionTicket || ticket;
+      void mt5Bridge.closePosition(targetBrokerTicket).catch((error: unknown) => {
         this.slog(
-          `Unable to close MT5 position #${ticket}: ${error instanceof Error ? error.message : 'Unknown bridge error'}`,
+          `Unable to close MT5 position #${targetBrokerTicket}: ${error instanceof Error ? error.message : 'Unknown bridge error'}`,
           'error'
         );
       });
@@ -2254,9 +2292,10 @@ export class TradingEngine {
         this.slog(`Unable to update MT5 position #${ticket}: bridge is offline.`, 'error');
         return;
       }
-      void mt5Bridge.modifyPositionStops(ticket, sl, tp).catch((error: unknown) => {
+      const targetBrokerTicket = position.brokerTicket || position.positionTicket || ticket;
+      void mt5Bridge.modifyPositionStops(targetBrokerTicket, sl, tp).catch((error: unknown) => {
         this.slog(
-          `Unable to update MT5 position #${ticket}: ${error instanceof Error ? error.message : 'Unknown bridge error'}`,
+          `Unable to update MT5 position #${targetBrokerTicket}: ${error instanceof Error ? error.message : 'Unknown bridge error'}`,
           'error'
         );
       });

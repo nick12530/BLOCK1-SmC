@@ -232,6 +232,15 @@ export function calculateSmallAccountPositionSize(
   const riskPerMinLot = riskPerStandardLot * minLot;
 
   if (riskPerMinLot > riskBudget) {
+    // Micro Account / 1:2000 Leverage allowance:
+    // With 1:2000 leverage, required margin for 0.01 lot is only ~$1.32.
+    // If the account is a micro seed ($10-$50) and the dollar risk is capped <= $2.50, allow 0.01 lot.
+    if (equity <= 50 && riskPerMinLot <= 2.50) {
+      return {
+        safeVolume: minLot,
+        riskAmount: Number(riskPerMinLot.toFixed(2)),
+      };
+    }
     return {
       safeVolume: null,
       riskAmount: riskPerMinLot,

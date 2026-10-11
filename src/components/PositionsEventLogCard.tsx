@@ -9,7 +9,7 @@
  */
 
 import React, { useMemo } from 'react';
-import { usePositions, useEvents, useTicker } from '../hooks/useTradingStore';
+import { usePositions, useEvents, useTicker, useEngine } from '../hooks/useTradingStore';
 import { tradingEngine } from '../engine/tradingEngine';
 import { FileText, History, XCircle, ShieldCheck, Eye, CheckCircle2 } from 'lucide-react';
 
@@ -27,6 +27,7 @@ export const PositionsEventLogCard: React.FC<PositionsEventLogCardProps> = React
   const positionsState = usePositions();
   const eventsState = useEvents();
   const ticker = useTicker();
+  const engine = useEngine();
 
   const positions = positionsState.positions;
   const selectedTicket = positionsState.selectedTicket ?? (positions.length > 0 ? positions[positions.length - 1].ticket : null);
@@ -35,9 +36,9 @@ export const PositionsEventLogCard: React.FC<PositionsEventLogCardProps> = React
     return positions.reduce((sum, p) => sum + p.profit, 0);
   }, [positions]);
 
-  // Account Margin & Leverage Calculations (Micro account friendly)
+  // Account Margin & Leverage Calculations (Micro account friendly with 1:2000 leverage)
   const marginMetrics = useMemo(() => {
-    const leverage = 1000; // 1:1000 standard gold micro account leverage
+    const leverage = engine.leverage || engine.mt5Account?.leverage || 2000;
     const totalVolume = positions.reduce((sum, p) => sum + p.volume, 0);
     // Gold contract size is 100 oz per lot
     const notionalValue = totalVolume * 100 * ticker.bid;
@@ -53,7 +54,7 @@ export const PositionsEventLogCard: React.FC<PositionsEventLogCardProps> = React
       equity: equity.toFixed(2),
       marginLevelPct,
     };
-  }, [positions, ticker.bid, ticker.balance, totalFloatingPnl]);
+  }, [positions, ticker.bid, ticker.balance, totalFloatingPnl, engine.leverage, engine.mt5Account?.leverage]);
 
   const handleMoveToBreakEven = (ticket: number) => {
     const pos = positions.find((p) => p.ticket === ticket);

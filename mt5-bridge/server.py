@@ -241,6 +241,7 @@ def require_account() -> dict:
         "equity": float(account.equity),
         "margin_free": float(account.margin_free),
         "trade_mode": int(account.trade_mode),
+        "leverage": int(getattr(account, "leverage", 2000) or 2000),
     }
 
 
@@ -565,7 +566,14 @@ def place_trade(payload: TradeRequest, request: Request) -> dict:
     max_safe_volume = risk_budget / risk_per_lot if risk_per_lot > 0 else 0
     safe_step_count = math.floor((max_safe_volume - symbol_spec["volumeMin"]) / symbol_spec["volumeStep"] + 1e-9)
     safe_volume = symbol_spec["volumeMin"] + max(0, safe_step_count) * symbol_spec["volumeStep"]
-    if max_safe_volume < symbol_spec["volumeMin"] or payload.volume > safe_volume + 1e-9:
+    small_account_threshold = float(RISK_CONFIG.get("smallAccountThresholdUsd", 50))
+    small_account_max_risk = float(RISK_CONFIG.get("smallAccountMaxRiskUsd", 2.5))
+    is_small_account_micro = (
+        account["equity"] <= small_account_threshold
+        and payload.volume <= symbol_spec["volumeMin"] + 1e-9
+        and (risk_per_lot * symbol_spec["volumeMin"]) <= small_account_max_risk
+    )
+    if not is_small_account_micro and (max_safe_volume < symbol_spec["volumeMin"] or payload.volume > safe_volume + 1e-9):
         raise HTTPException(
             status_code=400,
             detail=f"Requested volume exceeds the configured {RISK_CONFIG['riskPercentPerTrade']}% equity risk for this stop.",

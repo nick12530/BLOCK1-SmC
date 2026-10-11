@@ -136,14 +136,18 @@ export const RiskSettingsModal: React.FC<RiskSettingsModalProps> = ({
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div className="rounded-lg border border-rose-200 bg-rose-50 p-3 dark:border-rose-900/50 dark:bg-rose-950/20">
-              <div className="text-[10px] uppercase text-slate-500 dark:text-zinc-400">Max daily loss</div>
-              <div className="mt-1 text-lg font-bold text-rose-600 dark:text-rose-300">{RISK_CONFIG.maxDailyLossPercent}%</div>
+          <div className="grid grid-cols-3 gap-2">
+            <div className="rounded-lg border border-rose-200 bg-rose-50 p-2.5 dark:border-rose-900/50 dark:bg-rose-950/20 text-center">
+              <div className="text-[9px] uppercase text-slate-500 dark:text-zinc-400">Max daily loss</div>
+              <div className="mt-1 text-base font-bold text-rose-600 dark:text-rose-300">{RISK_CONFIG.maxDailyLossPercent}%</div>
             </div>
-            <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 dark:border-emerald-900/50 dark:bg-emerald-950/20">
-              <div className="text-[10px] uppercase text-slate-500 dark:text-zinc-400">Max risk per order</div>
-              <div className="mt-1 text-lg font-bold text-emerald-600 dark:text-emerald-300">{RISK_CONFIG.riskPercentPerTrade}%</div>
+            <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-2.5 dark:border-emerald-900/50 dark:bg-emerald-950/20 text-center">
+              <div className="text-[9px] uppercase text-slate-500 dark:text-zinc-400">Max risk / order</div>
+              <div className="mt-1 text-base font-bold text-emerald-600 dark:text-emerald-300">{RISK_CONFIG.riskPercentPerTrade}%</div>
+            </div>
+            <div className="rounded-lg border border-sky-200 bg-sky-50 p-2.5 dark:border-sky-900/50 dark:bg-sky-950/20 text-center">
+              <div className="text-[9px] uppercase text-slate-500 dark:text-zinc-400">Broker Leverage</div>
+              <div className="mt-1 text-base font-bold text-sky-600 dark:text-sky-300">1:{tradingEngine.leverage || 2000}</div>
             </div>
           </div>
 

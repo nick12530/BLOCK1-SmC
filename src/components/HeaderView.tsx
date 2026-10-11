@@ -55,7 +55,7 @@ export const HeaderView: React.FC<HeaderViewProps> = React.memo(({
   const marginMetrics = useMemo(() => {
     const totalVolume = positions.reduce((sum, p) => sum + p.volume, 0);
     const totalFloatingPnl = positions.reduce((sum, p) => sum + p.profit, 0);
-    const leverage = 1000;
+    const leverage = engine.leverage || mt5?.leverage || 2000;
     const notionalValue = totalVolume * 100 * ticker.bid;
     const marginUsed = notionalValue / leverage;
     const equity = ticker.balance + totalFloatingPnl;
@@ -63,11 +63,12 @@ export const HeaderView: React.FC<HeaderViewProps> = React.memo(({
     const marginLevelPct = marginUsed > 0 ? `${((equity / marginUsed) * 100).toFixed(2)}%` : '0.00%';
 
     return {
+      leverage: `1:${leverage}`,
       marginUsed: marginUsed.toFixed(2),
       freeMargin: freeMargin.toFixed(2),
       marginLevelPct,
     };
-  }, [positions, ticker.bid, ticker.balance]);
+  }, [positions, ticker.bid, ticker.balance, engine.leverage, mt5?.leverage]);
 
   const isProfit = ticker.equity >= ticker.balance;
   const floatingPnl = ticker.equity - ticker.balance;

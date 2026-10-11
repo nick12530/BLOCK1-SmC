@@ -54,7 +54,7 @@ export const LiveExecutionCard: React.FC<LiveExecutionCardProps> = React.memo(({
 
   // Margin & Leverage metrics
   const marginMetrics = useMemo(() => {
-    const leverage = 1000;
+    const leverage = engine.leverage || engine.mt5Account?.leverage || 2000;
     const notionalValue = totalVolume * 100 * ticker.bid;
     const marginUsed = notionalValue / leverage;
     const equity = ticker.balance + totalFloatingPnl;
@@ -62,11 +62,12 @@ export const LiveExecutionCard: React.FC<LiveExecutionCardProps> = React.memo(({
     const marginLevelPct = marginUsed > 0 ? `${((equity / marginUsed) * 100).toFixed(2)}%` : '0.00%';
 
     return {
+      leverage: `1:${leverage}`,
       marginUsed: marginUsed.toFixed(2),
       freeMargin: freeMargin.toFixed(2),
       marginLevelPct,
     };
-  }, [totalVolume, ticker.bid, ticker.balance, totalFloatingPnl]);
+  }, [totalVolume, ticker.bid, ticker.balance, totalFloatingPnl, engine.leverage, engine.mt5Account?.leverage]);
 
   const handleLockBE = (ticket: number) => {
     const pos = positions.find((p) => p.ticket === ticket);

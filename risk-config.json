@@ -6,6 +6,9 @@
   "maxTradesPerHour": 6,
   "directionCooldownMinutes": 5,
   "samePoiCooldownMinutes": 15,
+  "brokerLeverage": 2000,
+  "smallAccountThresholdUsd": 50,
+  "smallAccountMaxRiskUsd": 2.5,
   "newsBlackoutTimeZone": "America/New_York",
   "newsBlackoutWindows": [
     { "start": "08:20", "end": "09:00" },

@@ -5,6 +5,9 @@ import type { SymbolTradingSpec } from '../types/smc';
 export type SymbolRiskSpec = SymbolTradingSpec;
 export const RISK_CONFIG = {
   ...config,
+  brokerLeverage: config.brokerLeverage || 2000,
+  smallAccountThresholdUsd: config.smallAccountThresholdUsd || 50,
+  smallAccountMaxRiskUsd: config.smallAccountMaxRiskUsd || 2.5,
   directionCooldownMs: config.directionCooldownMinutes * 60_000,
   samePoiCooldownMs: config.samePoiCooldownMinutes * 60_000,
 } as const;
@@ -51,7 +54,20 @@ export function calculateRiskBasedVolume(
   const riskAmount = equity * riskPercent / 100;
   const riskPerLot = stopDistancePrice / spec.tickSize * spec.tickValue;
   const rawVolume = riskAmount / riskPerLot;
-  if (rawVolume < spec.volumeMin) return null;
+
+  // Small Account / 1:2000 Leverage Micro Sizing:
+  // For micro seed accounts ($10-$50), standard 0.5% risk ($0.05) cannot reach 0.01 lot.
+  // With 1:2000 leverage, required margin for 0.01 lot is only ~$1.32.
+  // If the dollar stop loss is capped within smallAccountMaxRiskUsd, allow volumeMin.
+  if (rawVolume < spec.volumeMin) {
+    if (equity <= RISK_CONFIG.smallAccountThresholdUsd) {
+      const minLotDollarRisk = riskPerLot * spec.volumeMin;
+      if (minLotDollarRisk <= RISK_CONFIG.smallAccountMaxRiskUsd) {
+        return spec.volumeMin;
+      }
+    }
+    return null;
+  }
   const steps = Math.floor((Math.min(rawVolume, spec.volumeMax) - spec.volumeMin) / spec.volumeStep + 1e-9);
   const volume = spec.volumeMin + Math.max(0, steps) * spec.volumeStep;
   const precision = Math.min(8, (String(spec.volumeStep).split('.')[1] || '').length);

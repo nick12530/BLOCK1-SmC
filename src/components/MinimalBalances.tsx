@@ -103,7 +103,7 @@ export const MinimalBalances: React.FC<MinimalBalancesProps> = ({ snapshot }) =>
         </div>
         <div className="flex items-center gap-1.5 text-[11px] font-mono text-slate-500 dark:text-slate-400 mt-1.5">
           <span>Leverage:</span>
-          <span className="font-semibold text-slate-700 dark:text-slate-300">1:100 Bullion</span>
+          <span className="font-semibold text-emerald-600 dark:text-emerald-400">1:{(snapshot as any).leverage || tradingEngine.leverage || 2000}</span>
         </div>
       </div>
     </div>

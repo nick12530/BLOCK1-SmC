@@ -121,6 +121,8 @@ export interface Signal {
 
 export interface Position {
   ticket: number;
+  brokerTicket?: number;
+  positionTicket?: number;
   symbol?: string;
   time: string;
   type: TradeDirection;
@@ -340,7 +342,9 @@ export interface EngineState {
     balance: number;
     equity: number;
     freeMargin: number;
+    leverage?: number;
   };
+  leverage?: number;
   allowHighConfluenceOverride?: boolean;
   autoSelectBestScenario?: boolean;
   tradingViewSynced?: boolean;
@@ -357,6 +361,7 @@ export interface AccountRiskConfig {
   equity: number;
   margin_free: number;
   margin_used: number;
+  leverage?: number;
   initial_balance: number;
   daily_start_balance: number;
   max_daily_loss_pct: number;

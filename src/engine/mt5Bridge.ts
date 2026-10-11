@@ -8,6 +8,7 @@ export interface BridgeAccountSnapshot {
     balance: number;
     equity: number;
     margin_free: number;
+    leverage?: number;
   };
   positions: Array<{
     ticket: number;

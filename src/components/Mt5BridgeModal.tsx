@@ -217,21 +217,21 @@ export const Mt5BridgeModal: React.FC<Mt5BridgeModalProps> = ({ isOpen, onClose 
             </div>
 
             {/* Quick Presets */}
-            <div className="flex items-center gap-1.5 flex-wrap text-[11px] font-mono">
-              <span className="text-slate-400">Presets:</span>
-              <button
-                type="button"
-                onClick={() => setBridgeUrl('http://127.0.0.1:8000')}
-                className="px-2 py-0.5 rounded bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-slate-600 dark:text-zinc-300 transition-colors cursor-pointer"
-              >
-                Localhost (PC)
-              </button>
+            <div className="flex items-center gap-1.5 flex-wrap text-xs font-mono">
+              <span className="text-slate-400 font-bold">Presets:</span>
               <button
                 type="button"
                 onClick={() => setBridgeUrl(`${window.location.origin}/mt5-bridge`)}
-                className="px-2 py-0.5 rounded bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-slate-600 dark:text-zinc-300 transition-colors cursor-pointer"
+                className="px-2.5 py-1 rounded bg-sky-500/10 hover:bg-sky-500/20 text-sky-600 dark:text-sky-400 border border-sky-500/30 transition-colors cursor-pointer font-bold"
               >
                 Web Proxy (/mt5-bridge)
+              </button>
+              <button
+                type="button"
+                onClick={() => setBridgeUrl('http://127.0.0.1:8000')}
+                className="px-2.5 py-1 rounded bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-slate-700 dark:text-zinc-300 border border-slate-200 dark:border-zinc-700 transition-colors cursor-pointer"
+              >
+                Localhost (Port 8000)
               </button>
             </div>
 

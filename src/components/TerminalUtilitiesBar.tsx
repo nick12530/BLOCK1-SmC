@@ -117,10 +117,15 @@ export const TerminalUtilitiesBar: React.FC<TerminalUtilitiesBarProps> = React.m
 
         <button
           onClick={() => onOpenModal('bridge')}
-          className="min-h-11 min-w-0 whitespace-nowrap py-2 px-2.5 rounded-lg border bg-slate-50 hover:bg-slate-100 dark:bg-zinc-900 dark:hover:bg-zinc-800 border-slate-200 dark:border-zinc-800 text-slate-700 dark:text-zinc-300 transition-colors cursor-pointer flex items-center justify-center gap-1.5 text-xs font-bold"
+          className={`min-h-11 min-w-0 whitespace-nowrap py-2 px-2.5 rounded-lg border transition-colors cursor-pointer flex items-center justify-center gap-1.5 text-xs font-bold ${
+            engine.mt5Account?.connected
+              ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-600 dark:text-emerald-400'
+              : 'bg-slate-50 hover:bg-slate-100 dark:bg-zinc-900 dark:hover:bg-zinc-800 border-slate-200 dark:border-zinc-800 text-slate-700 dark:text-zinc-300'
+          }`}
+          title="Connect or configure MetaTrader 5 Bridge"
         >
-          <Server className="w-4 h-4 text-sky-600 dark:text-sky-400" />
-          <span>MT5</span>
+          <Server className={`w-4 h-4 ${engine.mt5Account?.connected ? 'text-emerald-500' : 'text-sky-600 dark:text-sky-400'}`} />
+          <span>{engine.mt5Account?.connected ? `MT5 #${engine.mt5Account.login}` : 'MT5 Bridge'}</span>
         </button>
 
         <button

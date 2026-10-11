@@ -69,6 +69,13 @@ export const getDefaultServerUrl = () => {
 export function normalizeTailscaleUrl(input: string): string {
   let url = (input || '').trim();
   if (!url) return '';
+  // Support relative proxy paths like /mt5-bridge
+  if (url.startsWith('/')) {
+    if (typeof window !== 'undefined') {
+      return `${window.location.origin}${url.replace(/\/+$/, '')}`;
+    }
+    return url.replace(/\/+$/, '');
+  }
   if (!/^https?:\/\//i.test(url)) {
     // If it's a ts.net MagicDNS address, prefer https, otherwise http
     if (url.includes('.ts.net')) {
@@ -83,7 +90,8 @@ export function normalizeTailscaleUrl(input: string): string {
     if (!parsed.port && /^100\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(parsed.hostname)) {
       parsed.port = '8000';
     }
-    return parsed.origin;
+    const cleanPath = parsed.pathname.replace(/\/+$/, '');
+    return `${parsed.origin}${cleanPath}`;
   } catch {
     return url.replace(/\/+$/, '');
   }
@@ -165,18 +173,30 @@ export class MT5BridgeConnector {
    * Performs an instant ping test to check Tailscale / local bridge reachability and latency.
    */
   async ping(targetUrl?: string): Promise<{ ok: boolean; latencyMs: number; error?: string }> {
-    const url = normalizeTailscaleUrl(targetUrl || this.serverUrl);
+    const rawUrl = targetUrl || this.serverUrl;
+    const url = normalizeTailscaleUrl(rawUrl).replace(/\/+$/, '');
     const start = performance.now();
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 6_000);
     try {
-      const res = await fetch(`${url}/api/health`, {
-        method: 'GET',
-        cache: 'no-store',
-        signal: controller.signal,
-      });
+      // First attempt /ping, fallback to /api/health
+      let res: Response;
+      try {
+        res = await fetch(`${url}/ping`, {
+          method: 'GET',
+          cache: 'no-store',
+          signal: controller.signal,
+        });
+      } catch {
+        res = await fetch(`${url}/api/health`, {
+          method: 'GET',
+          cache: 'no-store',
+          signal: controller.signal,
+        });
+      }
       const latencyMs = Math.round(performance.now() - start);
-      if (res.ok) {
+      // HTTP 200, 401 (token required), or 503 (MT5 desktop waiting) means bridge is online & reached
+      if (res.ok || res.status === 401 || res.status === 503) {
         this.lastLatencyMs = latencyMs;
         this.lastPing = Date.now();
         return { ok: true, latencyMs };
@@ -187,7 +207,7 @@ export class MT5BridgeConnector {
       return {
         ok: false,
         latencyMs,
-        error: err instanceof Error ? err.message : 'Timed out. Verify Tailscale app is active on phone and PC.',
+        error: err instanceof Error ? err.message : 'Timed out. Verify bridge is active or Tailscale is connected.',
       };
     } finally {
       clearTimeout(timeout);
@@ -508,8 +528,9 @@ export class MT5BridgeConnector {
     // 12s timeout to accommodate mobile network transitions and Tailscale DERP packet relays
     const timeout = setTimeout(() => controller.abort(), 12_000);
     const start = performance.now();
+    const baseUrl = this.serverUrl.replace(/\/+$/, '');
     try {
-      const response = await fetch(`${this.serverUrl}${path}`, {
+      const response = await fetch(`${baseUrl}${path}`, {
         ...init,
         cache: 'no-store',
         signal: controller.signal,
@@ -519,9 +540,23 @@ export class MT5BridgeConnector {
         },
       });
       this.lastLatencyMs = Math.round(performance.now() - start);
-      const data = (await response.json()) as T | { detail?: string };
+      const contentType = response.headers.get('content-type') || '';
+      let data: any;
+      if (contentType.includes('application/json')) {
+        data = await response.json();
+      } else {
+        const text = await response.text();
+        if (!response.ok) {
+          throw new Error(`MT5 Bridge error (HTTP ${response.status}): ${text.slice(0, 150) || 'Non-JSON response'}`);
+        }
+        try {
+          data = JSON.parse(text);
+        } catch {
+          throw new Error(`MT5 Bridge returned non-JSON response from ${baseUrl}${path}. Check that MT5 Bridge is running and proxy URL is correct.`);
+        }
+      }
       if (!response.ok) {
-        const detail = (data as { detail?: string }).detail;
+        const detail = (data as { detail?: string })?.detail;
         throw new Error(detail || `MT5 bridge request failed (${response.status}).`);
       }
       return data as T;

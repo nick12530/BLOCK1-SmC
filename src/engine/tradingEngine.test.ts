@@ -453,4 +453,35 @@ describe('TradingEngine Store Architecture', () => {
     const allowedReason = engine.getEntryBlockReason('BUY', highProfitSignal, asianDate.getTime());
     expect(allowedReason).toBeNull();
   });
+
+  it('decouples execution gates and allows profitable trades during direction cooldown', () => {
+    engine.account.balance = 5000;
+    engine.account.equity = 5000;
+    engine.closedTrades = [];
+    (engine as any).entryHistory = [];
+    const now = Date.now();
+
+    // Record an entry to activate direction cooldown
+    engine.recordAcceptedEntry('BUY');
+
+    // Without a valid profitable signal, direction cooldown blocks duplicate entries
+    const emptyCheck = engine.getEntryBlockReason('BUY', null, now);
+    expect(emptyCheck).toBe('Direction cooldown is active.');
+
+    // With a valid profitable signal (RR >= 1.5 with SMC confluence), smart gate decouples and allows entry
+    const profitableSignal: any = {
+      direction: 'BUY',
+      timeframe: 'M5',
+      score: 68,
+      entry: 2000,
+      sl: 1996, // 4 pts risk
+      tp: 2008, // 8 pts reward = 2.0 RR
+      atr: 2.0,
+      reasons: ['Order Block Retest', 'Bullish FVG Confirmation'],
+      timestamp: new Date(now).toISOString(),
+    };
+
+    const smartResult = engine.getEntryBlockReason('BUY', profitableSignal, now);
+    expect(smartResult).toBeNull();
+  });
 });

@@ -74,7 +74,7 @@ export const MinimalHeader: React.FC<MinimalHeaderProps> = ({
           >
             <span
               className={`w-2 h-2 rounded-full ${
-                bridgeStatus.connected ? 'bg-emerald-500' : 'bg-emerald-500 animate-pulse'
+                bridgeStatus.connected ? 'bg-emerald-500' : 'bg-amber-500'
               }`}
             />
             <span className="font-bold">

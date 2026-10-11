@@ -1222,15 +1222,37 @@ export class TradingEngine {
     return adjustedVolume <= riskVolume ? adjustedVolume : null;
   }
 
-  getEntryBlockReason(direction: TradeDirection, signal = this.getMarketSnapshot().signal, now: number = Date.now()): string | null {
+  getEntryBlockReason(
+    direction: TradeDirection,
+    signal = this.getMarketSnapshot().signal,
+    now: number = Date.now(),
+    isManual: boolean = false
+  ): string | null {
     this.entryHistory = this.entryHistory.filter((entry) => now - entry.at < 60 * 60_000);
     if (this.killSwitch) return 'Kill switch is armed.';
     if (this.account.daily_loss_hit || this.account.daily_drawdown_pct >= this.account.max_daily_loss_pct) {
       return 'Daily loss limit reached.';
     }
 
+    // Determine if we have a valid profitable signal
+    // Distinguish between 0-10 scale (e.g. 6.5, 7.2) and 0-100 scale (e.g. 55, 70, 82)
+    const riskDist = signal ? Math.abs(signal.entry - signal.sl) : 0;
+    const rewardDist = signal ? Math.abs(signal.tp - signal.entry) : 0;
+    const rewardRiskRatio = riskDist > 0 ? rewardDist / riskDist : 0;
+
+    const isTenScale = Boolean(signal && signal.score <= 10);
+    const hasValidProfitableSignal = Boolean(
+      signal && (
+        signal.isOutOfSessionException ||
+        (isTenScale ? signal.score >= 6.0 : (signal.score >= 65 || (signal.score >= 60 && rewardRiskRatio >= 1.5))) ||
+        rewardRiskRatio >= 2.0
+      )
+    );
+
     // Small account maximum simultaneous positions limit (Section 7)
-    const maxSimultaneousTrades = this.account.balance <= 100 ? 1 : RISK_CONFIG.maxOpenPositions;
+    const maxSimultaneousTrades = this.account.balance <= 100
+      ? (hasValidProfitableSignal ? 2 : 1)
+      : RISK_CONFIG.maxOpenPositions;
     if (this.positions.length >= maxSimultaneousTrades) {
       return `TRADE_REJECTED: MAX_SIMULTANEOUS_TRADES_REACHED (Account limited to ${maxSimultaneousTrades} open position)`;
     }
@@ -1240,20 +1262,25 @@ export class TradingEngine {
     const todayClosedTrades = this.closedTrades.filter((t) => (t.closedAt || '').startsWith(today));
     const pairTodayTrades = todayClosedTrades.filter((t) => (t.symbol || t.comment || '').includes(this.activeSymbol));
 
-    // Fallback override: If a high-confluence or good setup presents itself (Score >= 70 or R:R >= 2.0)
-    const isHighQualitySignal = Boolean(signal && (signal.score >= 70 || (signal.score >= 65 && Math.abs(signal.tp - signal.entry) / Math.max(0.0001, Math.abs(signal.entry - signal.sl)) >= 2.0)));
+    // Smart fallback override: If there's a high-confluence setup
+    const isHighQualitySignal = Boolean(
+      signal && (
+        signal.isOutOfSessionException ||
+        (isTenScale ? signal.score >= 6.5 : (signal.score >= 70 || (signal.score >= 65 && rewardRiskRatio >= 2.0)))
+      )
+    );
     const bypassDailyLimit = this.allowHighConfluenceOverride && isHighQualitySignal;
 
     if (todayClosedTrades.length >= 5) {
       if (bypassDailyLimit) {
-        this.slog(`Daily trade limit reached (5/5), but prime high-confluence signal detected (${signal?.score}/100). Fallback override activated to take trade.`, 'info');
+        this.slog(`Daily trade limit reached (5/5), but smart gate approved valid profitable signal (${signal?.score ?? 'High RR'}). Fallback override activated to take trade.`, 'info');
       } else {
         return 'TRADE_REJECTED: DAILY_TRADE_LIMIT_REACHED (Maximum 5 trades per day reached. High-confluence fallback available for signal score ≥ 70)';
       }
     }
     if (pairTodayTrades.length >= 3) {
       if (bypassDailyLimit) {
-        this.slog(`Pair daily limit reached (3/3 on ${this.activeSymbol}), but high-confluence signal detected (${signal?.score}/100). Fallback override activated.`, 'info');
+        this.slog(`Pair daily limit reached (3/3 on ${this.activeSymbol}), but smart gate approved valid profitable signal. Fallback override activated.`, 'info');
       } else {
         return `TRADE_REJECTED: PAIR_DAILY_LIMIT_REACHED (Maximum 3 trades per day reached for ${this.activeSymbol}. High-confluence fallback available for signal score ≥ 70)`;
       }
@@ -1279,23 +1306,39 @@ export class TradingEngine {
       return `TRADE_REJECTED: SPREAD_TOO_WIDE (${this.spread} points; maximum ${config.maxSpreadPoints} for ${this.activeSymbol}).`;
     }
 
-    const lastDirectionEntry = [...this.entryHistory].reverse().find((entry) => entry.direction === direction);
-    if (lastDirectionEntry && now - lastDirectionEntry.at < RISK_CONFIG.directionCooldownMs) {
-      return 'Direction cooldown is active.';
+    // Smart decoupled direction cooldown
+    if (!isManual) {
+      const lastDirectionEntry = [...this.entryHistory].reverse().find((entry) => entry.direction === direction);
+      if (lastDirectionEntry && now - lastDirectionEntry.at < RISK_CONFIG.directionCooldownMs) {
+        if (!hasValidProfitableSignal) {
+          return 'Direction cooldown is active.';
+        }
+      }
     }
-    const poiKey = signal ? this.getSignalPoiKey(signal.direction, signal.entry) : '';
-    if (
-      poiKey &&
-      this.entryHistory.some((entry) => entry.poiKey === poiKey && now - entry.at < RISK_CONFIG.samePoiCooldownMs)
-    ) {
-      return 'This SMC point of interest was traded recently.';
+
+    // Smart decoupled POI cooldown
+    if (!isManual) {
+      const poiKey = signal ? this.getSignalPoiKey(signal.direction, signal.entry) : '';
+      if (
+        poiKey &&
+        this.entryHistory.some((entry) => entry.poiKey === poiKey && now - entry.at < RISK_CONFIG.samePoiCooldownMs)
+      ) {
+        if (!hasValidProfitableSignal) {
+          return 'This SMC point of interest was traded recently.';
+        }
+      }
     }
-    if (this.entryHistory.length >= RISK_CONFIG.maxTradesPerHour) return 'Hourly trade limit reached.';
+
+    if (!isManual && !hasValidProfitableSignal && this.entryHistory.length >= RISK_CONFIG.maxTradesPerHour) {
+      return 'Hourly trade limit reached.';
+    }
 
     const consecutiveLosses = this.closedTrades.slice(0, RISK_CONFIG.maxConsecutiveLosses)
       .every((trade) => trade.profit <= 0);
     if (this.closedTrades.length >= RISK_CONFIG.maxConsecutiveLosses && consecutiveLosses) {
-      return 'Consecutive-loss circuit breaker reached.';
+      if (!isManual && !hasValidProfitableSignal) {
+        return 'Consecutive-loss circuit breaker reached.';
+      }
     }
 
     if (this.instrumentType === 'standard' && this.newsBlackout) return 'News blackout is enabled.';
@@ -1305,20 +1348,24 @@ export class TradingEngine {
 
     // Institutional Session Timing Filter & Asian Consolidation Gate
     // High-Institutional-Volume Windows: London Open (07:00–10:00 UTC / 10:00–13:00 EAT), NY Silver Bullet (13:00–16:00 UTC / 16:00–19:00 EAT)
-    // Low-liquidity Asian Consolidation (21:00–05:00 UTC / 00:00–08:00 EAT) is suppressed unless an exceptional high-profit signal exists
-    if (this.instrumentType === 'standard') {
+    // Low-liquidity Asian Consolidation (21:00–05:00 UTC / 00:00–08:00 EAT)
+    // SMART GATE:
+    // 1) Manual discretionary orders and direct trades are never suppressed by session filter.
+    // 2) If a valid profitable signal is present (score >= 6.0, score >= 60, RR >= 1.5, or isOutOfSessionException), allow it!
+    if (this.instrumentType === 'standard' && !isManual) {
       const sess = sessionFilter(new Date(now));
       if (sess.asianConsolidation) {
         const isHighProfitException = Boolean(
           signal && (
             signal.isOutOfSessionException ||
             signal.score >= 6.5 ||
-            (signal.score >= 60 && Math.abs(signal.tp - signal.entry) / Math.max(0.0001, Math.abs(signal.entry - signal.sl)) >= 2.5)
+            (signal.score >= 60 && rewardRiskRatio >= 2.0) ||
+            (signal.score >= 6.0 && rewardRiskRatio >= 1.5)
           )
         );
 
         if (isHighProfitException) {
-          this.slog(`⭐ HIGH-PROFIT EXCEPTION: Out-of-session entry authorized for ${this.activeSymbol} (Score: ${signal?.score}) during Asian consolidation (21:00–05:00 UTC / 00:00–08:00 EAT).`, 'info');
+          this.slog(`⭐ SMART GATE: High-profit entry authorized for ${this.activeSymbol} (Score: ${signal?.score}, RR: ${rewardRiskRatio.toFixed(1)}) during Asian consolidation (21:00–05:00 UTC / 00:00–08:00 EAT).`, 'info');
         } else {
           return 'TRADE_REJECTED: ASIAN_CONSOLIDATION_SUPPRESSED (Low-liquidity Asian consolidation 21:00–05:00 UTC / 00:00–08:00 EAT. High-profit exception available for score ≥ 6.5 / RR ≥ 2.5).';
         }
@@ -2032,8 +2079,9 @@ export class TradingEngine {
       return { ok: false, error: 'Trading halted by Kill Switch' };
     }
 
+    const isManual = !comment.startsWith('auto:');
     const market = this.getMarketSnapshot();
-    const blockReason = this.getEntryBlockReason(direction, market.signal);
+    const blockReason = this.getEntryBlockReason(direction, market.signal, Date.now(), isManual);
     if (blockReason) return { ok: false, error: blockReason };
     const riskVolume = this.getRiskBasedVolume(sl, volume);
     if (!riskVolume) {

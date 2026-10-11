@@ -74,6 +74,33 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  // Proxy /mt5-bridge requests to local MT5 Python bridge (port 8000)
+  if (req.url.startsWith('/mt5-bridge')) {
+    const targetPath = req.url.replace(/^\/mt5-bridge/, '') || '/';
+    const proxyReq = http.request(
+      {
+        hostname: '127.0.0.1',
+        port: 8000,
+        path: targetPath,
+        method: req.method,
+        headers: {
+          ...req.headers,
+          host: '127.0.0.1:8000',
+        },
+      },
+      (proxyRes) => {
+        res.writeHead(proxyRes.statusCode || 500, proxyRes.headers);
+        proxyRes.pipe(res, { end: true });
+      }
+    );
+    proxyReq.on('error', (err) => {
+      res.writeHead(502, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ detail: `MT5 bridge unreachable on 127.0.0.1:8000: ${err.message}` }));
+    });
+    req.pipe(proxyReq, { end: true });
+    return;
+  }
+
   // Parse path
   let reqPath = req.url.split('?')[0];
   if (reqPath === '/') reqPath = '/index.html';

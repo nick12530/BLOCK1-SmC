@@ -73,24 +73,24 @@ export const HeaderView: React.FC<HeaderViewProps> = React.memo(({
   const floatingPnl = ticker.equity - ticker.balance;
 
   return (
-    <header className="relative w-full border-b border-slate-200/90 dark:border-[#1a3040] bg-white/95 dark:bg-[#0d1823]/95 backdrop-blur-md font-mono text-xs transition-colors shadow-xs z-30">
+    <header className="relative w-full border-b border-slate-200/90 dark:border-[#1a3040] bg-white/95 dark:bg-[#0d1823]/95 backdrop-blur-md font-mono text-xs transition-colors shadow-xs z-30 pt-2 sm:pt-1.5 overflow-hidden">
       {/* Tier 1: Primary Navigation Bar */}
-      <div className="w-full max-w-[1920px] mx-auto px-2.5 sm:px-6 lg:px-8 py-2 sm:py-2.5 flex items-center justify-between gap-2 flex-wrap sm:flex-nowrap">
-        {/* Left: Brand Identity & Symbol Switcher */}
-        <div className="flex items-center gap-1.5 sm:gap-3">
+      <div className="w-full max-w-[1920px] mx-auto px-2.5 sm:px-6 lg:px-8 py-2 sm:py-2.5 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 sm:gap-4">
+        {/* Row 1 on mobile / Left on desktop: Brand Identity & Symbol Switcher */}
+        <div className="flex items-center justify-between sm:justify-start gap-2 sm:gap-3 flex-wrap">
           <div className="flex items-center gap-1.5 shrink-0">
-            <span className="font-black text-sm sm:text-base tracking-tight text-slate-900 dark:text-white uppercase font-sans">
+            <span className="font-black text-base sm:text-lg tracking-tight text-slate-900 dark:text-white uppercase font-sans">
               SMC PRO
             </span>
-            <span className="hidden sm:inline-block text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-zinc-300 border border-slate-200 dark:border-zinc-700">
+            <span className="text-xs font-extrabold px-1.5 py-0.5 rounded bg-slate-100 dark:bg-zinc-800 text-slate-700 dark:text-zinc-200 border border-slate-200 dark:border-zinc-700">
               TERMINAL
             </span>
           </div>
 
-          <div className="hidden sm:block h-3.5 w-px bg-slate-200 dark:bg-zinc-800" />
+          <div className="hidden sm:block h-4 w-px bg-slate-200 dark:bg-zinc-800" />
 
           {/* Quick Symbol Switcher Pills */}
-          <div className="flex items-center bg-slate-100 dark:bg-[#0a121a] p-0.5 rounded-lg border border-slate-200 dark:border-[#1a3040]">
+          <div className="flex items-center bg-slate-100 dark:bg-[#0a121a] p-1 rounded-xl border border-slate-200 dark:border-[#1a3040] gap-1">
             {SUPPORTED_SYMBOLS.map((sym) => {
               const isActive = sym === ticker.symbol;
               return (
@@ -98,7 +98,7 @@ export const HeaderView: React.FC<HeaderViewProps> = React.memo(({
                   key={sym}
                   type="button"
                   onClick={() => tradingEngine.switchSymbol(sym)}
-                  className={`px-1.5 sm:px-2 py-0.5 rounded text-[10px] sm:text-[11px] font-bold transition-all cursor-pointer ${
+                  className={`px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer ${
                     isActive
                       ? 'bg-sky-600 text-white dark:bg-sky-500 dark:text-slate-950 shadow-xs'
                       : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
@@ -112,103 +112,102 @@ export const HeaderView: React.FC<HeaderViewProps> = React.memo(({
           </div>
         </div>
 
-        {/* Right: Auto-Trader Toggle, MT5 Status & Action Tools Hub */}
-        <div className="flex items-center gap-1 sm:gap-2 ml-auto sm:ml-0">
-          {/* Auto-Trader Toggle Button */}
-          <button
-            type="button"
-            onClick={() => tradingEngine.toggleAutoTrade()}
-            aria-pressed={engine.auto_trade}
-            className={`flex items-center gap-1 sm:gap-1.5 px-2 sm:px-2.5 py-1 sm:py-1.5 rounded-lg border text-[10px] sm:text-xs font-bold transition-all cursor-pointer ${
-              engine.auto_trade
-                ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-600 dark:text-emerald-400 shadow-xs ring-1 ring-emerald-500/20'
-                : 'bg-slate-100 hover:bg-slate-200 dark:bg-zinc-900 dark:hover:bg-zinc-800 border-slate-200 dark:border-zinc-800 text-slate-700 dark:text-zinc-300'
-            }`}
-            title={
-              engine.auto_trade
-                ? 'Auto-Trader is ACTIVE (Automatically executes verified institutional setups). Click to disable.'
-                : 'Auto-Trader is OFF (Manual orders only). Click to enable Auto-Trader.'
-            }
-          >
-            <span
-              className={`w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full ${
-                engine.auto_trade ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400 dark:bg-zinc-600'
+        {/* Row 2 on mobile / Right on desktop: Auto-Trader Toggle, MT5 Status & Action Tools Hub */}
+        <div className="flex items-center justify-between sm:justify-end gap-2 flex-wrap">
+          <div className="flex items-center gap-1.5 sm:gap-2">
+            {/* Auto-Trader Toggle Button */}
+            <button
+              type="button"
+              onClick={() => tradingEngine.toggleAutoTrade()}
+              aria-pressed={engine.auto_trade}
+              className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-xs font-black transition-all cursor-pointer ${
+                engine.auto_trade
+                  ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-600 dark:text-emerald-400 shadow-xs ring-1 ring-emerald-500/20'
+                  : 'bg-slate-100 hover:bg-slate-200 dark:bg-zinc-900 dark:hover:bg-zinc-800 border-slate-200 dark:border-zinc-800 text-slate-800 dark:text-zinc-200'
               }`}
-            />
-            <Bot className="w-3.5 h-3.5 shrink-0" />
-            <span className="font-mono text-[10px] sm:text-[11px] whitespace-nowrap">
-              <span className="hidden md:inline">Auto-Trade: </span>
-              <span>{engine.auto_trade ? 'ON' : 'OFF'}</span>
-            </span>
-          </button>
+              title={
+                engine.auto_trade
+                  ? 'Auto-Trader is ACTIVE (Automatically executes verified institutional setups). Click to disable.'
+                  : 'Auto-Trader is OFF (Manual orders only). Click to enable Auto-Trader.'
+              }
+            >
+              <span
+                className={`w-2.5 h-2.5 rounded-full ${
+                  engine.auto_trade ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400 dark:bg-zinc-600'
+                }`}
+              />
+              <Bot className="w-4.5 h-4.5 shrink-0" />
+              <span className="font-mono text-xs whitespace-nowrap">
+                <span>Auto: </span>
+                <strong>{engine.auto_trade ? 'ON' : 'OFF'}</strong>
+              </span>
+            </button>
 
-          {/* MT5 Connection Link */}
-          <button
-            type="button"
-            onClick={() => onOpenModal('bridge')}
-            title="MetaTrader 5 Bridge Status & Terminal Linking"
-            className={`flex items-center gap-1 sm:gap-1.5 px-2 sm:px-2.5 py-1 sm:py-1.5 rounded-lg border text-[10px] sm:text-xs font-bold transition-all cursor-pointer ${
-              mt5?.connected
-                ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-600 dark:text-emerald-400'
-                : 'bg-slate-100 hover:bg-slate-200 dark:bg-zinc-900 dark:hover:bg-zinc-800 border-slate-200 dark:border-zinc-800 text-slate-800 dark:text-zinc-200'
-            }`}
-          >
-            <Server className={`w-3.5 h-3.5 shrink-0 ${mt5?.connected ? 'text-emerald-500' : 'text-slate-400'}`} />
-            <span className="font-mono text-[10px] sm:text-[11px] whitespace-nowrap">
-              {mt5?.connected ? (
-                <>
-                  <span className="hidden sm:inline">MT5 </span>
-                  <span>#{mt5.login}</span>
-                </>
-              ) : (
-                <>
-                  <span className="hidden sm:inline">Connect </span>
-                  <span>MT5</span>
-                </>
-              )}
-            </span>
-          </button>
+            {/* MT5 Connection Link */}
+            <button
+              type="button"
+              onClick={() => onOpenModal('bridge')}
+              title="MetaTrader 5 Bridge Status & Terminal Linking"
+              className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-xs font-black transition-all cursor-pointer ${
+                mt5?.connected
+                  ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-600 dark:text-emerald-400'
+                  : 'bg-slate-100 hover:bg-slate-200 dark:bg-zinc-900 dark:hover:bg-zinc-800 border-slate-200 dark:border-zinc-800 text-slate-800 dark:text-zinc-200'
+              }`}
+            >
+              <Server className={`w-4.5 h-4.5 shrink-0 ${mt5?.connected ? 'text-emerald-500' : 'text-slate-400'}`} />
+              <span className="font-mono text-xs whitespace-nowrap">
+                {mt5?.connected ? (
+                  <>
+                    <span className="hidden sm:inline">MT5 </span>
+                    <span>#{mt5.login}</span>
+                  </>
+                ) : (
+                  <span>MT5 Bridge</span>
+                )}
+              </span>
+            </button>
+          </div>
 
-          {/* Action Tools Cluster */}
-          <div className="flex items-center gap-0.5 sm:gap-1 p-0.5 rounded-lg bg-slate-100/80 dark:bg-zinc-900/80 border border-slate-200/80 dark:border-zinc-800/80">
+          {/* Action Tools Cluster with enlarged icon sizes and touch padding */}
+          <div className="flex items-center gap-1 p-1 rounded-xl bg-slate-100/90 dark:bg-zinc-900/90 border border-slate-200/80 dark:border-zinc-800/80 shrink-0">
             {/* Mobile PWA & Phone Server Hub */}
             <button
               type="button"
               onClick={() => onOpenModal('phone_pwa')}
-              className="p-1 sm:p-1.5 rounded-md hover:bg-white dark:hover:bg-zinc-800 text-sky-600 dark:text-sky-400 hover:text-sky-500 transition-colors cursor-pointer"
+              className="p-2 rounded-lg hover:bg-white dark:hover:bg-zinc-800 text-sky-600 dark:text-sky-400 hover:text-sky-500 transition-colors cursor-pointer"
               title="Mobile Standalone Web App & Phone Server Hub (PWA / Termux / iSH)"
             >
-              <Smartphone className="w-3.5 h-3.5" />
+              <Smartphone className="w-5 h-5" />
             </button>
 
             {/* Risk / Safeguards */}
             <button
               type="button"
               onClick={() => onOpenModal('settings')}
-              className="p-1 sm:p-1.5 rounded-md hover:bg-white dark:hover:bg-zinc-800 text-slate-700 dark:text-zinc-300 transition-colors cursor-pointer"
+              className="p-2 rounded-lg hover:bg-white dark:hover:bg-zinc-800 text-slate-700 dark:text-zinc-300 transition-colors cursor-pointer"
               title="Risk & Small Account Safeguards"
             >
-              <Shield className="w-3.5 h-3.5 text-sky-500" />
+              <Shield className="w-5 h-5 text-sky-500" />
             </button>
 
             {/* User Manual / Help Center */}
             <button
               type="button"
               onClick={() => onOpenModal('help')}
-              className="p-1 sm:p-1.5 rounded-md hover:bg-white dark:hover:bg-zinc-800 text-slate-700 dark:text-zinc-300 transition-colors cursor-pointer"
+              className="p-2 rounded-lg hover:bg-white dark:hover:bg-zinc-800 text-slate-700 dark:text-zinc-300 transition-colors cursor-pointer"
               title="Institutional User Manual & Trading Guide"
             >
-              <BookOpen className="w-3.5 h-3.5 text-slate-600 dark:text-zinc-400 hover:text-white" />
+              <BookOpen className="w-5 h-5 text-slate-600 dark:text-zinc-400 hover:text-white" />
             </button>
 
             {/* Trade Ledger History */}
             <button
               type="button"
               onClick={() => onOpenModal('closed_trades')}
-              className="p-1 sm:p-1.5 rounded-md hover:bg-white dark:hover:bg-zinc-800 text-slate-700 dark:text-zinc-300 transition-colors cursor-pointer"
+              className="p-2 rounded-lg hover:bg-white dark:hover:bg-zinc-800 text-slate-700 dark:text-zinc-300 transition-colors cursor-pointer"
               title="Closed Trades History & Ledger"
             >
-              <History className="w-3.5 h-3.5 text-slate-600 dark:text-zinc-400 hover:text-white" />
+              <History className="w-5 h-5 text-slate-600 dark:text-zinc-400 hover:text-white" />
             </button>
 
             {/* Audio Alert Toggle */}
@@ -219,13 +218,13 @@ export const HeaderView: React.FC<HeaderViewProps> = React.memo(({
                 signalAudioNotifier.setMuted(nextMuted);
                 tradingEngine.slog(`System Audio Alerts: ${nextMuted ? 'MUTED' : 'ACTIVE'}`, 'info');
               }}
-              className="p-1 sm:p-1.5 rounded-md hover:bg-white dark:hover:bg-zinc-800 text-slate-700 dark:text-zinc-300 transition-colors cursor-pointer"
+              className="p-2 rounded-lg hover:bg-white dark:hover:bg-zinc-800 text-slate-700 dark:text-zinc-300 transition-colors cursor-pointer"
               title={signalAudioNotifier.getMuted() ? 'Audio Muted' : 'Audio Active'}
             >
               {signalAudioNotifier.getMuted() ? (
-                <VolumeX className="w-3.5 h-3.5 text-zinc-400" />
+                <VolumeX className="w-5 h-5 text-zinc-400" />
               ) : (
-                <Volume2 className="w-3.5 h-3.5 text-emerald-500" />
+                <Volume2 className="w-5 h-5 text-emerald-500" />
               )}
             </button>
 
@@ -234,64 +233,55 @@ export const HeaderView: React.FC<HeaderViewProps> = React.memo(({
               type="button"
               onClick={onToggleTheme}
               aria-label="Toggle light or dark theme"
-              className="p-1 sm:p-1.5 rounded-md hover:bg-white dark:hover:bg-zinc-800 text-slate-700 dark:text-zinc-300 transition-colors cursor-pointer"
+              className="p-2 rounded-lg hover:bg-white dark:hover:bg-zinc-800 text-slate-700 dark:text-zinc-300 transition-colors cursor-pointer"
             >
-              {isDark ? <Sun className="w-3.5 h-3.5 text-amber-400" /> : <Moon className="w-3.5 h-3.5 text-slate-600" />}
+              {isDark ? <Sun className="w-5 h-5 text-amber-400" /> : <Moon className="w-5 h-5 text-slate-600" />}
             </button>
           </div>
         </div>
       </div>
 
       {/* Tier 2: Dedicated Financial Status Ribbon - Responsive with NO Mobile Slider */}
-      <div className="w-full border-t border-slate-100 dark:border-[#142332] bg-slate-50/70 dark:bg-[#09131d]/70 px-2.5 sm:px-6 lg:px-8 py-1.5 font-mono text-[10px] sm:text-[11px]">
-        {/* Mobile View (<sm): Clean 2-Row Stack with ZERO Horizontal Sliding */}
-        <div className="flex sm:hidden flex-col gap-1 w-full">
+      <div className="w-full border-t border-slate-100 dark:border-[#142332] bg-slate-50/70 dark:bg-[#09131d]/70 px-2.5 sm:px-6 lg:px-8 py-2 font-mono text-xs">
+        {/* Mobile View (<sm): Clean 2-Row Stack with Clear, Bold Typography and 3-Metric Pills (NO Slider) */}
+        <div className="flex sm:hidden flex-col gap-2 w-full">
           {/* Row 1: Clocks and Margin Level */}
-          <div className="flex items-center justify-between text-slate-600 dark:text-zinc-300">
+          <div className="flex items-center justify-between text-slate-700 dark:text-zinc-200 text-xs font-bold">
             <div className="flex items-center gap-1.5">
-              <Clock className="w-3 h-3 text-sky-500 shrink-0" />
-              <span className="tabular-nums font-semibold">{ticker.brokerTimeStr || '00:00 Server'}</span>
+              <Clock className="w-4 h-4 text-sky-500 shrink-0" />
+              <span className="tabular-nums font-bold">{ticker.brokerTimeStr || '00:00 Server'}</span>
               <span className="text-zinc-400">·</span>
-              <span className="text-emerald-600 dark:text-emerald-400 font-bold tabular-nums">
+              <span className="text-emerald-600 dark:text-emerald-400 font-black tabular-nums">
                 {ticker.kenyaTimeStr || '00:00 EAT'}
               </span>
             </div>
             <div className="flex items-center gap-1">
-              <span className="text-slate-500 dark:text-slate-400">M.Level:</span>
-              <strong className="text-emerald-600 dark:text-emerald-400 font-bold tabular-nums">
+              <span className="text-slate-500 dark:text-slate-400 font-medium">Margin:</span>
+              <strong className="text-emerald-600 dark:text-emerald-400 font-black tabular-nums">
                 {marginMetrics.marginLevelPct}
               </strong>
             </div>
           </div>
 
-          {/* Row 2: Balance, Equity, and Free Margin */}
-          <div className="flex items-center justify-between border-t border-slate-200/50 dark:border-zinc-800/50 pt-1">
-            <div className="flex items-baseline gap-1">
-              <span className="text-slate-500 dark:text-slate-400">Bal:</span>
-              <strong className="font-bold text-slate-900 dark:text-white tabular-nums">
+          {/* Row 2: 3 Balance / Equity / Free Margin Metric Cards */}
+          <div className="grid grid-cols-3 gap-1.5 border-t border-slate-200/60 dark:border-zinc-800/60 pt-2 text-center">
+            <div className="p-1.5 rounded-lg bg-slate-100/70 dark:bg-zinc-900/70 border border-slate-200/50 dark:border-zinc-800/50">
+              <div className="text-xs text-slate-500 dark:text-slate-400 font-bold uppercase tracking-tight">Balance</div>
+              <div className="font-black text-slate-900 dark:text-white tabular-nums text-sm sm:text-base mt-0.5">
                 ${formatMT5(ticker.balance)}
-              </strong>
+              </div>
             </div>
-            <div className="flex items-baseline gap-1">
-              <span className="text-slate-500 dark:text-slate-400">Eq:</span>
-              <strong
-                className={`font-bold tabular-nums ${
-                  isProfit ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'
-                }`}
-              >
+            <div className="p-1.5 rounded-lg bg-slate-100/70 dark:bg-zinc-900/70 border border-slate-200/50 dark:border-zinc-800/50">
+              <div className="text-xs text-slate-500 dark:text-slate-400 font-bold uppercase tracking-tight">Equity</div>
+              <div className={`font-black tabular-nums text-sm sm:text-base mt-0.5 ${isProfit ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
                 ${formatMT5(ticker.equity)}
-              </strong>
-              {floatingPnl !== 0 && (
-                <span className={`text-[9px] font-bold ${floatingPnl > 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
-                  ({floatingPnl > 0 ? `+${formatMT5(floatingPnl)}` : formatMT5(floatingPnl)})
-                </span>
-              )}
+              </div>
             </div>
-            <div className="flex items-baseline gap-1">
-              <span className="text-slate-500 dark:text-slate-400">Free:</span>
-              <strong className="font-bold text-slate-800 dark:text-slate-200 tabular-nums">
+            <div className="p-1.5 rounded-lg bg-slate-100/70 dark:bg-zinc-900/70 border border-slate-200/50 dark:border-zinc-800/50">
+              <div className="text-xs text-slate-500 dark:text-slate-400 font-bold uppercase tracking-tight">Free Margin</div>
+              <div className="font-bold text-slate-800 dark:text-slate-200 tabular-nums text-sm sm:text-base mt-0.5">
                 ${formatMT5(marginMetrics.freeMargin)}
-              </strong>
+              </div>
             </div>
           </div>
         </div>
@@ -300,7 +290,7 @@ export const HeaderView: React.FC<HeaderViewProps> = React.memo(({
         <div className="hidden sm:flex items-center justify-between gap-2 overflow-x-auto no-scrollbar">
           {/* Dual Clocks (Server & EAT) */}
           <div className="flex items-center gap-1.5 shrink-0 text-slate-600 dark:text-zinc-300 pr-2 border-r border-slate-200 dark:border-[#1a3040]">
-            <Clock className="w-3 h-3 text-sky-500 shrink-0" />
+            <Clock className="w-3.5 h-3.5 text-sky-500 shrink-0" />
             <span className="tabular-nums font-semibold">{ticker.brokerTimeStr || '00:00 Server'}</span>
             <span className="text-zinc-400">·</span>
             <span className="text-emerald-600 dark:text-emerald-400 font-bold tabular-nums">

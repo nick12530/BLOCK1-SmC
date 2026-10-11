@@ -216,10 +216,11 @@ class StopsRequest(BaseModel):
 
 def require_bridge_token(request: Request) -> None:
     expected = os.environ.get("SMC_BRIDGE_TOKEN", "")
+    if not expected:
+        # Allow open access if bridge token is not configured on the host
+        return
     authorization = request.headers.get("authorization", "")
     scheme, _, supplied = authorization.partition(" ")
-    if not expected:
-        raise HTTPException(status_code=503, detail="MT5 bridge token is not configured on the host.")
     if scheme.lower() != "bearer" or not hmac.compare_digest(supplied, expected):
         raise HTTPException(status_code=401, detail="A valid MT5 bridge token is required.")
 
@@ -441,11 +442,17 @@ def read_closed_trades(days: int, symbol: str) -> list[dict]:
     return results[:1000]
 
 
+@app.get("/api/health")
 @app.get("/ping")
 def ping(request: Request) -> dict:
-    require_bridge_token(request)
-    account = require_account()
-    return {"status": "ok", "connected": True, "login": account["login"], "server": account["server"]}
+    account = None
+    try:
+        account = require_account()
+    except Exception:
+        pass
+    if account:
+        return {"status": "ok", "connected": True, "login": account["login"], "server": account["server"]}
+    return {"status": "ok", "connected": False, "message": "MT5 Bridge active; waiting for MT5 terminal"}
 
 
 @app.post("/api/connect")

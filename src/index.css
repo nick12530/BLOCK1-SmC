@@ -71,15 +71,54 @@
 
 @media (max-width: 640px) {
   html, body {
-    font-size: 14px;
-    font-weight: 550;
+    font-size: 16.5px;
+    font-weight: 500;
     overflow-x: hidden;
+    -webkit-text-size-adjust: 100%;
   }
 
-  [class*="text-[10px]"],
+  /* Increase text readability across all mobile screens */
+  .text-xs,
+  [class*="text-xs"] {
+    font-size: 0.875rem !important;
+    line-height: 1.3rem !important;
+  }
+
+  [class*="text-[9px]"],
+  [class*="text-[10px]"] {
+    font-size: 0.825rem !important;
+    line-height: 1.2rem !important;
+  }
+
   [class*="text-[11px]"] {
-    font-size: 0.72rem !important;
-    line-height: 1.05rem;
+    font-size: 0.875rem !important;
+    line-height: 1.25rem !important;
+  }
+
+  .text-sm,
+  [class*="text-sm"] {
+    font-size: 0.95rem !important;
+    line-height: 1.4rem !important;
+  }
+
+  .text-base,
+  [class*="text-base"] {
+    font-size: 1.05rem !important;
+    line-height: 1.5rem !important;
+  }
+
+  .font-mono {
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+
+  button {
+    font-weight: 700;
+  }
+
+  .tabular-nums {
+    font-variant-numeric: tabular-nums;
+    font-weight: 700;
   }
 }
 
@@ -99,12 +138,8 @@
   background: rgba(148, 163, 184, 0.45);
 }
 
-/* Enhanced mobile visibility and bold typography */
+/* Enhanced mobile button touch targets and readability */
 @media (max-width: 640px) {
-  html, body {
-    font-size: 14px;
-    font-weight: 550;
-  }
   .font-mono {
     font-weight: 600;
   }

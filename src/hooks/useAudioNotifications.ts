@@ -66,7 +66,9 @@ export function useAudioNotifications(): UseAudioNotificationsReturn {
   // Monitor market signal transitions
   useEffect(() => {
     const sig = market.signal;
-    if (!sig || sig.score < 4.0) return;
+    if (!sig) return;
+    const minScore = sig.score <= 10 ? 3.0 : 55;
+    if (sig.score < minScore) return;
 
     const currentKey = `${sig.direction}_${sig.entry}_${sig.score}_${sig.timestamp}`;
     if (currentKey !== lastSignalKeyRef.current) {
@@ -75,6 +77,7 @@ export function useAudioNotifications(): UseAudioNotificationsReturn {
       setHasNewAlert(true);
 
       // Play professional signal chime
+      signalAudioNotifier.unlock();
       signalAudioNotifier.playSignalAlert(sig.direction, sig.entry);
 
       // Reset alert badge after 8 seconds

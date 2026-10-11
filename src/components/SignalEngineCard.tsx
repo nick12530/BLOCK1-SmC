@@ -25,6 +25,7 @@ import {
 import { Signal, TradeDirection } from '../types/smc';
 import { buildSignalRationale } from '../engine/tradeJournal';
 import { getInstrumentConfig } from '../engine/instrumentConfig';
+import { signalAudioNotifier } from '../utils/audioNotification';
 
 interface SignalEngineCardProps {
   onExecuteSignal?: (customVolume?: number, positionCount?: number, signal?: Signal) => void | Promise<void>;
@@ -111,14 +112,16 @@ export const SignalEngineCard: React.FC<SignalEngineCardProps> = React.memo(({ o
 
   const handleExecute = async () => {
     if (isWideSpread || !rawSig) return;
+    signalAudioNotifier.unlock();
+    signalAudioNotifier.playTradeExecutionAlert(rawSig.direction);
 
+    const safeLot = riskLimitedLotSize ?? lotSize ?? 0.01;
     if (onExecuteSignal) {
-      if (riskLimitedLotSize === null) return;
-      await onExecuteSignal(riskLimitedLotSize, positionCount, rawSig);
+      await onExecuteSignal(safeLot, positionCount, rawSig);
     } else {
       const order = {
         direction: rawSig.direction,
-        volume: riskLimitedLotSize ?? lotSize,
+        volume: safeLot,
         entry: rawSig.entry,
         sl: rawSig.sl,
         tp: rawSig.tp,
@@ -129,7 +132,7 @@ export const SignalEngineCard: React.FC<SignalEngineCardProps> = React.memo(({ o
         setExecutedFeedback(`Opened ${result.countOpened} ${rawSig.direction} orders`);
       } else {
         const result = tradingEngine.tradeSignal(order);
-        setExecutedFeedback(result.ok ? `Order sent: ${rawSig.direction} ${lotSize.toFixed(2)} lots` : result.error || 'Order rejected');
+        setExecutedFeedback(result.ok ? `Order sent: ${rawSig.direction} ${safeLot.toFixed(2)} lots` : result.error || 'Order rejected');
       }
       setTimeout(() => setExecutedFeedback(null), 3500);
     }

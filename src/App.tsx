@@ -19,6 +19,7 @@ import { tradingEngine } from './engine/tradingEngine';
 
 import { HeaderView } from './components/HeaderView';
 import { KillSwitchBanner } from './components/KillSwitchBanner';
+import { WeekendMarketBanner } from './components/WeekendMarketBanner';
 import { WorkspaceErrorBoundary } from './components/ErrorBoundary';
 import { ConfirmDialog } from './components/ConfirmDialog';
 
@@ -34,6 +35,8 @@ import { FooterView } from './components/FooterView';
 import { SignalToastNotification } from './components/SignalToastNotification';
 import { StartupLoadingScreen } from './components/StartupLoadingScreen';
 import { mt5Bridge } from './engine/mt5Bridge';
+import { useAudioNotifications } from './hooks/useAudioNotifications';
+import { signalAudioNotifier } from './utils/audioNotification';
 import { RISK_CONFIG } from './engine/riskConfig';
 import type { Signal } from './types/smc';
 import type { SupportedSymbol } from './engine/instrumentConfig';
@@ -105,12 +108,18 @@ export default function App() {
   // Workspace tab to offload screen-cluttering widgets while keeping them running in background
   const [workspaceTab, setWorkspaceTab] = useState<'chart' | 'zones' | 'scanner'>('chart');
 
+  // Global audio alerts & chime listener for institutional signals
+  useAudioNotifications();
+
   useEffect(() => {
     mt5Bridge.setCallback((snapshot) => tradingEngine.syncMt5Snapshot(snapshot));
     mt5Bridge.setClosedTradesCallback((trades) => tradingEngine.syncMt5ClosedTrades(trades));
     mt5Bridge.setConnectionChangeCallback((connected, error) =>
       tradingEngine.setMt5BridgeConnectionStatus(connected, error)
     );
+
+    // Auto-reconnect to MT5 bridge on terminal refresh if previously linked
+    void mt5Bridge.autoConnectIfSaved().catch(() => {});
   }, []);
 
   // Execute signal with multiple position support (up to 10)
@@ -223,6 +232,7 @@ export default function App() {
             );
             tradingEngine.setSelectedTicket(result.ticket);
             tradingEngine.recordAcceptedEntry(signal.direction, signal);
+            signalAudioNotifier.playTradeExecutionAlert(signal.direction);
             tradingEngine.slog(
               result.pending
                 ? `MT5 order placed but not confirmed filled: #${result.ticket} · ${result.filledVolume} lots reported. Verify it in MT5.`
@@ -251,6 +261,7 @@ export default function App() {
       } else {
         tradingEngine.tradeSignal(customVolume);
       }
+      signalAudioNotifier.playTradeExecutionAlert(signal.direction);
     },
     [ticker.spread, positionsState.positions.length, engine.kill_switch]
   );
@@ -304,6 +315,11 @@ export default function App() {
     <div className="min-h-screen w-full max-w-full overflow-x-hidden bg-slate-50 dark:bg-[#08111a] text-slate-900 dark:text-slate-100 flex flex-col font-sans transition-colors selection:bg-sky-500/30 selection:text-white">
       {/* 1. Persistent Kill Switch Banner (Outside ErrorBoundary) */}
       <KillSwitchBanner />
+
+      {/* Real-Time Market Reopen Countdown Banner */}
+      <div className="w-full px-2.5 sm:px-6 lg:px-8 pt-1 sm:pt-2">
+        <WeekendMarketBanner />
+      </div>
 
       {/* Subtle Non-Disruptive Signal Toast Notification */}
       <SignalToastNotification />

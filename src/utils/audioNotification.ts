@@ -27,6 +27,13 @@ class SignalAudioNotifier {
     }
   }
 
+  public unlock() {
+    this.initContext();
+    if (this.ctx && this.ctx.state === 'suspended') {
+      void this.ctx.resume();
+    }
+  }
+
   private initContext() {
     if (!this.ctx && typeof window !== 'undefined') {
       const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
@@ -35,7 +42,7 @@ class SignalAudioNotifier {
       }
     }
     if (this.ctx && this.ctx.state === 'suspended') {
-      this.ctx.resume();
+      void this.ctx.resume();
     }
   }
 
@@ -62,7 +69,7 @@ class SignalAudioNotifier {
   }
 
   private getGainMultiplier(): number {
-    return this.volumeLevel === 'subtle' ? 0.05 : this.volumeLevel === 'normal' ? 0.15 : 0.09;
+    return this.volumeLevel === 'subtle' ? 0.15 : this.volumeLevel === 'normal' ? 0.55 : 0.35;
   }
 
   public onSignalAlert(callback: (direction: string, price: number) => void): () => void {
@@ -319,3 +326,13 @@ class SignalAudioNotifier {
 }
 
 export const signalAudioNotifier = new SignalAudioNotifier();
+
+if (typeof window !== 'undefined') {
+  const unlockOnFirstGesture = () => {
+    signalAudioNotifier.unlock();
+  };
+  window.addEventListener('pointerdown', unlockOnFirstGesture, { passive: true });
+  window.addEventListener('click', unlockOnFirstGesture, { passive: true });
+  window.addEventListener('keydown', unlockOnFirstGesture, { passive: true });
+  window.addEventListener('touchstart', unlockOnFirstGesture, { passive: true });
+}

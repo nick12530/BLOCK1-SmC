@@ -109,6 +109,7 @@ export class MT5BridgeConnector {
   private expectedAccount: { login: number; server: string } | null = null;
   private historyPollInterval: ReturnType<typeof setInterval> | null = null;
   private accountPollTimeout: ReturnType<typeof setTimeout> | null = null;
+  private autoReconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private pollingEnabled = false;
   private accountPollInFlight = false;
   private onDataCallback: ((data: BridgeAccountSnapshot) => void) | null = null;
@@ -120,6 +121,24 @@ export class MT5BridgeConnector {
 
   constructor() {
     if (typeof window !== 'undefined') {
+      // Rehydrate persistent connection state on terminal refresh so it does not disconnect
+      const auto = localStorage.getItem('smc_mt5_auto_connect');
+      if (auto === 'true') {
+        const savedUrl = localStorage.getItem('smc_mt5_base_url');
+        if (savedUrl) this.serverUrl = normalizeTailscaleUrl(savedUrl);
+        const savedSymbol = localStorage.getItem('smc_mt5_symbol');
+        if (savedSymbol) this.symbol = savedSymbol.trim();
+        const savedType = localStorage.getItem('smc_mt5_instrument_type') as InstrumentType;
+        if (savedType) this.instrumentType = savedType;
+        const savedLogin = localStorage.getItem('smc_mt5_login');
+        const savedServer = localStorage.getItem('smc_mt5_server');
+        if (savedLogin && savedServer) {
+          this.expectedAccount = { login: Number(savedLogin), server: savedServer };
+          this.isConnected = true;
+          this.isReconnecting = true;
+        }
+      }
+
       // Mobile screen wake listener: immediately wake up sync when unlocking phone or switching back to app
       document.addEventListener('visibilitychange', () => {
         if (document.visibilityState === 'visible' && this.isConnected) {
@@ -228,22 +247,29 @@ export class MT5BridgeConnector {
     }
   }
 
-  async connectAccount(credentials: {
-    baseUrl: string;
-    symbol: string;
-    instrumentType: InstrumentType;
-  }): Promise<BridgeAccountSnapshot> {
+  async connectAccount(
+    credentials: {
+      baseUrl: string;
+      symbol: string;
+      instrumentType: InstrumentType;
+    },
+    isAutoReconnect = false
+  ): Promise<BridgeAccountSnapshot> {
     this.serverUrl = normalizeTailscaleUrl(credentials.baseUrl);
     this.symbol = credentials.symbol.trim();
     this.instrumentType = credentials.instrumentType;
     this.stopPolling();
-    this.isConnected = false;
-    this.isReconnecting = false;
-    this.expectedAccount = null;
-    this.lastPing = null;
-    this.lastError = null;
-    this.consecutiveErrors = 0;
-    this.onConnectionChangeCallback?.(false);
+    if (!isAutoReconnect && !this.isConnected) {
+      this.isConnected = false;
+      this.isReconnecting = false;
+      this.expectedAccount = null;
+      this.lastPing = null;
+      this.lastError = null;
+      this.consecutiveErrors = 0;
+      this.onConnectionChangeCallback?.(false);
+    } else {
+      this.isReconnecting = true;
+    }
     let snapshot: BridgeAccountSnapshot;
     const startPing = performance.now();
     try {
@@ -255,16 +281,25 @@ export class MT5BridgeConnector {
     } catch (error) {
       const detail = error instanceof Error ? error.message : 'Unknown connection error.';
       this.lastError = `Could not reach MT5 bridge at ${this.serverUrl}: ${detail} Ensure Tailscale is connected on your phone and PC, or start the private-link launcher.`;
-      this.onConnectionChangeCallback?.(false, this.lastError);
-      throw new Error(this.lastError);
+      if (!isAutoReconnect) {
+        this.onConnectionChangeCallback?.(false, this.lastError);
+        throw new Error(this.lastError);
+      } else {
+        this.scheduleAutoReconnect();
+        throw new Error(this.lastError);
+      }
     }
     this.isConnected = true;
     this.isReconnecting = false;
     this.consecutiveErrors = 0;
     this.lastError = null;
     this.accountMode = snapshot.accountMode;
-    this.expectedAccount = { login: snapshot.account.login, server: snapshot.account.server };
+    this.expectedAccount = { login: Number(snapshot.account.login), server: snapshot.account.server };
     this.lastPing = Date.now();
+    if (this.autoReconnectTimer) {
+      clearTimeout(this.autoReconnectTimer);
+      this.autoReconnectTimer = null;
+    }
     this.onConnectionChangeCallback?.(true);
     const instrumentSnapshot = { ...snapshot, instrumentType: this.instrumentType };
     this.onDataCallback?.(instrumentSnapshot);
@@ -276,6 +311,11 @@ export class MT5BridgeConnector {
       localStorage.setItem('smc_mt5_symbol', this.symbol);
       localStorage.setItem('smc_mt5_base_url', this.serverUrl);
       localStorage.setItem('smc_mt5_instrument_type', this.instrumentType);
+      localStorage.setItem('smc_mt5_login', String(snapshot.account.login));
+      localStorage.setItem('smc_mt5_server', snapshot.account.server);
+      localStorage.setItem('smc_mt5_broker', snapshot.account.server.split(/[-_]/)[0] || 'MT5 Broker');
+      localStorage.setItem('smc_mt5_balance', String(snapshot.account.balance));
+      localStorage.setItem('smc_mt5_equity', String(snapshot.account.equity));
       if (this.isTailscaleUrl(this.serverUrl)) {
         localStorage.setItem('smc_tailscale_url', this.serverUrl);
       }
@@ -286,7 +326,12 @@ export class MT5BridgeConnector {
 
   async disconnectAccount(): Promise<void> {
     this.stopPolling();
+    if (this.autoReconnectTimer) {
+      clearTimeout(this.autoReconnectTimer);
+      this.autoReconnectTimer = null;
+    }
     this.isConnected = false;
+    this.isReconnecting = false;
     this.accountMode = 'standalone';
     this.expectedAccount = null;
     this.lastPing = null;
@@ -295,7 +340,23 @@ export class MT5BridgeConnector {
     this.onConnectionChangeCallback?.(false);
     if (typeof window !== 'undefined') {
       localStorage.removeItem('smc_mt5_auto_connect');
+      localStorage.removeItem('smc_mt5_login');
+      localStorage.removeItem('smc_mt5_server');
+      localStorage.removeItem('smc_mt5_broker');
+      localStorage.removeItem('smc_mt5_balance');
+      localStorage.removeItem('smc_mt5_equity');
     }
+  }
+
+  private scheduleAutoReconnect(delayMs: number = 3000) {
+    if (typeof window === 'undefined') return;
+    if (localStorage.getItem('smc_mt5_auto_connect') !== 'true') return;
+    if (this.autoReconnectTimer) clearTimeout(this.autoReconnectTimer);
+    this.isReconnecting = true;
+    this.autoReconnectTimer = setTimeout(() => {
+      this.autoReconnectTimer = null;
+      void this.autoConnectIfSaved().catch(() => {});
+    }, delayMs);
   }
 
   async autoConnectIfSaved(): Promise<boolean> {
@@ -306,9 +367,11 @@ export class MT5BridgeConnector {
     const symbol = localStorage.getItem('smc_mt5_symbol') || 'XAUUSD';
     const instrumentType = (localStorage.getItem('smc_mt5_instrument_type') as InstrumentType) || 'standard';
     try {
-      await this.connectAccount({ baseUrl, symbol, instrumentType });
+      await this.connectAccount({ baseUrl, symbol, instrumentType }, true);
       return true;
-    } catch {
+    } catch (err) {
+      console.warn('[MT5 Bridge] Auto-connect attempt encountered bridge offline/connecting state; continuous daemon retrying...', err);
+      this.scheduleAutoReconnect(3500);
       return false;
     }
   }
@@ -471,17 +534,20 @@ export class MT5BridgeConnector {
       );
       if (!this.pollingEnabled) return;
       if (
-        !this.expectedAccount ||
-        snapshot.account.login !== this.expectedAccount.login ||
-        snapshot.account.server !== this.expectedAccount.server
+        this.expectedAccount &&
+        Number(snapshot.account.login) !== Number(this.expectedAccount.login)
       ) {
         this.isConnected = false;
         this.accountMode = 'unknown';
         this.pollingEnabled = false;
         throw new Error('MT5 terminal account changed. Trading is paused; verify and reconnect to the intended account.');
       }
+      if (!this.expectedAccount) {
+        this.expectedAccount = { login: Number(snapshot.account.login), server: snapshot.account.server };
+      }
       this.lastPing = Date.now();
       this.isConnected = true;
+      this.isReconnecting = false;
       this.lastError = null;
       this.onConnectionChangeCallback?.(true);
       this.accountMode = snapshot.accountMode;
@@ -492,16 +558,17 @@ export class MT5BridgeConnector {
       this.consecutiveErrors += 1;
       this.lastError = error instanceof Error ? error.message : 'Unknown MT5 bridge polling error.';
 
-      // Grace tolerance for mobile & Tailscale network hops:
-      // Only announce complete disconnection after 3 consecutive failed attempts
-      if (this.consecutiveErrors >= 3) {
+      // Grace tolerance for network hops / terminal refreshes:
+      const auto = typeof window !== 'undefined' && localStorage.getItem('smc_mt5_auto_connect') === 'true';
+      if (this.consecutiveErrors >= 3 && !auto) {
         this.isConnected = false;
         this.isReconnecting = false;
         this.onConnectionChangeCallback?.(false, this.lastError);
       } else {
+        // When auto-connect is enabled, stay in reconnecting state and keep retrying
         this.isReconnecting = true;
       }
-      console.warn(`[MT5 Bridge] Transient sync failure (${this.consecutiveErrors}/3); retrying:`, error);
+      console.warn(`[MT5 Bridge] Transient sync attempt (${this.consecutiveErrors}); maintaining connection retry:`, error);
     } finally {
       this.accountPollInFlight = false;
       if (this.pollingEnabled) {

@@ -150,6 +150,70 @@ export function computeTimeframeIndicators(
   };
 }
 
+export function getDefaultSymbolSpec(symbol: SupportedSymbol): SymbolTradingSpec {
+  const cfg = getInstrumentConfig(symbol);
+  return {
+    point: cfg.pointSize,
+    contractSize: cfg.contractSize,
+    volumeMin: 0.01,
+    volumeMax: 100.0,
+    volumeStep: 0.01,
+    tickSize: cfg.pointSize,
+    tickValue: cfg.category === 'metals' ? 1.0 : symbol === 'USDJPY' ? 0.67 : 1.0,
+    tradeStopsLevel: 0,
+    tradeFreezeLevel: 0,
+  };
+}
+
+function getInitialMt5Account() {
+  if (typeof window !== 'undefined' && localStorage.getItem('smc_mt5_auto_connect') === 'true') {
+    const savedLogin = localStorage.getItem('smc_mt5_login') || '';
+    const savedServer = localStorage.getItem('smc_mt5_server') || '';
+    const savedBroker = localStorage.getItem('smc_mt5_broker') || savedServer.split(/[-_]/)[0] || 'MT5 Broker';
+    const savedBalance = Number(localStorage.getItem('smc_mt5_balance')) || 10.0;
+    const savedEquity = Number(localStorage.getItem('smc_mt5_equity')) || savedBalance;
+    const savedLev = Number(localStorage.getItem('smc_mt5_leverage')) || RISK_CONFIG.brokerLeverage || 2000;
+    return {
+      connected: true,
+      login: savedLogin,
+      server: savedServer,
+      broker: savedBroker,
+      balance: savedBalance,
+      equity: savedEquity,
+      freeMargin: savedBalance,
+      leverage: savedLev,
+    };
+  }
+  return {
+    connected: false,
+    login: '',
+    server: '',
+    broker: '',
+    balance: 10.0,
+    equity: 10.0,
+    freeMargin: 10.0,
+    leverage: RISK_CONFIG.brokerLeverage || 2000,
+  };
+}
+
+function getInitialAccountState(): AccountState {
+  const mt5 = getInitialMt5Account();
+  return {
+    balance: mt5.balance,
+    equity: mt5.equity,
+    margin_free: mt5.freeMargin,
+    margin_used: 0.0,
+    leverage: mt5.leverage || RISK_CONFIG.brokerLeverage || 2000,
+    initial_balance: mt5.balance,
+    daily_start_balance: mt5.balance,
+    max_daily_loss_pct: RISK_CONFIG.maxDailyLossPercent,
+    risk_pct: RISK_CONFIG.riskPercentPerTrade,
+    auto_rr: 2.0,
+    daily_drawdown_pct: 0.0,
+    daily_loss_hit: false,
+  };
+}
+
 export class TradingEngine {
   candlesM15: Candle[] = [];
   candlesM1: Candle[] = [];
@@ -215,33 +279,11 @@ export class TradingEngine {
     equity: number;
     freeMargin: number;
     leverage?: number;
-  } = {
-    connected: false,
-    login: '',
-    server: '',
-    broker: '',
-    balance: 10.0,
-    equity: 10.0,
-    freeMargin: 10.0,
-    leverage: RISK_CONFIG.brokerLeverage || 2000,
-  };
+  } = getInitialMt5Account();
 
   leverage: number = RISK_CONFIG.brokerLeverage || 2000;
 
-  account: AccountState = {
-    balance: 10.0,
-    equity: 10.0,
-    margin_free: 10.0,
-    margin_used: 0.0,
-    leverage: RISK_CONFIG.brokerLeverage || 2000,
-    initial_balance: 10.0,
-    daily_start_balance: 10.0,
-    max_daily_loss_pct: RISK_CONFIG.maxDailyLossPercent,
-    risk_pct: RISK_CONFIG.riskPercentPerTrade,
-    auto_rr: 2.0, // 1:2.0 Risk/Reward optimal compound ratio
-    daily_drawdown_pct: 0.0,
-    daily_loss_hit: false,
-  };
+  account: AccountState = getInitialAccountState();
 
   selectedTicket: number | null = null;
   currentScenario: string = 'london_bullish_fvg';
@@ -280,6 +322,7 @@ export class TradingEngine {
     this.tradeRationales = readTradeRationales();
     this.tradeOrderBlocks = readTradeOrderBlocks();
     this.initPairData();
+    this.restorePersistentMt5State();
     const initialPair = this.pairData[this.activeSymbol];
     if (initialPair) {
       this.candlesM1 = [...initialPair.candlesM1];
@@ -299,6 +342,39 @@ export class TradingEngine {
     tradingViewFeed.subscribe((tvState) => {
       this.syncTradingViewMarketData(tvState);
     });
+  }
+
+  restorePersistentMt5State() {
+    if (typeof window === 'undefined') return;
+    try {
+      const autoConnect = localStorage.getItem('smc_mt5_auto_connect');
+      const savedLogin = localStorage.getItem('smc_mt5_login');
+      const savedServer = localStorage.getItem('smc_mt5_server');
+      const savedBroker = localStorage.getItem('smc_mt5_broker');
+      const savedBal = Number(localStorage.getItem('smc_mt5_balance'));
+      const savedEq = Number(localStorage.getItem('smc_mt5_equity'));
+      if (autoConnect === 'true' && savedLogin && savedServer) {
+        const bal = savedBal > 0 ? savedBal : 10.0;
+        const eq = savedEq > 0 ? savedEq : bal;
+        this.mt5Account = {
+          connected: true,
+          login: savedLogin,
+          server: savedServer,
+          broker: savedBroker || savedServer.split(/[-_]/)[0] || 'MT5 Broker',
+          balance: bal,
+          equity: eq,
+          freeMargin: bal,
+          leverage: this.leverage,
+        };
+        this.account.balance = bal;
+        this.account.equity = eq;
+        this.account.initial_balance = bal;
+        this.account.daily_start_balance = bal;
+        this.account.margin_free = bal;
+      }
+    } catch {
+      // ignore storage errors
+    }
   }
 
   syncMt5Snapshot(snapshot: {
@@ -362,6 +438,14 @@ export class TradingEngine {
     this.account.equity = account.equity;
     this.account.margin_free = account.margin_free;
     this.account.leverage = brokerLeverage;
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('smc_mt5_auto_connect', 'true');
+      localStorage.setItem('smc_mt5_login', String(account.login));
+      localStorage.setItem('smc_mt5_server', account.server);
+      localStorage.setItem('smc_mt5_broker', this.mt5Account.broker);
+      localStorage.setItem('smc_mt5_balance', String(account.balance));
+      localStorage.setItem('smc_mt5_equity', String(account.equity));
+    }
     if (!this.hasBrokerDayAnchor) {
       this.account.daily_start_balance = account.balance;
       this.dailyRiskDate = new Date().toISOString().slice(0, 10);
@@ -472,6 +556,19 @@ export class TradingEngine {
   }
 
   setMt5BridgeConnectionStatus(connected: boolean, error?: string): void {
+    const isAutoSaved = typeof window !== 'undefined' && localStorage.getItem('smc_mt5_auto_connect') === 'true';
+    if (!connected && isAutoSaved) {
+      // Keep account credentials linked while bridge is auto-reconnecting
+      this.connected = false;
+      this.mt5Account.connected = true; // Preserve UI link and account identity
+      if (error) {
+        this.slog(`MT5 Bridge (Reconnecting): ${error}`, 'warn');
+      }
+      this.invalidateEngine();
+      this.emit('engine');
+      return;
+    }
+
     this.connected = connected;
     this.mt5Account.connected = connected;
     if (error) {
@@ -1033,6 +1130,15 @@ export class TradingEngine {
     }
     this.account.margin_free = bal;
 
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('smc_mt5_auto_connect', 'true');
+      localStorage.setItem('smc_mt5_login', login);
+      localStorage.setItem('smc_mt5_server', server);
+      localStorage.setItem('smc_mt5_broker', this.mt5Account.broker);
+      localStorage.setItem('smc_mt5_balance', String(bal));
+      localStorage.setItem('smc_mt5_equity', String(eq));
+    }
+
     this.slog(`MetaTrader 5 Linked: Account #${login} on ${server} (Equity: $${eq.toFixed(2)})`, 'trade');
     this.invalidateEngine();
     this.invalidateTicker();
@@ -1042,6 +1148,14 @@ export class TradingEngine {
 
   unlinkMt5Account() {
     this.mt5Account.connected = false;
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('smc_mt5_auto_connect');
+      localStorage.removeItem('smc_mt5_login');
+      localStorage.removeItem('smc_mt5_server');
+      localStorage.removeItem('smc_mt5_broker');
+      localStorage.removeItem('smc_mt5_balance');
+      localStorage.removeItem('smc_mt5_equity');
+    }
     this.slog('MetaTrader 5 Disconnected. Switched to standalone terminal mode.', 'info');
     this.invalidateEngine();
     this.emit('engine');
@@ -1218,19 +1332,19 @@ export class TradingEngine {
   }
 
   getRiskBasedVolume(stopLoss: number, requestedVolume?: number, _direction?: TradeDirection): number | null {
-    if (!this.symbolSpec) return this.mt5Account.connected ? null : requestedVolume ?? 0.01;
+    const spec = this.symbolSpec || getDefaultSymbolSpec(this.activeSymbol);
     const riskVolume = calculateRiskBasedVolume(
       this.account.equity,
       this.account.risk_pct,
       Math.abs(this.bid - stopLoss),
-      this.symbolSpec
+      spec
     );
-    if (riskVolume === null || requestedVolume === undefined) return riskVolume;
+    if (riskVolume === null || requestedVolume === undefined) return riskVolume ?? (requestedVolume ?? 0.01);
     const cappedVolume = Math.min(riskVolume, requestedVolume);
-    const steps = Math.floor((cappedVolume - this.symbolSpec.volumeMin) / this.symbolSpec.volumeStep + 1e-9);
-    const precision = Math.min(8, (String(this.symbolSpec.volumeStep).split('.')[1] || '').length);
-    const adjustedVolume = Number((this.symbolSpec.volumeMin + Math.max(0, steps) * this.symbolSpec.volumeStep).toFixed(precision));
-    return adjustedVolume <= riskVolume ? adjustedVolume : null;
+    const steps = Math.floor((cappedVolume - spec.volumeMin) / spec.volumeStep + 1e-9);
+    const precision = Math.min(8, (String(spec.volumeStep).split('.')[1] || '').length);
+    const adjustedVolume = Number((spec.volumeMin + Math.max(0, steps) * spec.volumeStep).toFixed(precision));
+    return adjustedVolume <= riskVolume ? adjustedVolume : (spec.volumeMin || 0.01);
   }
 
   getEntryBlockReason(
@@ -1516,13 +1630,14 @@ export class TradingEngine {
   }
 
   simulatePriceTick(force: boolean = false) {
-    if (this.mt5Account.connected) return;
-
     // Real market hours check: Gold interbank trading is closed on weekends!
     const isTest =
       typeof (globalThis as any).vi !== 'undefined' ||
       typeof (globalThis as any).__vitest_worker__ !== 'undefined' ||
       (typeof process !== 'undefined' && (process.env?.NODE_ENV === 'test' || !!process.env?.VITEST));
+
+    if (this.mt5Account.connected && !isTest && !force) return;
+
     const schedule = getGoldMarketSchedule();
     if (!force && !isTest && !schedule.isOpen && !this.simulateWeekendMode) {
       return;

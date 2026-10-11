@@ -24,6 +24,7 @@ import {
   Smartphone,
 } from 'lucide-react';
 import { signalAudioNotifier } from '../utils/audioNotification';
+import { MarketOpensTimer } from './MarketOpensTimer';
 
 interface HeaderViewProps {
   isDark: boolean;
@@ -167,6 +168,9 @@ export const HeaderView: React.FC<HeaderViewProps> = React.memo(({
                 )}
               </span>
             </button>
+
+            {/* Real-Time Market Opens Timer */}
+            <MarketOpensTimer />
           </div>
 
           {/* Action Tools Cluster with enlarged icon sizes and touch padding */}

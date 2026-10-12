@@ -8,8 +8,11 @@ export const RISK_CONFIG = {
   brokerLeverage: config.brokerLeverage || 2000,
   smallAccountThresholdUsd: config.smallAccountThresholdUsd || 50,
   smallAccountMaxRiskUsd: config.smallAccountMaxRiskUsd || 2.5,
-  directionCooldownMs: config.directionCooldownMinutes * 60_000,
-  samePoiCooldownMs: config.samePoiCooldownMinutes * 60_000,
+  directionCooldownEnabled: config.directionCooldownEnabled ?? false,
+  hourlyLimitEnabled: config.hourlyLimitEnabled ?? false,
+  maxTradesPerHour: config.maxTradesPerHour || 100,
+  directionCooldownMs: (config.directionCooldownMinutes ?? 0) * 60_000,
+  samePoiCooldownMs: (config.samePoiCooldownMinutes ?? 0) * 60_000,
 } as const;
 
 export function isWithinConfiguredNewsBlackout(date: Date): boolean {

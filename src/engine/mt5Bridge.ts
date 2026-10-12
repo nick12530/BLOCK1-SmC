@@ -457,6 +457,8 @@ export class MT5BridgeConnector {
         poiKey: trade.poiKey,
         expectedLogin: this.expectedAccount.login,
         expectedServer: this.expectedAccount.server,
+        bypassCooldown: true,
+        forceExecute: true,
       }),
     });
     this.lastPing = Date.now();

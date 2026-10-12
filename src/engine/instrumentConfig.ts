@@ -28,6 +28,10 @@ export interface InstrumentConfig {
   defaultRiskPct: number;
   atrPeriod: number;
   atrSlMultiplier: number;
+  minPracticalStopPips: number; // minimum safe stop in pips to prevent spread/noise stop-outs
+  recommendedStopPips: number; // recommended stop distance for normal setups
+  minTakeProfitPips: number; // minimum realistic take profit distance
+  pipValuePerMicroLot: number; // dollar value per pip for 0.01 lot
   description: string;
   volatilityRating: 'moderate' | 'high' | 'very_high';
 }
@@ -53,6 +57,10 @@ export const INSTRUMENTS: Record<SupportedSymbol, InstrumentConfig> = {
     defaultRiskPct: 1.0,
     atrPeriod: 14,
     atrSlMultiplier: 1.0,
+    minPracticalStopPips: 15, // $1.50 minimum stop
+    recommendedStopPips: 25, // $2.50 standard stop
+    minTakeProfitPips: 30, // $3.00 minimum target
+    pipValuePerMicroLot: 0.10, // $0.10 per pip on 0.01 lot
     description: 'Gold spot interbank scalping & SMC order-block retests',
     volatilityRating: 'very_high',
   },
@@ -76,6 +84,10 @@ export const INSTRUMENTS: Record<SupportedSymbol, InstrumentConfig> = {
     defaultRiskPct: 1.0,
     atrPeriod: 14,
     atrSlMultiplier: 1.2,
+    minPracticalStopPips: 8, // 8 pips minimum stop (0.00080)
+    recommendedStopPips: 12, // 12 pips standard stop
+    minTakeProfitPips: 16, // 16 pips minimum target
+    pipValuePerMicroLot: 0.10, // $0.10 per pip on 0.01 lot
     description: 'Primary FX pair: M1/M5 entries, M15 confirmation, H1 bias',
     volatilityRating: 'moderate',
   },
@@ -99,6 +111,10 @@ export const INSTRUMENTS: Record<SupportedSymbol, InstrumentConfig> = {
     defaultRiskPct: 1.0,
     atrPeriod: 14,
     atrSlMultiplier: 1.2,
+    minPracticalStopPips: 8, // 8 pips minimum stop (0.08 JPY) - eliminates 1-pip suicide stops!
+    recommendedStopPips: 15, // 15 pips standard stop (0.15 JPY)
+    minTakeProfitPips: 20, // 20 pips minimum target (0.20 JPY)
+    pipValuePerMicroLot: 0.063, // ~$0.063 per pip on 0.01 lot at ~158.00 JPY
     description: 'Asian/Tokyo session opportunities + London/NY continuation',
     volatilityRating: 'moderate',
   },
@@ -122,6 +138,10 @@ export const INSTRUMENTS: Record<SupportedSymbol, InstrumentConfig> = {
     defaultRiskPct: 1.0,
     atrPeriod: 14,
     atrSlMultiplier: 1.4,
+    minPracticalStopPips: 10, // 10 pips minimum stop (0.00100)
+    recommendedStopPips: 16, // 16 pips standard stop
+    minTakeProfitPips: 24, // 24 pips minimum target
+    pipValuePerMicroLot: 0.10, // $0.10 per pip on 0.01 lot
     description: 'High-volatility cable scalps with strong structural confirmation',
     volatilityRating: 'high',
   },

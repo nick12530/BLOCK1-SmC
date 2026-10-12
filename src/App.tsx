@@ -31,6 +31,8 @@ import { DealingRangeZonesCard } from './components/DealingRangeZonesCard';
 import { LiveExecutionCard } from './components/LiveExecutionCard';
 import { OrderBlocksProgressionCard } from './components/OrderBlocksProgressionCard';
 import { TradingViewWidget } from './components/TradingViewWidget';
+import { RunningTradesHUD } from './components/RunningTradesHUD';
+import { TradeLaunchpad } from './components/TradeLaunchpad';
 import { FooterView } from './components/FooterView';
 import { SignalToastNotification } from './components/SignalToastNotification';
 import { StartupLoadingScreen } from './components/StartupLoadingScreen';
@@ -53,6 +55,7 @@ import {
   Maximize2,
   TrendingUp,
   TrendingDown,
+  Sparkles,
 } from 'lucide-react';
 import {
   buildSignalRationale,
@@ -85,6 +88,7 @@ const MobileServerModal = lazy(() =>
 export type WorkspaceTab =
   | 'split'
   | 'chart'
+  | 'launchpad'
   | 'signals'
   | 'positions'
   | 'zones'
@@ -373,6 +377,11 @@ export default function App() {
             />
           </section>
 
+          {/* Real-Time Running Trades HUD: Unmistakable visibility into open positions & P&L */}
+          <section aria-label="Running trades monitor" className="w-full">
+            <RunningTradesHUD onOpenTradeStation={() => setWorkspaceTab('launchpad')} />
+          </section>
+
           {/* Master Workspace Navigation Bar: PC & Mobile Optimized Tabs Arrangement */}
           <div className="w-full bg-white dark:bg-[#0c141d] border border-slate-200/90 dark:border-[#1a3040] rounded-xl sm:rounded-2xl p-1.5 sm:p-2 shadow-xs transition-colors">
             <div className="flex items-center justify-between gap-2 flex-wrap">
@@ -393,7 +402,22 @@ export default function App() {
                   <span>Dual Split Workstation</span>
                 </button>
 
-                {/* 2. Primary Chart Terminal */}
+                {/* 2. Start Trade Launchpad */}
+                <button
+                  type="button"
+                  onClick={() => setWorkspaceTab('launchpad')}
+                  className={`flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg font-bold transition-all cursor-pointer whitespace-nowrap ${
+                    workspaceTab === 'launchpad'
+                      ? 'bg-sky-500 text-slate-950 font-black shadow-xs ring-1 ring-sky-400'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-[#12202e]'
+                  }`}
+                  title="1-Click Trade Launchpad: Manual or Signal Order Execution"
+                >
+                  <Zap className="w-3.5 h-3.5 text-amber-500 fill-current" />
+                  <span>Start Trade</span>
+                </button>
+
+                {/* 3. Primary Chart Terminal */}
                 <button
                   type="button"
                   onClick={() => setWorkspaceTab('chart')}
@@ -409,7 +433,7 @@ export default function App() {
                   <span className="hidden sm:inline">Terminal</span>
                 </button>
 
-                {/* 3. Signal Engine */}
+                {/* 4. Signal Engine */}
                 <button
                   type="button"
                   onClick={() => setWorkspaceTab('signals')}
@@ -420,14 +444,14 @@ export default function App() {
                   }`}
                   title="Multi-Strategy Signal Engine & 1-Click Execution"
                 >
-                  <Zap className="w-3.5 h-3.5 text-amber-500" />
+                  <Sparkles className="w-3.5 h-3.5 text-sky-400" />
                   <span>Signals</span>
                   {market.signal && (
                     <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse ml-0.5" />
                   )}
                 </button>
 
-                {/* 4. Live Positions */}
+                {/* 5. Live Positions */}
                 <button
                   type="button"
                   onClick={() => setWorkspaceTab('positions')}
@@ -613,6 +637,30 @@ export default function App() {
                         .getElementById('price-structure-chart')
                         ?.scrollIntoView({ behavior: 'smooth', block: 'center' })
                     }
+                    onOpenClosedTradesModal={() => setActiveModal('closed_trades')}
+                    onOpenDailyReportModal={() => setActiveModal('daily_report')}
+                  />
+                </section>
+              </div>
+            </div>
+          )}
+
+          {/* VIEW: TRADE LAUNCHPAD (1-CLICK & MANUAL ORDER STATION) */}
+          {workspaceTab === 'launchpad' && (
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 sm:gap-4 lg:gap-5 items-start">
+              <div className="lg:col-span-7 xl:col-span-8 w-full">
+                <TradeLaunchpad
+                  onSymbolSelect={handleSelectSymbol}
+                  onTradeExecuted={() => setWorkspaceTab('positions')}
+                />
+              </div>
+              <div className="lg:col-span-5 xl:col-span-4 w-full flex flex-col gap-3 sm:gap-4">
+                <section aria-label="Trade signals" className="w-full">
+                  <SignalEngineCard onExecuteSignal={handleExecuteSignal} />
+                </section>
+                <section aria-label="Open positions" className="w-full">
+                  <LiveExecutionCard
+                    onFocusChart={() => setWorkspaceTab('chart')}
                     onOpenClosedTradesModal={() => setActiveModal('closed_trades')}
                     onOpenDailyReportModal={() => setActiveModal('daily_report')}
                   />

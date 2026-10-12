@@ -1,5 +1,6 @@
 import type { Candle, InstrumentType, Signal, TradeDirection } from '../types/smc';
 import { calculateATR, hasRecentCandleGap } from './smcCore';
+import { getInstrumentConfig } from './instrumentConfig';
 
 const EMA_FAST = 20;
 const EMA_SLOW = 50;
@@ -24,7 +25,8 @@ function createSignal(
   atr: number,
   reasons: string[],
   digits: number,
-  tickSize?: number
+  tickSize?: number,
+  symbol?: string
 ): Signal {
   const normalizePrice = (price: number) => Number(
     (tickSize && tickSize > 0
@@ -32,8 +34,26 @@ function createSignal(
       : price).toFixed(digits)
   );
   const entry = normalizePrice(candle.close);
-  const sl = normalizePrice(direction === 'BUY' ? entry - atr : entry + atr);
-  const tp = normalizePrice(direction === 'BUY' ? entry + atr * 2 : entry - atr * 2);
+
+  // Safe minimum stop loss distance: prevents 1-pip suicide stops eaten alive by broker spreads
+  let minStopDistance = digits === 3 ? 0.08 : digits === 5 ? 0.00080 : 1.5;
+  let pipSize = digits === 3 || digits === 2 ? 0.01 : 0.0001;
+  if (symbol) {
+    try {
+      const cfg = getInstrumentConfig(symbol);
+      minStopDistance = cfg.minPracticalStopPips * cfg.pipSize;
+      pipSize = cfg.pipSize;
+    } catch {
+      // fallback
+    }
+  }
+
+  // Use the larger of ATR or the instrument's minimum safe stop floor
+  const effectiveStopDistance = Math.max(atr, minStopDistance);
+  const stopPips = Number((effectiveStopDistance / pipSize).toFixed(1));
+
+  const sl = normalizePrice(direction === 'BUY' ? entry - effectiveStopDistance : entry + effectiveStopDistance);
+  const tp = normalizePrice(direction === 'BUY' ? entry + effectiveStopDistance * 2 : entry - effectiveStopDistance * 2);
   return {
     strategy,
     direction,
@@ -43,10 +63,10 @@ function createSignal(
     sl,
     tp,
     reasons,
-    atr,
+    atr: effectiveStopDistance,
     timestamp: new Date(candle.time < 1_000_000_000_000 ? candle.time * 1000 : candle.time).toISOString(),
-    actionReason: `${strategy} ${direction} confirmation`,
-    perfectEntryReason: `Closed-candle setup with 1:2 risk/reward using ATR-based protection.`,
+    actionReason: `${strategy} ${direction} (${stopPips} pips safe stop beyond spread noise)`,
+    perfectEntryReason: `Closed-candle setup with 1:2 risk/reward using ${stopPips} pips protective stop distance.`,
   };
 }
 
@@ -56,7 +76,8 @@ export function evaluateTechnicalStrategies(
   timeframe: 'M1' | 'M5',
   instrumentType: InstrumentType,
   digits: number = 2,
-  tickSize?: number
+  tickSize?: number,
+  symbol?: string
 ): Signal[] {
   if (executionCandles.length < EMA_SLOW + 2 || higherTimeframeCandles.length < EMA_SLOW + 2) return [];
   const intervalMs = timeframe === 'M1' ? 60_000 : 300_000;
@@ -107,15 +128,16 @@ export function evaluateTechnicalStrategies(
       'Trend Pullback',
       trendDirection,
       timeframe,
-      higherTrend === trendDirection ? 4.5 : 3.8,
+      higherTrend === trendDirection ? 6.8 : 5.0,
       latest,
       atr,
       [
         `${EMA_FAST}-EMA pullback reclaimed in the direction of the ${EMA_SLOW}-EMA trend.`,
-        higherTrend === trendDirection ? 'Higher-timeframe trend agrees.' : 'Synthetic instrument: higher-timeframe alignment is not required.',
+        higherTrend === trendDirection ? 'Higher-timeframe trend agrees with momentum.' : 'Synthetic instrument: higher-timeframe alignment is not required.',
       ],
       digits,
-      tickSize
+      tickSize,
+      symbol
     ));
   }
 
@@ -127,20 +149,22 @@ export function evaluateTechnicalStrategies(
     const bullishBreakout = latest.close > resistance && latest.close > latest.open && body >= atr * 0.8;
     const bearishBreakout = latest.close < support && latest.close < latest.open && body >= atr * 0.8;
     const breakoutDirection: TradeDirection | null = bullishBreakout ? 'BUY' : bearishBreakout ? 'SELL' : null;
-    if (breakoutDirection) {
+    // Require higher-timeframe confirmation: reject counter-trend noise that gets trapped by market makers
+    if (breakoutDirection && (higherTrend === breakoutDirection || instrumentType === 'synthetic')) {
       signals.push(createSignal(
         'Volatility Breakout',
         breakoutDirection,
         timeframe,
-        higherTrend === breakoutDirection ? 4.7 : 4.0,
+        higherTrend === breakoutDirection ? 6.5 : 4.8,
         latest,
         atr,
         [
           `Closed candle broke the previous 20-bar ${breakoutDirection === 'BUY' ? 'high' : 'low'} with a body at least 0.8 ATR.`,
-          higherTrend === breakoutDirection ? 'Higher-timeframe trend agrees.' : 'Breakout is counter to or not confirmed by higher-timeframe trend.',
+          higherTrend === breakoutDirection ? 'Higher-timeframe trend aligns and confirms breakout.' : 'Synthetic instrument: higher-timeframe alignment not required.',
         ],
         digits,
-        tickSize
+        tickSize,
+        symbol
       ));
     }
   }

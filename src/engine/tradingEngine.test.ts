@@ -238,6 +238,8 @@ describe('TradingEngine Store Architecture', () => {
     expect(engine.getEntryBlockReason('BUY', null)).toBe('Daily loss limit reached.');
 
     engine.account.daily_drawdown_pct = 0;
+    engine.directionCooldownEnabled = true;
+    engine.directionCooldownSeconds = 15;
     engine.recordAcceptedEntry('BUY', null);
     expect(engine.getEntryBlockReason('BUY', null)).toBe('Direction cooldown is active.');
   });
@@ -464,6 +466,8 @@ describe('TradingEngine Store Architecture', () => {
     const now = Date.now();
 
     // Record an entry to activate direction cooldown
+    engine.directionCooldownEnabled = true;
+    engine.directionCooldownSeconds = 15;
     engine.recordAcceptedEntry('BUY');
 
     // Without a valid profitable signal, direction cooldown blocks duplicate entries

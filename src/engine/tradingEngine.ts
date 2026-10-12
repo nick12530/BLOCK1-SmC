@@ -268,7 +268,45 @@ export class TradingEngine {
    private pendingCentralKillSwitch: boolean | null = null;
    private pendingCentralAutoTrade: boolean | null = null;
    private dailyRiskDate = new Date().toISOString().slice(0, 10);
-  private entryHistory: Array<{ at: number; direction: TradeDirection; poiKey: string }> = [];
+  private entryHistory: Array<{
+    at: number;
+    direction: TradeDirection;
+    symbol: string;
+    poiKey: string;
+    entryPrice?: number;
+  }> = [];
+
+  directionCooldownEnabled: boolean = (() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('smc_direction_cooldown_enabled');
+      if (saved !== null) return saved === 'true';
+    }
+    return false; // Default OFF so signals can execute unhindered!
+  })();
+
+  hourlyTradeLimitEnabled: boolean = (() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('smc_hourly_limit_enabled');
+      if (saved !== null) return saved === 'true';
+    }
+    return false; // Default OFF so multi-pair continuous scanning is never blocked!
+  })();
+
+  directionCooldownSeconds: number = (() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('smc_direction_cooldown_sec');
+      if (saved !== null && !isNaN(Number(saved))) return Number(saved);
+    }
+    return 0; // Default 0 to prevent artificial trade delays
+  })();
+
+  maxTradesPerHour: number = (() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('smc_max_trades_per_hour');
+      if (saved !== null && !isNaN(Number(saved))) return Number(saved);
+    }
+    return 100; // 100 trades/hour high ceiling
+  })();
 
   mt5Account: {
     connected: boolean;
@@ -882,13 +920,19 @@ export class TradingEngine {
               this.candlesM1,
               this.candlesM5,
               'M1',
-              this.instrumentType
+              this.instrumentType,
+              getInstrumentConfig(this.activeSymbol).digits,
+              undefined,
+              this.activeSymbol
             ),
             ...evaluateTechnicalStrategies(
               this.candlesM5,
               this.candlesM15,
               'M5',
-              this.instrumentType
+              this.instrumentType,
+              getInstrumentConfig(this.activeSymbol).digits,
+              undefined,
+              this.activeSymbol
             ),
           ].filter((signal): signal is Signal => signal !== null)
         : [];
@@ -1351,7 +1395,8 @@ export class TradingEngine {
     direction: TradeDirection,
     signal = this.getMarketSnapshot().signal,
     now: number = Date.now(),
-    isManual: boolean = false
+    isManual: boolean = false,
+    targetSymbol: string = this.activeSymbol
   ): string | null {
     this.entryHistory = this.entryHistory.filter((entry) => now - entry.at < 60 * 60_000);
     if (this.killSwitch) return 'Kill switch is armed.';
@@ -1431,22 +1476,44 @@ export class TradingEngine {
       return `TRADE_REJECTED: SPREAD_TOO_WIDE (${this.spread} points; maximum ${config.maxSpreadPoints} for ${this.activeSymbol}).`;
     }
 
-    // Smart decoupled direction cooldown
-    if (!isManual) {
-      const lastDirectionEntry = [...this.entryHistory].reverse().find((entry) => entry.direction === direction);
-      if (lastDirectionEntry && now - lastDirectionEntry.at < RISK_CONFIG.directionCooldownMs) {
-        if (!hasValidProfitableSignal) {
-          return 'Direction cooldown is active.';
+    if (signal) {
+      const stopDist = Math.abs(signal.entry - signal.sl);
+      const minSafeStop = config.minPracticalStopPips * config.pipSize;
+      if (stopDist < minSafeStop * 0.70) {
+        const stopPips = (stopDist / config.pipSize).toFixed(1);
+        return `TRADE_REJECTED: STOP_LOSS_TOO_TIGHT (Stop is ${stopPips} pips; minimum safe stop for ${this.activeSymbol} is ${config.minPracticalStopPips} pips to prevent spread stop-outs).`;
+      }
+
+      // Spread protection: broker spread must not consume over 40% of the stop loss
+      const spreadDist = this.spread * config.pointSize;
+      if (stopDist > 0 && spreadDist / stopDist > 0.40) {
+        const spreadPips = (spreadDist / config.pipSize).toFixed(1);
+        const stopPips = (stopDist / config.pipSize).toFixed(1);
+        return `TRADE_REJECTED: SPREAD_EATS_STOP (Spread ${spreadPips} pips consumes >40% of the ${stopPips} pip stop loss).`;
+      }
+    }
+
+    // Smart decoupled direction cooldown (only if enabled, per-symbol)
+    if (!isManual && this.directionCooldownEnabled) {
+      const cooldownMs = this.directionCooldownSeconds * 1000;
+      if (cooldownMs > 0) {
+        const lastDirectionEntry = [...this.entryHistory]
+          .reverse()
+          .find((entry) => (!entry.symbol || entry.symbol === targetSymbol) && entry.direction === direction);
+        if (lastDirectionEntry && now - lastDirectionEntry.at < cooldownMs) {
+          if (!hasValidProfitableSignal) {
+            return 'Direction cooldown is active.';
+          }
         }
       }
     }
 
-    // Smart decoupled POI cooldown
-    if (!isManual) {
+    // Smart decoupled POI cooldown (only if enabled, per-symbol)
+    if (!isManual && this.directionCooldownEnabled && RISK_CONFIG.samePoiCooldownMs > 0) {
       const poiKey = signal ? this.getSignalPoiKey(signal.direction, signal.entry) : '';
       if (
         poiKey &&
-        this.entryHistory.some((entry) => entry.poiKey === poiKey && now - entry.at < RISK_CONFIG.samePoiCooldownMs)
+        this.entryHistory.some((entry) => (!entry.symbol || entry.symbol === targetSymbol) && entry.poiKey === poiKey && now - entry.at < RISK_CONFIG.samePoiCooldownMs)
       ) {
         if (!hasValidProfitableSignal) {
           return 'This SMC point of interest was traded recently.';
@@ -1454,8 +1521,12 @@ export class TradingEngine {
       }
     }
 
-    if (!isManual && !hasValidProfitableSignal && this.entryHistory.length >= RISK_CONFIG.maxTradesPerHour) {
-      return 'Hourly trade limit reached.';
+    // Hourly trade limit (only if enabled, per-symbol)
+    if (!isManual && this.hourlyTradeLimitEnabled && !hasValidProfitableSignal) {
+      const symbolEntries = this.entryHistory.filter((entry) => (!entry.symbol || entry.symbol === targetSymbol));
+      if (symbolEntries.length >= this.maxTradesPerHour) {
+        return 'Hourly trade limit reached.';
+      }
     }
 
     const consecutiveLosses = this.closedTrades.slice(0, RISK_CONFIG.maxConsecutiveLosses)
@@ -1504,15 +1575,51 @@ export class TradingEngine {
     return getInstrumentConfig(this.activeSymbol).maxSpreadPoints;
   }
 
-  recordAcceptedEntry(direction: TradeDirection, signal = this.getMarketSnapshot().signal) {
+  recordAcceptedEntry(
+    direction: TradeDirection,
+    signal = this.getMarketSnapshot().signal,
+    symbol: string = this.activeSymbol
+  ) {
     const poiKey = signal ? this.getSignalPoiKey(signal.direction, signal.entry) : '';
-    this.entryHistory.push({ at: Date.now(), direction, poiKey });
-    this.entryHistory = this.entryHistory.slice(-RISK_CONFIG.maxTradesPerHour);
+    this.entryHistory.push({ at: Date.now(), direction, symbol, poiKey });
+    this.entryHistory = this.entryHistory.slice(-100);
     try {
       signalAudioNotifier.playTradeExecutionAlert(direction);
     } catch {
       // ignore
     }
+  }
+
+  setDirectionCooldownEnabled(enabled: boolean) {
+    this.directionCooldownEnabled = enabled;
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('smc_direction_cooldown_enabled', String(enabled));
+    }
+    this.notify();
+  }
+
+  setHourlyTradeLimitEnabled(enabled: boolean) {
+    this.hourlyTradeLimitEnabled = enabled;
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('smc_hourly_limit_enabled', String(enabled));
+    }
+    this.notify();
+  }
+
+  setDirectionCooldownSeconds(sec: number) {
+    this.directionCooldownSeconds = sec;
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('smc_direction_cooldown_sec', String(sec));
+    }
+    this.notify();
+  }
+
+  setMaxTradesPerHour(maxTrades: number) {
+    this.maxTradesPerHour = maxTrades;
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('smc_max_trades_per_hour', String(maxTrades));
+    }
+    this.notify();
   }
 
   getSignalPoiKey(direction: TradeDirection, entry: number): string {

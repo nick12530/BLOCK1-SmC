@@ -6,6 +6,7 @@ import math
 import os
 import hmac
 import json
+import logging
 import sqlite3
 import threading
 from functools import wraps
@@ -13,6 +14,8 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Literal, cast
 from zoneinfo import ZoneInfo
+
+logger = logging.getLogger("mt5_bridge")
 
 import MetaTrader5 as mt5  # type: ignore[attr-defined]
 mt5 = cast(Any, mt5)
@@ -248,10 +251,12 @@ class TradeRequest(BaseModel):
     expectedLogin: int = Field(gt=0)
     expectedServer: str = Field(min_length=1, max_length=128)
     clientOrderId: str = Field(min_length=1, max_length=160)
-    poiKey: str = Field(min_length=1, max_length=160)
-    signalTimeframe: Literal["M1", "M5"]
-    signalTimestamp: str = Field(min_length=1, max_length=40)
+    poiKey: str = Field(default="", max_length=160)
+    signalTimeframe: Literal["M1", "M5"] = "M1"
+    signalTimestamp: str = Field(default="", max_length=40)
     magic: int | None = None
+    bypassCooldown: bool = False
+    forceExecute: bool = False
 
 
 class TradingControlRequest(BaseModel):
@@ -565,6 +570,25 @@ def history(
     return read_closed_trades(days, symbol.strip())
 
 
+def resolve_filling_mode(info) -> int:
+    """Safely determine MT5 order filling mode from symbol info filling_mode bitmask.
+    Uses mt5.ORDER_FILLING_IOC instead of non-existent mt5.SYMBOL_FILLING_IOC attribute.
+    Checks if symbol supports IOC (Bit 1 / value 2), falling back to FOK (Bit 0 / value 1)
+    if IOC is unavailable, or ORDER_FILLING_RETURN to prevent 500 Internal Server Errors."""
+    try:
+        mode = getattr(info, "filling_mode", 0) if info else 0
+        # Check if IOC (Immediate or Cancel) is supported
+        if mode & 2:
+            return getattr(mt5, "ORDER_FILLING_IOC", 1)
+        # Fall back to FOK (Fill or Kill) if IOC is unavailable
+        if mode & 1:
+            return getattr(mt5, "ORDER_FILLING_FOK", 0)
+        return getattr(mt5, "ORDER_FILLING_RETURN", getattr(mt5, "ORDER_FILLING_IOC", 1))
+    except Exception as exc:
+        logger.warning("Error determining filling mode: %s; falling back to ORDER_FILLING_IOC", exc)
+        return getattr(mt5, "ORDER_FILLING_IOC", 1)
+
+
 @app.post("/api/trade")
 @idempotent_order
 def place_trade(payload: TradeRequest, request: Request) -> dict:
@@ -674,38 +698,57 @@ def place_trade(payload: TradeRequest, request: Request) -> dict:
 
     with sqlite3.connect(STATE_DATABASE) as connection:
         recent_count = connection.execute(
-            "SELECT COUNT(*) FROM order_requests WHERE account_login = ? AND account_server = ? AND accepted_at >= ?",
-            (account["login"], account["server"], (now - timedelta(hours=1)).isoformat()),
+            "SELECT COUNT(*) FROM order_requests WHERE account_login = ? AND account_server = ? AND symbol = ? AND accepted_at >= ?",
+            (account["login"], account["server"], symbol, (now - timedelta(hours=1)).isoformat()),
         ).fetchone()[0]
         recent_direction = connection.execute(
             """
             SELECT accepted_at FROM order_requests
-            WHERE account_login = ? AND account_server = ? AND direction = ?
+            WHERE account_login = ? AND account_server = ? AND symbol = ? AND direction = ?
             ORDER BY accepted_at DESC LIMIT 1
             """,
-            (account["login"], account["server"], payload.direction),
+            (account["login"], account["server"], symbol, payload.direction),
         ).fetchone()
         recent_poi = connection.execute(
             """
             SELECT 1 FROM order_requests
-            WHERE account_login = ? AND account_server = ? AND poi_key = ? AND accepted_at >= ?
+            WHERE account_login = ? AND account_server = ? AND symbol = ? AND poi_key = ? AND accepted_at >= ?
             LIMIT 1
             """,
             (
                 account["login"],
                 account["server"],
+                symbol,
                 payload.poiKey,
-                (now - timedelta(minutes=RISK_CONFIG["samePoiCooldownMinutes"])).isoformat(),
+                (now - timedelta(minutes=RISK_CONFIG.get("samePoiCooldownMinutes", 1))).isoformat(),
             ),
         ).fetchone()
-    if recent_count >= RISK_CONFIG["maxTradesPerHour"]:
-        raise HTTPException(status_code=423, detail="Hourly order limit reached.")
-    if recent_direction:
+    # Direction cooldown and hourly trade limits
+    allow_cooldown_bypass = (
+        bool(payload.bypassCooldown)
+        or bool(payload.forceExecute)
+        or (not RISK_CONFIG.get("directionCooldownEnabled", False))
+    )
+    allow_hourly_bypass = (
+        bool(payload.bypassCooldown)
+        or bool(payload.forceExecute)
+        or (not RISK_CONFIG.get("hourlyLimitEnabled", False))
+    )
+
+    if not allow_hourly_bypass:
+        max_hourly = RISK_CONFIG.get("maxTradesPerHour", 100)
+        if max_hourly > 0 and recent_count >= max_hourly:
+            raise HTTPException(status_code=423, detail=f"Hourly order limit reached ({recent_count}/{max_hourly} for {symbol}).")
+
+    if not allow_cooldown_bypass and recent_direction:
         last_direction_time = datetime.fromisoformat(recent_direction[0])
-        if now - last_direction_time < timedelta(minutes=RISK_CONFIG["directionCooldownMinutes"]):
-            raise HTTPException(status_code=423, detail="Direction cooldown is active.")
-    if recent_poi:
-        raise HTTPException(status_code=423, detail="This SMC point of interest was recently traded.")
+        cooldown_min = RISK_CONFIG.get("directionCooldownMinutes", 0)
+        if cooldown_min > 0 and (now - last_direction_time < timedelta(minutes=cooldown_min)):
+            raise HTTPException(status_code=423, detail=f"Direction cooldown is active for {symbol}.")
+
+    same_poi_min = RISK_CONFIG.get("samePoiCooldownMinutes", 0)
+    if not allow_cooldown_bypass and same_poi_min > 0 and recent_poi:
+        raise HTTPException(status_code=423, detail=f"This SMC point of interest on {symbol} was recently traded.")
 
     order_type = mt5.ORDER_TYPE_BUY if payload.direction == "BUY" else mt5.ORDER_TYPE_SELL
     if payload.direction == "BUY" and not (payload.sl < price < payload.tp):
@@ -721,13 +764,26 @@ def place_trade(payload: TradeRequest, request: Request) -> dict:
         if abs(level / symbol_spec["tickSize"] - round(level / symbol_spec["tickSize"])) > 1e-6:
             raise HTTPException(status_code=400, detail=f"Protective price levels must align to tick size {symbol_spec['tickSize']}.")
 
-    filling = (
-        mt5.ORDER_FILLING_IOC
-        if info.filling_mode & mt5.SYMBOL_FILLING_IOC
-        else mt5.ORDER_FILLING_FOK
-        if info.filling_mode & mt5.SYMBOL_FILLING_FOK
-        else mt5.ORDER_FILLING_RETURN
-    )
+    # Robust error handling block for order filling mode:
+    # Uses mt5.ORDER_FILLING_IOC instead of the non-existent mt5.SYMBOL_FILLING_IOC attribute.
+    # Checks if the symbol's filling_mode supports IOC (Bit 1 = 2) and falls back to FOK (Bit 0 = 1)
+    # if IOC is unavailable, or ORDER_FILLING_RETURN to prevent 500 Internal Server Errors.
+    try:
+        filling_mode = getattr(info, "filling_mode", 0) if info else 0
+        if filling_mode & 2:
+            # Immediate or Cancel (IOC) supported
+            filling = getattr(mt5, "ORDER_FILLING_IOC", 1)
+        elif filling_mode & 1:
+            # Fallback to Fill or Kill (FOK) if IOC is unavailable
+            filling = getattr(mt5, "ORDER_FILLING_FOK", 0)
+        elif hasattr(mt5, "ORDER_FILLING_RETURN"):
+            filling = getattr(mt5, "ORDER_FILLING_RETURN", 2)
+        else:
+            filling = getattr(mt5, "ORDER_FILLING_IOC", 1)
+    except Exception as exc:
+        logger.warning("Error resolving symbol filling_mode in place_trade: %s; falling back to ORDER_FILLING_IOC", exc)
+        filling = getattr(mt5, "ORDER_FILLING_IOC", 1)
+
     rationale_comment = "".join(
         character
         for character in payload.rationale
@@ -753,9 +809,26 @@ def place_trade(payload: TradeRequest, request: Request) -> dict:
         "type_filling": filling,
     }
     result = mt5.order_send(request_data)
+    accepted_ret_codes = (mt5.TRADE_RETCODE_DONE, mt5.TRADE_RETCODE_PLACED, mt5.TRADE_RETCODE_DONE_PARTIAL)
+    # If broker rejected due to unsupported filling mode (10030: TRADE_RETCODE_INVALID_FILL), retry with alternative filling modes
+    if result is not None and result.retcode not in accepted_ret_codes:
+        invalid_fill_code = getattr(mt5, "TRADE_RETCODE_INVALID_FILL", 10030)
+        if result.retcode == invalid_fill_code or "filling" in str(getattr(result, "comment", "")).lower():
+            alt_fillings = [
+                getattr(mt5, "ORDER_FILLING_FOK", 0),
+                getattr(mt5, "ORDER_FILLING_IOC", 1),
+                getattr(mt5, "ORDER_FILLING_RETURN", 2),
+            ]
+            for alt_filling in alt_fillings:
+                if alt_filling == filling:
+                    continue
+                request_data["type_filling"] = alt_filling
+                alt_result = mt5.order_send(request_data)
+                if alt_result is not None and alt_result.retcode in accepted_ret_codes:
+                    result = alt_result
+                    break
     if result is None:
         raise HTTPException(status_code=502, detail=f"MT5 order request failed: {mt5.last_error()}")
-    accepted_ret_codes = (mt5.TRADE_RETCODE_DONE, mt5.TRADE_RETCODE_PLACED, mt5.TRADE_RETCODE_DONE_PARTIAL)
     if result.retcode not in accepted_ret_codes:
         raise HTTPException(
             status_code=502,
@@ -811,28 +884,42 @@ def close_position(payload: CloseRequest, request: Request) -> dict:
     if tick is None or info is None:
         raise HTTPException(status_code=503, detail=f"No current MT5 quote for {position.symbol!r}.")
     is_buy = position.type == mt5.POSITION_TYPE_BUY
-    filling = (
-        mt5.ORDER_FILLING_IOC
-        if info.filling_mode & mt5.SYMBOL_FILLING_IOC
-        else mt5.ORDER_FILLING_FOK
-        if info.filling_mode & mt5.SYMBOL_FILLING_FOK
-        else mt5.ORDER_FILLING_RETURN
+    filling = resolve_filling_mode(info)
+    close_data = {
+        "action": mt5.TRADE_ACTION_DEAL,
+        "symbol": position.symbol,
+        "volume": float(position.volume),
+        "type": mt5.ORDER_TYPE_SELL if is_buy else mt5.ORDER_TYPE_BUY,
+        "position": int(position.ticket),
+        "price": float(tick.bid if is_buy else tick.ask),
+        "deviation": 20,
+        "magic": int(position.magic),
+        "comment": "SMC dashboard close",
+        "type_time": mt5.ORDER_TIME_GTC,
+        "type_filling": filling,
+    }
+    result = mt5.order_send(close_data)
+    accepted_close_codes = (
+        mt5.TRADE_RETCODE_DONE,
+        mt5.TRADE_RETCODE_PLACED,
+        mt5.TRADE_RETCODE_DONE_PARTIAL,
     )
-    result = mt5.order_send(
-        {
-            "action": mt5.TRADE_ACTION_DEAL,
-            "symbol": position.symbol,
-            "volume": float(position.volume),
-            "type": mt5.ORDER_TYPE_SELL if is_buy else mt5.ORDER_TYPE_BUY,
-            "position": int(position.ticket),
-            "price": float(tick.bid if is_buy else tick.ask),
-            "deviation": 20,
-            "magic": int(position.magic),
-            "comment": "SMC dashboard close",
-            "type_time": mt5.ORDER_TIME_GTC,
-            "type_filling": filling,
-        }
-    )
+    if result is not None and result.retcode not in accepted_close_codes:
+        invalid_fill_code = getattr(mt5, "TRADE_RETCODE_INVALID_FILL", 10030)
+        if result.retcode == invalid_fill_code or "filling" in str(getattr(result, "comment", "")).lower():
+            alt_fillings = [
+                getattr(mt5, "ORDER_FILLING_FOK", 0),
+                getattr(mt5, "ORDER_FILLING_IOC", 1),
+                getattr(mt5, "ORDER_FILLING_RETURN", 2),
+            ]
+            for alt_filling in alt_fillings:
+                if alt_filling == filling:
+                    continue
+                close_data["type_filling"] = alt_filling
+                alt_result = mt5.order_send(close_data)
+                if alt_result is not None and alt_result.retcode in accepted_close_codes:
+                    result = alt_result
+                    break
     if result is None or result.retcode not in (
         mt5.TRADE_RETCODE_DONE,
         mt5.TRADE_RETCODE_PLACED,

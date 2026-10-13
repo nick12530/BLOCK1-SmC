@@ -104,13 +104,13 @@ export const TradingViewWidget: React.FC<TradingViewWidgetProps> = memo(({
   return (
     <div
       id="price-structure-chart"
-      className={`bg-white dark:bg-[#0d1823] border border-slate-200/90 dark:border-[#1a3040] rounded-2xl overflow-hidden shadow-xs flex flex-col font-mono text-xs transition-colors ${
+      className={`bg-white dark:bg-[#0c0e12] border border-slate-200 dark:border-zinc-800 rounded-2xl overflow-hidden shadow-xs flex flex-col font-mono text-xs transition-colors ${
         typeof height === 'string' ? 'h-full min-h-0' : ''
       }`}
       style={{ height: typeof height === 'number' ? `${height + 56}px` : '100%' }}
     >
       {/* Chart Top Bar */}
-      <div className="px-3 sm:px-4 py-2 bg-slate-50/90 dark:bg-[#10202d] border-b border-slate-200 dark:border-[#1a3040] flex items-center justify-between flex-wrap gap-2">
+      <div className="px-3 sm:px-4 py-2 bg-slate-50/90 dark:bg-zinc-900/90 border-b border-slate-200 dark:border-zinc-800 flex items-center justify-between flex-wrap gap-2">
         {/* Left: Engine Mode Switcher & Symbol Indicator */}
         <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
           {/* Dual Engine Tabs */}

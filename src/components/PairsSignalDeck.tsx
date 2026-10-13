@@ -48,9 +48,9 @@ export const PairsSignalDeck: React.FC<PairsSignalDeckProps> = React.memo(({
   if (!scannerAnalyses.length) return null;
 
   return (
-    <div className="bg-white dark:bg-[#0c141d] border border-slate-200/90 dark:border-[#1a2d3e] rounded-xl sm:rounded-2xl p-2 sm:p-3.5 shadow-xs flex flex-col gap-2.5 font-sans transition-colors">
+    <div className="bg-white dark:bg-[#0c0e12] border border-slate-200 dark:border-zinc-800 rounded-xl sm:rounded-2xl p-2 sm:p-3.5 shadow-xs flex flex-col gap-2.5 font-sans transition-colors">
       {/* Top Header: Title, Active Status, Auto-Select Toggle & Collapse Toggle */}
-      <div className="flex items-center justify-between gap-2 border-b border-slate-100 dark:border-[#162736] pb-2 sm:pb-2.5 flex-wrap">
+      <div className="flex items-center justify-between gap-2 border-b border-slate-100 dark:border-zinc-800 pb-2 sm:pb-2.5 flex-wrap">
         <div className="flex items-center gap-2">
           <div className="p-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-sky-500">
             <Layers className="w-4 h-4" />
@@ -108,8 +108,8 @@ export const PairsSignalDeck: React.FC<PairsSignalDeckProps> = React.memo(({
                 onClick={() => onSelectSymbol(item.symbol)}
                 className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border transition-all cursor-pointer whitespace-nowrap ${
                   isActive
-                    ? 'bg-sky-500/10 text-sky-600 dark:text-sky-400 border-sky-500 ring-1 ring-sky-500/40 shadow-xs'
-                    : 'bg-slate-50 dark:bg-[#071018] border-slate-200 dark:border-[#142232] text-slate-700 dark:text-slate-300 hover:border-slate-300 dark:hover:border-slate-600'
+                    ? 'bg-slate-900 text-white dark:bg-zinc-200 dark:text-zinc-950 border-slate-900 dark:border-zinc-200 shadow-xs'
+                    : 'bg-slate-50 dark:bg-zinc-900 border-slate-200 dark:border-zinc-800 text-slate-700 dark:text-slate-300 hover:border-slate-300 dark:hover:border-zinc-700'
                 }`}
               >
                 <span className="font-black">{item.symbol === 'XAUUSD' ? 'GOLD' : item.symbol}</span>
@@ -144,8 +144,8 @@ export const PairsSignalDeck: React.FC<PairsSignalDeckProps> = React.memo(({
               onClick={() => onSelectSymbol(item.symbol)}
               className={`rounded-xl p-3.5 sm:p-4.5 border transition-all cursor-pointer flex flex-col justify-between gap-3 font-mono relative ${
                 isActive
-                  ? 'bg-sky-500/[0.04] dark:bg-[#0e1f30] border-sky-500 dark:border-sky-500 shadow-md ring-1 ring-sky-500/40'
-                  : 'bg-slate-50/70 dark:bg-[#09121c] border-slate-200 dark:border-[#172736] hover:border-slate-300 dark:hover:border-slate-600 hover:bg-white dark:hover:bg-[#0c1622]'
+                  ? 'bg-slate-100/90 dark:bg-zinc-900/90 border-slate-900 dark:border-zinc-500 shadow-xs'
+                  : 'bg-slate-50/70 dark:bg-[#0f1217] border-slate-200 dark:border-zinc-800 hover:border-slate-300 dark:hover:border-zinc-700 hover:bg-white dark:hover:bg-[#12161f]'
               }`}
             >
               {/* Row 1: Symbol Header, Live Price & Spread */}
@@ -178,7 +178,7 @@ export const PairsSignalDeck: React.FC<PairsSignalDeckProps> = React.memo(({
               </div>
 
               {/* Row 2: Signal Bias & Confluence Score */}
-              <div className="flex items-center justify-between gap-2 p-2 sm:p-2.5 rounded-xl bg-white dark:bg-[#060c14] border border-slate-200/80 dark:border-[#142232]">
+              <div className="flex items-center justify-between gap-2 p-2 sm:p-2.5 rounded-xl bg-white dark:bg-[#0c0e12] border border-slate-200/80 dark:border-zinc-800">
                 <div className="flex items-center gap-2">
                   <span
                     className={`px-2.5 py-1 rounded-lg text-xs font-black uppercase flex items-center gap-1.5 ${
@@ -206,7 +206,7 @@ export const PairsSignalDeck: React.FC<PairsSignalDeckProps> = React.memo(({
               </div>
 
               {/* Row 3: Key Order Block & Risk:Reward Details */}
-              <div className="text-xs sm:text-sm space-y-1.5 text-slate-600 dark:text-slate-300 bg-slate-100/60 dark:bg-[#071018] p-2.5 sm:p-3 rounded-xl border border-slate-200/60 dark:border-[#142232]">
+              <div className="text-xs sm:text-sm space-y-1.5 text-slate-600 dark:text-slate-300 bg-slate-100/60 dark:bg-[#0c0e12] p-2.5 sm:p-3 rounded-xl border border-slate-200/60 dark:border-zinc-800/80">
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-slate-500 dark:text-slate-400 shrink-0 font-medium">Order Block:</span>
                   <span className="font-bold text-slate-900 dark:text-slate-100 truncate text-right">

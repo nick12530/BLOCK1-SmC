@@ -12,7 +12,10 @@ import {
   EngineState,
   EventsState,
   ClosedTrade,
+  JournalSignalRecord,
+  JournalTradeRecord,
 } from '../types/smc';
+import { subscribeJournal } from '../engine/tradeJournal';
 import type { PairAnalysis } from '../engine/multiPairScanner';
 import type { SupportedSymbol } from '../engine/instrumentConfig';
 
@@ -67,5 +70,65 @@ export function useBestOpportunity(): PairAnalysis | null {
 export function useActiveSymbol(): SupportedSymbol {
   const subscribe = useCallback((cb: () => void) => tradingEngine.on('ticker', cb), []);
   const getSnapshot = useCallback(() => tradingEngine.activeSymbol, []);
+  return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+}
+
+let cachedSignalsRaw: string = '';
+let cachedSignalsSnapshot: JournalSignalRecord[] = [];
+
+export function useJournalSignals(): JournalSignalRecord[] {
+  const subscribe = useCallback((cb: () => void) => {
+    const unsubJournal = subscribeJournal(cb);
+    const unsubEngine = tradingEngine.on('events', cb);
+    return () => {
+      unsubJournal();
+      unsubEngine();
+    };
+  }, []);
+
+  const getSnapshot = useCallback(() => {
+    try {
+      const stored = localStorage.getItem('smc.journal-signals.v1') || '[]';
+      if (stored !== cachedSignalsRaw) {
+        cachedSignalsRaw = stored;
+        const parsed = JSON.parse(stored);
+        cachedSignalsSnapshot = Array.isArray(parsed) ? parsed : [];
+      }
+    } catch {
+      // fallback
+    }
+    return cachedSignalsSnapshot;
+  }, []);
+
+  return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+}
+
+let cachedTradesRaw: string = '';
+let cachedTradesSnapshot: JournalTradeRecord[] = [];
+
+export function useJournalTrades(): JournalTradeRecord[] {
+  const subscribe = useCallback((cb: () => void) => {
+    const unsubJournal = subscribeJournal(cb);
+    const unsubEngine = tradingEngine.on('positions', cb);
+    return () => {
+      unsubJournal();
+      unsubEngine();
+    };
+  }, []);
+
+  const getSnapshot = useCallback(() => {
+    try {
+      const stored = localStorage.getItem('smc.journal-trades.v1') || '[]';
+      if (stored !== cachedTradesRaw) {
+        cachedTradesRaw = stored;
+        const parsed = JSON.parse(stored);
+        cachedTradesSnapshot = Array.isArray(parsed) ? parsed : [];
+      }
+    } catch {
+      // fallback
+    }
+    return cachedTradesSnapshot;
+  }, []);
+
   return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 }

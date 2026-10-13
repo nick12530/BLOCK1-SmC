@@ -23,7 +23,7 @@ export const CompoundingLadderCard: React.FC<CompoundingLadderCardProps> = React
   const isAutoBe = engine.auto_be_enabled;
 
   return (
-    <div className="w-full min-w-0 bg-white dark:bg-[#0d1823] border border-slate-200 dark:border-[#1a3040] shadow-xs dark:shadow-none rounded-xl px-3.5 py-3 flex flex-col md:flex-row items-center justify-between gap-3 text-xs font-mono transition-colors">
+    <div className="w-full min-w-0 bg-white dark:bg-[#111216] border border-slate-200 dark:border-zinc-800 shadow-xs dark:shadow-none rounded-xl px-3.5 py-3 flex flex-col md:flex-row items-center justify-between gap-3 text-xs font-mono transition-colors">
       {/* Left: Current Stage & Progress Bar */}
       <div className="flex items-center gap-2.5 flex-wrap justify-center md:justify-start">
         <span className="font-black px-2 py-0.5 rounded bg-zinc-100 dark:bg-zinc-900 text-zinc-800 dark:text-zinc-200 border border-zinc-200 dark:border-zinc-800 uppercase tracking-wider text-[11px]">

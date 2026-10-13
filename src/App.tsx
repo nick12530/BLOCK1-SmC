@@ -23,16 +23,11 @@ import { WeekendMarketBanner } from './components/WeekendMarketBanner';
 import { WorkspaceErrorBoundary } from './components/ErrorBoundary';
 import { ConfirmDialog } from './components/ConfirmDialog';
 
-import { MultiPairScannerPanel } from './components/MultiPairScannerPanel';
 import { PairsSignalDeck } from './components/PairsSignalDeck';
-import { BestOpportunityCard } from './components/BestOpportunityCard';
-import { SignalEngineCard } from './components/SignalEngineCard';
-import { DealingRangeZonesCard } from './components/DealingRangeZonesCard';
 import { LiveExecutionCard } from './components/LiveExecutionCard';
-import { OrderBlocksProgressionCard } from './components/OrderBlocksProgressionCard';
 import { TradingViewWidget } from './components/TradingViewWidget';
 import { RunningTradesHUD } from './components/RunningTradesHUD';
-import { TradeLaunchpad } from './components/TradeLaunchpad';
+import { LiveSignalsStream } from './components/LiveSignalsStream';
 import { FooterView } from './components/FooterView';
 import { SignalToastNotification } from './components/SignalToastNotification';
 import { StartupLoadingScreen } from './components/StartupLoadingScreen';
@@ -46,21 +41,17 @@ import { getInstrumentConfig } from './engine/instrumentConfig';
 import type { PairAnalysis } from './engine/multiPairScanner';
 import {
   BarChart3,
-  Layers,
-  Activity,
   Zap,
-  Briefcase,
-  Columns,
-  LayoutGrid,
-  Maximize2,
   TrendingUp,
   TrendingDown,
-  Sparkles,
+  History,
 } from 'lucide-react';
+import { AuditJournalPanel } from './components/AuditJournalPanel';
 import {
   buildSignalRationale,
   findCorrespondingOrderBlock,
   localDayKey,
+  recordTradeTaken,
 } from './engine/tradeJournal';
 
 const Mt5BridgeModal = lazy(() =>
@@ -85,15 +76,7 @@ const MobileServerModal = lazy(() =>
   import('./components/MobileServerModal').then((module) => ({ default: module.MobileServerModal }))
 );
 
-export type WorkspaceTab =
-  | 'split'
-  | 'chart'
-  | 'launchpad'
-  | 'signals'
-  | 'positions'
-  | 'zones'
-  | 'scanner'
-  | 'overview';
+export type WorkspaceTab = 'execution' | 'chart' | 'journal';
 
 export default function App() {
   const { isDark, toggleTheme } = useTheme();
@@ -129,16 +112,8 @@ export default function App() {
     onConfirm: () => void;
   } | null>(null);
 
-  // Master workspace tab: defaults to 'chart' on mobile and 'split' on desktop
-  const [workspaceTab, setWorkspaceTab] = useState<WorkspaceTab>(() => {
-    if (typeof window !== 'undefined' && window.innerWidth < 1024) {
-      return 'chart';
-    }
-    return 'split';
-  });
-
-  // Secondary sub-tab for Left Pane within PC Dual Split Workstation mode
-  const [splitLeftTab, setSplitLeftTab] = useState<'chart' | 'zones' | 'scanner'>('chart');
+  // Master workspace tab: minimalist Execution Desk vs Chart
+  const [workspaceTab, setWorkspaceTab] = useState<WorkspaceTab>('execution');
 
   // Global audio alerts & chime listener for institutional signals
   useAudioNotifications();
@@ -169,6 +144,7 @@ export default function App() {
       }
 
       if (engine.kill_switch) {
+        tradingEngine.recordRejectedSignal(signal, 'Emergency Kill Switch is armed', ticker.symbol);
         setConfirmDialog({
           title: 'Kill Switch Armed',
           message: 'The Kill Switch is armed. No trade can be sent until it is deliberately disarmed.',
@@ -180,6 +156,7 @@ export default function App() {
 
       const gateReason = tradingEngine.getEntryBlockReason(signal.direction, signal);
       if (gateReason) {
+        tradingEngine.recordRejectedSignal(signal, gateReason, ticker.symbol);
         setConfirmDialog({
           title: 'Trade blocked by risk controls',
           message: gateReason,
@@ -191,6 +168,7 @@ export default function App() {
 
       const riskVolume = tradingEngine.getRiskBasedVolume(signal.sl, customVolume);
       if (!riskVolume) {
+        tradingEngine.recordRejectedSignal(signal, 'Position sizing unavailable for current risk', ticker.symbol);
         setConfirmDialog({
           title: 'Safe position size unavailable',
           message: 'The configured risk cannot be converted to a valid broker lot size for this stop. Check the MT5 symbol tick value and volume limits.',
@@ -202,6 +180,7 @@ export default function App() {
 
       const maxSpreadPoints = tradingEngine.getMaxSpreadPoints();
       if (ticker.spread > maxSpreadPoints) {
+        tradingEngine.recordRejectedSignal(signal, `Spread too high (${ticker.spread} points > ${maxSpreadPoints} max)`, ticker.symbol);
         setConfirmDialog({
           title: 'High Spread Warning',
           message: `Execution paused: Current spread is ${ticker.spread} points (maximum: ${maxSpreadPoints}). Protect your account from execution slippage.`,
@@ -213,6 +192,7 @@ export default function App() {
       }
 
       if (positionCount !== 1 || positionsState.positions.length + positionCount > RISK_CONFIG.maxOpenPositions) {
+        tradingEngine.recordRejectedSignal(signal, `Max open positions limit (${RISK_CONFIG.maxOpenPositions}) reached`, ticker.symbol);
         setConfirmDialog({
           title: 'Signal stacking is disabled',
           message: `One position per qualified signal is allowed, with a maximum of ${RISK_CONFIG.maxOpenPositions} open positions. You currently have ${positionsState.positions.length}.`,
@@ -224,6 +204,7 @@ export default function App() {
       }
 
       if (tradingEngine.mt5Account.connected && !mt5Bridge.getStatus().connected) {
+        tradingEngine.recordRejectedSignal(signal, 'MT5 bridge is offline', ticker.symbol);
         setConfirmDialog({
           title: 'MT5 bridge unavailable',
           message: 'The linked MT5 bridge is offline. No order was sent. Reconnect the bridge before trying again.',
@@ -254,7 +235,7 @@ export default function App() {
               poiKey: tradingEngine.getSignalPoiKey(signal.direction, signal.entry),
               instrumentType: tradingEngine.instrumentType,
               signalTimeframe: signal.timeframe === 'M1' ? 'M1' : 'M5',
-              signalTimestamp: signal.timestamp,
+              signalTimestamp: new Date().toISOString(),
             });
             tradingEngine.recordMt5Rationale(
               result.ticket,
@@ -264,6 +245,23 @@ export default function App() {
             );
             tradingEngine.setSelectedTicket(result.ticket);
             tradingEngine.recordAcceptedEntry(signal.direction, signal);
+            tradingEngine.recordExecutedSignal(signal, result.ticket, riskVolume, ticker.symbol, rationale);
+            recordTradeTaken({
+              ticket: result.ticket,
+              symbol: ticker.symbol,
+              type: signal.direction,
+              volume: riskVolume,
+              openPrice: result.price,
+              closePrice: result.price,
+              openTime: new Date().toISOString(),
+              sl: signal.sl,
+              tp: signal.tp,
+              profit: 0,
+              pips: 0,
+              reason: 'Manual',
+              strategyRationale: rationale,
+              status: 'RUNNING',
+            });
             signalAudioNotifier.playTradeExecutionAlert(signal.direction);
             tradingEngine.slog(
               result.pending
@@ -275,6 +273,7 @@ export default function App() {
             );
           } catch (error) {
             const reason = error instanceof Error ? error.message : 'Unknown MT5 bridge error.';
+            tradingEngine.recordRejectedSignal(signal, `MT5 bridge rejected: ${reason}`, ticker.symbol);
             tradingEngine.slog(`MT5 order rejected: ${reason}`, 'error');
             setConfirmDialog({
               title: 'MT5 order rejected',
@@ -344,7 +343,7 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen w-full max-w-full overflow-x-hidden bg-slate-50 dark:bg-[#08111a] text-slate-900 dark:text-slate-100 flex flex-col font-sans transition-colors selection:bg-sky-500/30 selection:text-white">
+    <div className="min-h-screen w-full max-w-full overflow-x-hidden bg-slate-50 dark:bg-[#090a0f] text-slate-900 dark:text-slate-100 flex flex-col font-sans transition-colors selection:bg-sky-500/30 selection:text-white">
       {/* 1. Persistent Kill Switch Banner (Outside ErrorBoundary) */}
       <KillSwitchBanner />
 
@@ -377,299 +376,105 @@ export default function App() {
             />
           </section>
 
-          {/* Real-Time Running Trades HUD: Unmistakable visibility into open positions & P&L */}
-          <section aria-label="Running trades monitor" className="w-full">
-            <RunningTradesHUD onOpenTradeStation={() => setWorkspaceTab('launchpad')} />
-          </section>
-
-          {/* Master Workspace Navigation Bar: PC & Mobile Optimized Tabs Arrangement */}
-          <div className="w-full bg-white dark:bg-[#0c141d] border border-slate-200/90 dark:border-[#1a3040] rounded-xl sm:rounded-2xl p-1.5 sm:p-2 shadow-xs transition-colors">
+          {/* Minimalist 3-Tab Navigation Bar: Execution Desk, Live Chart & Audit Journal */}
+          <div className="w-full bg-white dark:bg-[#0c0e12] border border-slate-200 dark:border-zinc-800 rounded-xl sm:rounded-2xl p-1.5 sm:p-2 shadow-xs transition-colors">
             <div className="flex items-center justify-between gap-2 flex-wrap">
-              {/* Responsive Tabs Strip with smooth touch scrolling and no scrollbar */}
-              <div className="flex items-center gap-1 sm:gap-1.5 overflow-x-auto no-scrollbar w-full lg:w-auto font-mono text-xs p-0.5">
-                {/* 1. PC: Dual Split Workstation */}
+              <div className="flex items-center gap-1 font-mono text-xs p-0.5 flex-wrap">
+                {/* 1. Signals & Execution Desk */}
                 <button
                   type="button"
-                  onClick={() => setWorkspaceTab('split')}
-                  className={`hidden lg:flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-bold transition-all cursor-pointer whitespace-nowrap ${
-                    workspaceTab === 'split'
-                      ? 'bg-slate-900 text-white dark:bg-sky-500 dark:text-slate-950 shadow-xs'
-                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-[#12202e]'
+                  onClick={() => setWorkspaceTab('execution')}
+                  className={`flex items-center gap-2 px-3.5 sm:px-4 py-2 rounded-xl font-bold transition-all cursor-pointer text-xs ${
+                    workspaceTab === 'execution'
+                      ? 'bg-slate-900 text-white dark:bg-zinc-100 dark:text-zinc-950 shadow-xs'
+                      : 'text-slate-600 dark:text-zinc-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-zinc-800/60'
                   }`}
-                  title="Institutional Dual-Pane Workstation: Chart on Left, Signals & Execution on Right"
+                  title="Live Signals Stream & 1-Click Execution Desk"
                 >
-                  <Columns className="w-3.5 h-3.5" />
-                  <span>Dual Split Workstation</span>
-                </button>
-
-                {/* 2. Start Trade Launchpad */}
-                <button
-                  type="button"
-                  onClick={() => setWorkspaceTab('launchpad')}
-                  className={`flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg font-bold transition-all cursor-pointer whitespace-nowrap ${
-                    workspaceTab === 'launchpad'
-                      ? 'bg-sky-500 text-slate-950 font-black shadow-xs ring-1 ring-sky-400'
-                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-[#12202e]'
-                  }`}
-                  title="1-Click Trade Launchpad: Manual or Signal Order Execution"
-                >
-                  <Zap className="w-3.5 h-3.5 text-amber-500 fill-current" />
-                  <span>Start Trade</span>
-                </button>
-
-                {/* 3. Primary Chart Terminal */}
-                <button
-                  type="button"
-                  onClick={() => setWorkspaceTab('chart')}
-                  className={`flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg font-bold transition-all cursor-pointer whitespace-nowrap ${
-                    workspaceTab === 'chart'
-                      ? 'bg-slate-900 text-white dark:bg-sky-500 dark:text-slate-950 shadow-xs'
-                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-[#12202e]'
-                  }`}
-                  title="Focused High-Resolution Candlestick Chart Terminal"
-                >
-                  <BarChart3 className="w-3.5 h-3.5" />
-                  <span>Chart</span>
-                  <span className="hidden sm:inline">Terminal</span>
-                </button>
-
-                {/* 4. Signal Engine */}
-                <button
-                  type="button"
-                  onClick={() => setWorkspaceTab('signals')}
-                  className={`flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg font-bold transition-all cursor-pointer whitespace-nowrap relative ${
-                    workspaceTab === 'signals'
-                      ? 'bg-slate-900 text-white dark:bg-sky-500 dark:text-slate-950 shadow-xs'
-                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-[#12202e]'
-                  }`}
-                  title="Multi-Strategy Signal Engine & 1-Click Execution"
-                >
-                  <Sparkles className="w-3.5 h-3.5 text-sky-400" />
-                  <span>Signals</span>
-                  {market.signal && (
-                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse ml-0.5" />
-                  )}
-                </button>
-
-                {/* 5. Live Positions */}
-                <button
-                  type="button"
-                  onClick={() => setWorkspaceTab('positions')}
-                  className={`flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg font-bold transition-all cursor-pointer whitespace-nowrap ${
-                    workspaceTab === 'positions'
-                      ? 'bg-slate-900 text-white dark:bg-sky-500 dark:text-slate-950 shadow-xs'
-                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-[#12202e]'
-                  }`}
-                  title="Open Positions, Trailing Stop, P&L & Trade Ledger"
-                >
-                  <Briefcase className="w-3.5 h-3.5 text-sky-400" />
-                  <span>Positions</span>
+                  <Zap className="w-4 h-4 text-amber-500 fill-amber-500/20" />
+                  <span>Signals &amp; Execution Desk</span>
                   {positionsState.positions.length > 0 && (
-                    <span className="px-1.5 py-0.2 rounded-full text-[10px] font-mono bg-sky-500 text-slate-950 font-black">
-                      {positionsState.positions.length}
+                    <span className="px-1.5 py-0.2 rounded-full text-[10px] font-mono bg-emerald-500 text-slate-950 font-black">
+                      {positionsState.positions.length} Active
                     </span>
                   )}
                 </button>
 
-                {/* 5. Zones & Order Blocks */}
+                {/* 2. Candlestick Chart Terminal */}
                 <button
                   type="button"
-                  onClick={() => setWorkspaceTab('zones')}
-                  className={`flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg font-bold transition-all cursor-pointer whitespace-nowrap ${
-                    workspaceTab === 'zones'
-                      ? 'bg-slate-900 text-white dark:bg-sky-500 dark:text-slate-950 shadow-xs'
-                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-[#12202e]'
+                  onClick={() => setWorkspaceTab('chart')}
+                  className={`flex items-center gap-2 px-3.5 sm:px-4 py-2 rounded-xl font-bold transition-all cursor-pointer text-xs ${
+                    workspaceTab === 'chart'
+                      ? 'bg-slate-900 text-white dark:bg-zinc-100 dark:text-zinc-950 shadow-xs'
+                      : 'text-slate-600 dark:text-zinc-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-zinc-800/60'
                   }`}
-                  title="Dealing Ranges, Equilibrium, and Order Block Progression"
+                  title="Focused High-Resolution Candlestick Chart Terminal"
                 >
-                  <Layers className="w-3.5 h-3.5 text-indigo-400" />
-                  <span>Zones</span>
-                  <span className="hidden sm:inline">&amp; OBs</span>
+                  <BarChart3 className="w-4 h-4 text-sky-400" />
+                  <span>Live Chart ({ticker.symbol})</span>
                 </button>
 
-                {/* 6. Cross-Pair Scanner */}
+                {/* 3. System Audit Journal */}
                 <button
                   type="button"
-                  onClick={() => setWorkspaceTab('scanner')}
-                  className={`flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg font-bold transition-all cursor-pointer whitespace-nowrap ${
-                    workspaceTab === 'scanner'
-                      ? 'bg-slate-900 text-white dark:bg-sky-500 dark:text-slate-950 shadow-xs'
-                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-[#12202e]'
+                  onClick={() => setWorkspaceTab('journal')}
+                  className={`flex items-center gap-2 px-3.5 sm:px-4 py-2 rounded-xl font-bold transition-all cursor-pointer text-xs ${
+                    workspaceTab === 'journal'
+                      ? 'bg-slate-900 text-white dark:bg-zinc-100 dark:text-zinc-950 shadow-xs'
+                      : 'text-slate-600 dark:text-zinc-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-zinc-800/60'
                   }`}
-                  title="Multi-Pair SMC Scanner Matrix (4 Instruments)"
+                  title="System Audit Journal: Trades Taken & Signals Logged (Executed & Rejected)"
                 >
-                  <Activity className="w-3.5 h-3.5 text-emerald-400" />
-                  <span>Scanner</span>
-                  <span className="hidden sm:inline">Matrix</span>
-                </button>
-
-                {/* 7. Overview (All) - visible on mobile / tablet */}
-                <button
-                  type="button"
-                  onClick={() => setWorkspaceTab('overview')}
-                  className={`lg:hidden flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg font-bold transition-all cursor-pointer whitespace-nowrap ${
-                    workspaceTab === 'overview'
-                      ? 'bg-slate-900 text-white dark:bg-sky-500 dark:text-slate-950 shadow-xs'
-                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-[#12202e]'
-                  }`}
-                  title="Display all components stacked together in single scroll"
-                >
-                  <LayoutGrid className="w-3.5 h-3.5" />
-                  <span>All</span>
+                  <History className="w-4 h-4 text-zinc-400" />
+                  <span>Audit Journal</span>
                 </button>
               </div>
 
-              {/* Right Desktop Telemetry */}
-              <div className="hidden lg:flex items-center gap-2 text-xs font-mono">
-                <div className="flex items-center gap-2 text-[11px] text-slate-500 dark:text-slate-400 bg-slate-100/60 dark:bg-[#071018] px-2.5 py-1 rounded-lg border border-slate-200/60 dark:border-[#142232]">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                  <span>Continuous 4-Pair SMC Scanner Engine</span>
-                </div>
+              {/* Status indicator on the right */}
+              <div className="flex items-center gap-2 text-xs font-mono pr-2">
+                <span className="w-2 h-2 rounded-full bg-emerald-400" />
+                <span className="text-[11px] text-slate-500 dark:text-zinc-400 font-bold hidden sm:inline">
+                  Continuous 4-Pair Scanner Active
+                </span>
+                {tradingEngine.mt5Account.connected && (
+                  <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-500 border border-emerald-500/30 font-bold">
+                    MT5 Linked
+                  </span>
+                )}
               </div>
             </div>
           </div>
 
-          {/* VIEW 1: DUAL SPLIT WORKSTATION (PC Institutional Layout) */}
-          {workspaceTab === 'split' && (
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 sm:gap-4 lg:gap-5 items-start">
-              {/* Left Column (lg:col-span-7 xl:col-span-8): Primary Chart Terminal & Visualizer */}
-              <div className="lg:col-span-7 xl:col-span-8 flex flex-col gap-3 sm:gap-4">
-                {/* Secondary Sub-Tabs for Left Pane */}
-                <div className="flex items-center justify-between border-b border-slate-200/80 dark:border-[#1a3040] pb-2 pt-0.5 flex-wrap gap-2 font-mono text-xs">
-                  <div className="flex items-center gap-1 bg-slate-100 dark:bg-[#0c141d] p-0.5 rounded-lg border border-slate-200 dark:border-[#1a3040]">
-                    <button
-                      type="button"
-                      onClick={() => setSplitLeftTab('chart')}
-                      className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
-                        splitLeftTab === 'chart'
-                          ? 'bg-slate-900 text-white dark:bg-sky-500 dark:text-slate-950 shadow-xs'
-                          : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-                      }`}
-                      title="High-resolution candlestick chart with SMC overlay"
-                    >
-                      <BarChart3 className="w-3.5 h-3.5" />
-                      <span>Primary Chart Terminal</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setSplitLeftTab('zones')}
-                      className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
-                        splitLeftTab === 'zones'
-                          ? 'bg-slate-900 text-white dark:bg-sky-500 dark:text-slate-950 shadow-xs'
-                          : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-                      }`}
-                      title="Deep dive into dealing ranges, equilibrium, and order block progression"
-                    >
-                      <Layers className="w-3.5 h-3.5" />
-                      <span>Zones &amp; Order Blocks</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setSplitLeftTab('scanner')}
-                      className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
-                        splitLeftTab === 'scanner'
-                          ? 'bg-slate-900 text-white dark:bg-sky-500 dark:text-slate-950 shadow-xs'
-                          : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-                      }`}
-                      title="Multi-pair scanner matrix"
-                    >
-                      <Activity className="w-3.5 h-3.5" />
-                      <span>Scanner Matrix</span>
-                    </button>
-                  </div>
+          {/* VIEW 1: SIGNALS & EXECUTION DESK (MINIMALIST & OPERATIONAL) */}
+          {workspaceTab === 'execution' && (
+            <div className="flex flex-col gap-3 sm:gap-4 w-full">
+              {/* 1. Real-Time Running Trades Monitor: Clear visibility into active positions & P&L */}
+              <section aria-label="Running trades monitor" className="w-full">
+                <RunningTradesHUD onOpenTradeStation={() => {}} />
+              </section>
 
-                  <button
-                    type="button"
-                    onClick={() => setWorkspaceTab('chart')}
-                    className="text-[11px] text-sky-600 dark:text-sky-400 hover:underline flex items-center gap-1 font-bold cursor-pointer"
-                    title="Expand Chart to Full Screen Width"
-                  >
-                    <Maximize2 className="w-3 h-3" />
-                    <span>Focus Full Width</span>
-                  </button>
-                </div>
-
-                {splitLeftTab === 'chart' && (
-                  <section id="price-structure-chart" aria-label="FX chart" className="w-full">
-                    <TradingViewWidget
-                      isDark={isDark}
-                      symbol={getInstrumentConfig(ticker.symbol).tvSymbol}
-                      interval="1"
-                      height={560}
-                      onExpand={() => setActiveModal('tradingview')}
-                      onOpenHelp={() => setActiveModal('help')}
-                    />
-                  </section>
-                )}
-
-                {splitLeftTab === 'zones' && (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4 w-full">
-                    <section aria-label="Dealing Range Zones" className="w-full">
-                      <DealingRangeZonesCard />
-                    </section>
-                    <section aria-label="Order Blocks Progression" className="w-full">
-                      <OrderBlocksProgressionCard />
-                    </section>
-                  </div>
-                )}
-
-                {splitLeftTab === 'scanner' && (
-                  <section aria-label="Multi-pair scanner" className="w-full">
-                    <MultiPairScannerPanel
-                      scannerAnalyses={scannerAnalyses}
-                      activeSymbol={ticker.symbol}
-                      onSelectSymbol={handleSelectSymbol}
-                      onExecuteTrade={handleExecuteAnalysis}
-                    />
-                  </section>
-                )}
-              </div>
-
-              {/* Right Column (lg:col-span-5 xl:col-span-4): Signals Deck & Live Execution Hub */}
-              <div className="lg:col-span-5 xl:col-span-4 flex flex-col gap-3 sm:gap-4">
-                <section aria-label="Trade signals" className="w-full">
-                  <SignalEngineCard onExecuteSignal={handleExecuteSignal} />
-                </section>
-                <section aria-label="Open positions" className="w-full">
-                  <LiveExecutionCard
-                    onFocusChart={() =>
-                      document
-                        .getElementById('price-structure-chart')
-                        ?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-                    }
-                    onOpenClosedTradesModal={() => setActiveModal('closed_trades')}
-                    onOpenDailyReportModal={() => setActiveModal('daily_report')}
-                  />
-                </section>
-              </div>
-            </div>
-          )}
-
-          {/* VIEW: TRADE LAUNCHPAD (1-CLICK & MANUAL ORDER STATION) */}
-          {workspaceTab === 'launchpad' && (
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 sm:gap-4 lg:gap-5 items-start">
-              <div className="lg:col-span-7 xl:col-span-8 w-full">
-                <TradeLaunchpad
-                  onSymbolSelect={handleSelectSymbol}
-                  onTradeExecuted={() => setWorkspaceTab('positions')}
+              {/* 2. Live Signals Execution Queue: All signals lined up with 1-Click Execute buttons */}
+              <section aria-label="Live signals queue" className="w-full">
+                <LiveSignalsStream
+                  onExecuteTrade={(symbol, direction, sl, tp, rationale) => {
+                    tradingEngine.slog(`Signal dispatched: ${direction} 0.01L ${symbol} · ${rationale}`, 'trade');
+                  }}
                 />
-              </div>
-              <div className="lg:col-span-5 xl:col-span-4 w-full flex flex-col gap-3 sm:gap-4">
-                <section aria-label="Trade signals" className="w-full">
-                  <SignalEngineCard onExecuteSignal={handleExecuteSignal} />
-                </section>
-                <section aria-label="Open positions" className="w-full">
-                  <LiveExecutionCard
-                    onFocusChart={() => setWorkspaceTab('chart')}
-                    onOpenClosedTradesModal={() => setActiveModal('closed_trades')}
-                    onOpenDailyReportModal={() => setActiveModal('daily_report')}
-                  />
-                </section>
-              </div>
+              </section>
+
+              {/* 3. Account Telemetry & Execution Ledger: Real-time Margin & Closed Trades History */}
+              <section aria-label="Open positions and margin ledger" className="w-full">
+                <LiveExecutionCard
+                  onFocusChart={() => setWorkspaceTab('chart')}
+                  onOpenClosedTradesModal={() => setActiveModal('closed_trades')}
+                  onOpenDailyReportModal={() => setActiveModal('daily_report')}
+                />
+              </section>
             </div>
           )}
 
-          {/* VIEW 2: PRIMARY CHART TERMINAL (FOCUSED VIEW - PC FULL WIDTH & MOBILE) */}
+          {/* VIEW 2: PRIMARY CANDLESTICK CHART TERMINAL */}
           {workspaceTab === 'chart' && (
             <div className="flex flex-col gap-3 sm:gap-4 w-full">
               <section id="price-structure-chart" aria-label="FX chart" className="w-full">
@@ -677,7 +482,7 @@ export default function App() {
                   isDark={isDark}
                   symbol={getInstrumentConfig(ticker.symbol).tvSymbol}
                   interval="1"
-                  height={560}
+                  height={580}
                   onExpand={() => setActiveModal('tradingview')}
                   onOpenHelp={() => setActiveModal('help')}
                 />
@@ -685,7 +490,7 @@ export default function App() {
 
               {/* Quick Signal Action Ribbon below chart */}
               {market.signal && (
-                <div className="flex items-center justify-between p-3 rounded-xl bg-white dark:bg-[#0c141d] border border-slate-200 dark:border-[#1a3040] font-mono text-xs flex-wrap gap-2.5 shadow-xs transition-colors">
+                <div className="flex items-center justify-between p-3 rounded-xl bg-white dark:bg-[#0c0e12] border border-slate-200 dark:border-zinc-800 font-mono text-xs flex-wrap gap-2.5 shadow-xs transition-colors">
                   <div className="flex items-center gap-2.5 flex-wrap">
                     <span
                       className={`px-2.5 py-1 rounded-lg text-xs font-black uppercase flex items-center gap-1 ${
@@ -720,10 +525,10 @@ export default function App() {
                     </button>
                     <button
                       type="button"
-                      onClick={() => setWorkspaceTab('signals')}
-                      className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 font-bold cursor-pointer transition-colors"
+                      onClick={() => setWorkspaceTab('execution')}
+                      className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-zinc-800 text-slate-700 dark:text-zinc-300 hover:bg-slate-100 dark:hover:bg-zinc-800 font-bold cursor-pointer transition-colors"
                     >
-                      Signal Details →
+                      View Signals Queue →
                     </button>
                   </div>
                 </div>
@@ -731,106 +536,12 @@ export default function App() {
             </div>
           )}
 
-          {/* VIEW 3: SIGNAL ENGINE & CONFLUENCE */}
-          {workspaceTab === 'signals' && (
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 sm:gap-4 lg:gap-5 items-start">
-              <div className="lg:col-span-7 xl:col-span-8 w-full">
-                <section aria-label="Trade signals" className="w-full">
-                  <SignalEngineCard onExecuteSignal={handleExecuteSignal} />
-                </section>
-              </div>
-              <div className="lg:col-span-5 xl:col-span-4 w-full">
-                <section aria-label="Open positions" className="w-full">
-                  <LiveExecutionCard
-                    onFocusChart={() => setWorkspaceTab('chart')}
-                    onOpenClosedTradesModal={() => setActiveModal('closed_trades')}
-                    onOpenDailyReportModal={() => setActiveModal('daily_report')}
-                  />
-                </section>
-              </div>
-            </div>
-          )}
-
-          {/* VIEW 4: LIVE POSITIONS & EXECUTION LEDGER */}
-          {workspaceTab === 'positions' && (
-            <div className="w-full">
-              <section aria-label="Open positions" className="w-full">
-                <LiveExecutionCard
-                  onFocusChart={() => setWorkspaceTab('chart')}
-                  onOpenClosedTradesModal={() => setActiveModal('closed_trades')}
-                  onOpenDailyReportModal={() => setActiveModal('daily_report')}
-                />
+          {/* VIEW 3: SYSTEM AUDIT JOURNAL (TRADES TAKEN & SIGNALS LOGGED) */}
+          {workspaceTab === 'journal' && (
+            <div className="flex flex-col gap-3 sm:gap-4 w-full">
+              <section aria-label="System audit journal" className="w-full">
+                <AuditJournalPanel />
               </section>
-            </div>
-          )}
-
-          {/* VIEW 5: ZONES & ORDER BLOCKS */}
-          {workspaceTab === 'zones' && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4 w-full">
-              <section aria-label="Dealing Range Zones" className="w-full">
-                <DealingRangeZonesCard />
-              </section>
-              <section aria-label="Order Blocks Progression" className="w-full">
-                <OrderBlocksProgressionCard />
-              </section>
-            </div>
-          )}
-
-          {/* VIEW 6: MULTI-PAIR SCANNER MATRIX */}
-          {workspaceTab === 'scanner' && (
-            <section aria-label="Multi-pair scanner" className="w-full">
-              <MultiPairScannerPanel
-                scannerAnalyses={scannerAnalyses}
-                activeSymbol={ticker.symbol}
-                onSelectSymbol={handleSelectSymbol}
-                onExecuteTrade={handleExecuteAnalysis}
-              />
-            </section>
-          )}
-
-          {/* VIEW 7: ALL-IN-ONE OVERVIEW (STACKED) */}
-          {workspaceTab === 'overview' && (
-            <div className="flex flex-col gap-3 sm:gap-4 lg:gap-5">
-              <section id="price-structure-chart" aria-label="FX chart" className="w-full">
-                <TradingViewWidget
-                  isDark={isDark}
-                  symbol={getInstrumentConfig(ticker.symbol).tvSymbol}
-                  interval="1"
-                  height={520}
-                  onExpand={() => setActiveModal('tradingview')}
-                  onOpenHelp={() => setActiveModal('help')}
-                />
-              </section>
-              <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 sm:gap-4 lg:gap-5 items-start">
-                <div className="lg:col-span-7 xl:col-span-8 flex flex-col gap-3 sm:gap-4">
-                  <section aria-label="Trade signals" className="w-full">
-                    <SignalEngineCard onExecuteSignal={handleExecuteSignal} />
-                  </section>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4 w-full">
-                    <DealingRangeZonesCard />
-                    <OrderBlocksProgressionCard />
-                  </div>
-                </div>
-                <div className="lg:col-span-5 xl:col-span-4 flex flex-col gap-3 sm:gap-4">
-                  <section aria-label="Open positions" className="w-full">
-                    <LiveExecutionCard
-                      onFocusChart={() =>
-                        document
-                          .getElementById('price-structure-chart')
-                          ?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-                      }
-                      onOpenClosedTradesModal={() => setActiveModal('closed_trades')}
-                      onOpenDailyReportModal={() => setActiveModal('daily_report')}
-                    />
-                  </section>
-                  <MultiPairScannerPanel
-                    scannerAnalyses={scannerAnalyses}
-                    activeSymbol={ticker.symbol}
-                    onSelectSymbol={handleSelectSymbol}
-                    onExecuteTrade={handleExecuteAnalysis}
-                  />
-                </div>
-              </div>
             </div>
           )}
         </WorkspaceErrorBoundary>

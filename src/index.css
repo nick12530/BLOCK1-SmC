@@ -18,13 +18,13 @@
   }
 
   .dark {
-    --bg-main: #08111a;
-    --card-bg: #0d1823;
-    --card-border: #1a3040;
-    --surface-subtle: #10202d;
-    --text-primary: #f8fafc;
-    --text-secondary: #94a3b8;
-    --text-muted: #64748b;
+    --bg-main: #090a0f;
+    --card-bg: #111216;
+    --card-border: #222329;
+    --surface-subtle: #16171d;
+    --text-primary: #f4f4f7;
+    --text-secondary: #90929e;
+    --text-muted: #5e606c;
     --accent-sky: #38bdf8;
     --accent-emerald: #10b981;
     --accent-rose: #f43f5e;

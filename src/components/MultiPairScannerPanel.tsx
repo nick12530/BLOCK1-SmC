@@ -35,9 +35,9 @@ export const MultiPairScannerPanel: React.FC<MultiPairScannerPanelProps> = ({
   onExecuteTrade,
 }) => {
   return (
-    <div className="bg-white dark:bg-[#0c131c] border border-slate-200 dark:border-[#1a3040] rounded-2xl p-4 sm:p-6 shadow-sm flex flex-col gap-4 font-sans transition-colors">
+    <div className="bg-white dark:bg-[#111216] border border-slate-200 dark:border-zinc-800 rounded-2xl p-4 sm:p-6 shadow-sm flex flex-col gap-4 font-sans transition-colors">
       {/* Header with Scanner Title & Summary */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 dark:border-[#1a3040]/80 pb-3">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 dark:border-zinc-800/80 pb-3">
         <div className="flex items-center gap-2.5">
           <div className="p-2 rounded-xl bg-sky-500/10 text-sky-600 dark:text-sky-400 border border-sky-500/20">
             <Activity className="w-5 h-5" />
@@ -78,8 +78,8 @@ export const MultiPairScannerPanel: React.FC<MultiPairScannerPanelProps> = ({
               onClick={() => onSelectSymbol(item.symbol)}
               className={`rounded-2xl p-4 border transition-all cursor-pointer flex flex-col justify-between gap-3 relative ${
                 isSelected
-                  ? 'bg-sky-500/[0.04] dark:bg-[#102336] border-sky-500 ring-2 ring-sky-500/20 shadow-md'
-                  : 'bg-slate-50/70 dark:bg-[#0e1925] border-slate-200 dark:border-[#1a3040] hover:border-slate-300 dark:hover:border-[#244258]'
+                  ? 'bg-slate-100/90 dark:bg-zinc-800/90 border-slate-900 dark:border-zinc-400 shadow-xs'
+                  : 'bg-slate-50/70 dark:bg-[#13141a] border-slate-200 dark:border-zinc-800 hover:border-slate-300 dark:hover:border-zinc-700'
               }`}
             >
               {/* Rank Banner */}
@@ -197,7 +197,7 @@ export const MultiPairScannerPanel: React.FC<MultiPairScannerPanelProps> = ({
               </div>
 
               {/* Trade Execution Matrix (Entry, SL, TP, RR) */}
-              <div className="bg-white/80 dark:bg-[#0a141f] p-2.5 rounded-xl border border-slate-200/70 dark:border-zinc-800/80 font-mono text-xs space-y-1">
+              <div className="bg-white/80 dark:bg-[#0e0f14] p-2.5 rounded-xl border border-slate-200/70 dark:border-zinc-800/80 font-mono text-xs space-y-1">
                 <div className="flex items-center justify-between text-[11px] text-zinc-500 dark:text-zinc-400">
                   <span>Entry: ${item.entryPrice}</span>
                   <span className="font-bold text-slate-800 dark:text-zinc-200">

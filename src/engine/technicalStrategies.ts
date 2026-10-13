@@ -64,7 +64,12 @@ function createSignal(
     tp,
     reasons,
     atr: effectiveStopDistance,
-    timestamp: new Date(candle.time < 1_000_000_000_000 ? candle.time * 1000 : candle.time).toISOString(),
+    timestamp: new Date(
+      Math.min(
+        candle.time < 1_000_000_000_000 ? candle.time * 1000 : candle.time,
+        Date.now()
+      )
+    ).toISOString(),
     actionReason: `${strategy} ${direction} (${stopPips} pips safe stop beyond spread noise)`,
     perfectEntryReason: `Closed-candle setup with 1:2 risk/reward using ${stopPips} pips protective stop distance.`,
   };

@@ -195,7 +195,7 @@ Daily Drawdown:     ${tradingEngine.account.daily_drawdown_pct}% (Max: 3.0%)
       aria-modal="true"
       className="fixed inset-0 z-[170] flex items-center justify-center p-2.5 sm:p-4 bg-black/75 backdrop-blur-xs font-mono text-xs select-none animate-in fade-in duration-150"
     >
-      <div className="w-full max-w-3xl max-h-[92dvh] sm:max-h-[88dvh] rounded-2xl bg-white dark:bg-[#0d1823] border border-slate-200 dark:border-[#1a3040] shadow-xl flex flex-col overflow-hidden transition-colors">
+      <div className="w-full max-w-3xl max-h-[92dvh] sm:max-h-[88dvh] rounded-2xl bg-white dark:bg-[#0c0e12] border border-slate-200 dark:border-zinc-800 shadow-xl flex flex-col overflow-hidden transition-colors">
         {/* Top Header */}
         <div className="px-4 sm:px-6 py-3 border-b border-slate-200 dark:border-zinc-800 flex items-center justify-between bg-slate-50/50 dark:bg-zinc-950/50 shrink-0">
           <div className="flex items-center gap-2.5">

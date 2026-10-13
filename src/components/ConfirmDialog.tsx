@@ -52,7 +52,7 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
       aria-labelledby="confirm-dialog-title"
       className="fixed inset-0 z-[120] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto"
     >
-      <div className="bg-white dark:bg-[#121824] border border-slate-200 dark:border-slate-800 rounded-2xl w-full max-w-md p-6 shadow-2xl space-y-4 my-auto font-mono text-xs">
+      <div className="bg-white dark:bg-[#111216] border border-slate-200 dark:border-zinc-800 rounded-2xl w-full max-w-md p-6 shadow-xl space-y-4 my-auto font-mono text-xs">
         <div className="flex items-start gap-3">
           <div
             className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${

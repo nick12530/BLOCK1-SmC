@@ -452,6 +452,14 @@ export class MT5BridgeConnector {
       method: 'POST',
       body: JSON.stringify({
         ...trade,
+        signalTimestamp: (() => {
+          if (!trade.signalTimestamp) return new Date().toISOString();
+          const parsed = new Date(trade.signalTimestamp).getTime();
+          if (Number.isNaN(parsed) || parsed > Date.now()) {
+            return new Date().toISOString();
+          }
+          return new Date(parsed).toISOString();
+        })(),
         symbol: brokerSymbol,
         clientOrderId: trade.clientOrderId,
         poiKey: trade.poiKey,

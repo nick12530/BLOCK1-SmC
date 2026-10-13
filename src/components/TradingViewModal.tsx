@@ -39,9 +39,9 @@ export const TradingViewModal: React.FC<TradingViewModalProps> = ({ isOpen, onCl
       aria-labelledby="tradingview-modal-title"
       className="fixed inset-0 z-[120] bg-black/90 flex items-center justify-center p-2 overflow-hidden"
     >
-      <div className="bg-white dark:bg-[#0d1823] border border-slate-200 dark:border-[#1a3040] rounded-xl w-full max-w-none h-full flex flex-col shadow-xl overflow-hidden font-mono text-xs transition-colors">
+      <div className="bg-white dark:bg-[#0c0e12] border border-slate-200 dark:border-zinc-800 rounded-xl w-full max-w-none h-full flex flex-col shadow-xl overflow-hidden font-mono text-xs transition-colors">
         {/* Modal Top Bar */}
-        <div className="flex items-center justify-between px-6 py-3.5 border-b border-slate-200 dark:border-[#1a3040] bg-slate-50 dark:bg-[#10202d]">
+        <div className="flex items-center justify-between px-6 py-3.5 border-b border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900/90">
           <div className="flex items-center gap-3">
           <span className="w-2.5 h-2.5 rounded-full bg-sky-500" />
             <h2 id="tradingview-modal-title" className="text-sm font-bold text-zinc-950 dark:text-white">
@@ -70,7 +70,7 @@ export const TradingViewModal: React.FC<TradingViewModalProps> = ({ isOpen, onCl
         </div>
 
         {/* Footer: Bottom Back to Terminal Button */}
-        <div className="p-3 sm:p-3.5 border-t border-slate-200 dark:border-[#1a3040] bg-slate-50 dark:bg-[#10202d] flex items-center justify-between shrink-0 font-mono">
+        <div className="p-3 sm:p-3.5 border-t border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900/90 flex items-center justify-between shrink-0 font-mono">
           <button
             onClick={onClose}
             className="px-4 py-2 rounded-xl text-xs font-bold text-zinc-700 dark:text-zinc-300 hover:text-zinc-950 dark:hover:text-white bg-zinc-200 hover:bg-zinc-300 dark:bg-zinc-800 dark:hover:bg-zinc-700 transition-colors cursor-pointer flex items-center gap-1.5"

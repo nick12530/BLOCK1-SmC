@@ -15,7 +15,7 @@ export const FooterView: React.FC = React.memo(() => {
   const mt5 = engine.mt5Account;
 
   return (
-    <footer className="border-t border-slate-200 dark:border-[#1c212c] bg-white dark:bg-[#11141a] px-4 sm:px-6 py-3 font-mono text-xs transition-colors mt-auto">
+    <footer className="border-t border-slate-200 dark:border-zinc-800/80 bg-white dark:bg-[#0c0d12] px-4 sm:px-6 py-3 font-mono text-xs transition-colors mt-auto">
       <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2.5 text-slate-500 dark:text-slate-400">
         {/* Left: Active Session & Interbank Status */}
         <div className="flex items-center gap-2.5 text-[11px] flex-wrap justify-center sm:justify-start">

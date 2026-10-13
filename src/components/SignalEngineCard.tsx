@@ -166,7 +166,7 @@ export const SignalEngineCard: React.FC<SignalEngineCardProps> = React.memo(({ o
             aria-pressed={engine.auto_trade}
             className={`flex items-center gap-1.5 px-3 py-1 rounded-lg border text-xs font-bold transition-all cursor-pointer ${
               engine.auto_trade
-                ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-600 dark:text-emerald-400 shadow-xs ring-1 ring-emerald-500/20'
+                ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-600 dark:text-emerald-400'
                 : 'bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 border-slate-200 dark:border-zinc-700 text-slate-700 dark:text-zinc-300'
             }`}
             title={
@@ -210,7 +210,7 @@ export const SignalEngineCard: React.FC<SignalEngineCardProps> = React.memo(({ o
               aria-pressed={isSelected}
               className={`rounded-xl border p-3 text-left transition-colors cursor-pointer ${
                 isSelected
-                  ? 'border-sky-500 bg-sky-50 dark:bg-sky-950/30 ring-1 ring-sky-500/30'
+                  ? 'border-slate-900 bg-slate-100 dark:border-zinc-400 dark:bg-zinc-800/80 shadow-xs'
                   : 'border-slate-200 bg-slate-50 hover:border-slate-400 dark:border-zinc-800 dark:bg-zinc-900/60 dark:hover:border-zinc-600'
               }`}
             >

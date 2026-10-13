@@ -30,7 +30,7 @@ export const RunningTradesHUD: React.FC<RunningTradesHUDProps> = ({ onOpenTradeS
 
   if (totalPositions === 0) {
     return (
-      <div className="w-full bg-slate-50 dark:bg-[#07111c] border border-dashed border-slate-200 dark:border-[#182c40] rounded-xl p-3 sm:p-4 flex items-center justify-between gap-3 font-mono text-xs">
+      <div className="w-full bg-slate-50 dark:bg-[#0c0e12] border border-dashed border-slate-200 dark:border-zinc-800 rounded-xl p-3 sm:p-4 flex items-center justify-between gap-3 font-mono text-xs">
         <div className="flex items-center gap-2.5">
           <div className="w-2.5 h-2.5 rounded-full bg-slate-300 dark:bg-slate-700" />
           <div>
@@ -53,18 +53,17 @@ export const RunningTradesHUD: React.FC<RunningTradesHUDProps> = ({ onOpenTradeS
   }
 
   return (
-    <div className="w-full bg-white dark:bg-[#0a121c] border-2 border-sky-500/40 dark:border-sky-500/30 rounded-xl sm:rounded-2xl p-3 sm:p-4 shadow-lg shadow-sky-500/5 font-mono text-xs">
+    <div className="w-full bg-white dark:bg-[#0d1117] border border-slate-200 dark:border-zinc-800/80 rounded-xl sm:rounded-2xl p-3 sm:p-4 shadow-xs font-mono text-xs">
       {/* Top Banner Header: Aggregate Running P&L */}
-      <div className="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-[#162738] flex-wrap gap-2">
+      <div className="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-zinc-800/80 flex-wrap gap-2">
         <div className="flex items-center gap-2">
-          <span className="relative flex h-3 w-3">
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
-            <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500" />
+          <span className="relative flex h-2.5 w-2.5">
+            <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500" />
           </span>
-          <span className="font-black text-slate-900 dark:text-white uppercase tracking-wider text-xs sm:text-sm">
+          <span className="font-bold text-slate-900 dark:text-white uppercase tracking-wider text-xs sm:text-sm">
             Live Running Positions ({totalPositions})
           </span>
-          <span className="text-[10px] text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-[#101f2e] px-2 py-0.5 rounded border border-slate-200 dark:border-[#1a334b]">
+          <span className="text-[10px] text-slate-500 dark:text-zinc-400 bg-slate-100 dark:bg-zinc-800/80 px-2 py-0.5 rounded border border-slate-200 dark:border-zinc-700/60">
             1:{engine.leverage || 2000} Lev
           </span>
         </div>
@@ -120,7 +119,7 @@ export const RunningTradesHUD: React.FC<RunningTradesHUDProps> = ({ onOpenTradeS
           return (
             <div
               key={pos.ticket}
-              className="bg-slate-50 dark:bg-[#0e1925] border border-slate-200 dark:border-[#1a3147] rounded-xl p-3 flex flex-col justify-between gap-2.5 transition-all hover:border-sky-500/40"
+              className="bg-slate-50 dark:bg-[#12161f] border border-slate-200 dark:border-zinc-800/80 rounded-xl p-3 flex flex-col justify-between gap-2.5 transition-all hover:border-slate-300 dark:hover:border-zinc-700"
             >
               {/* Row 1: Symbol, Direction, Volume, Live P&L */}
               <div className="flex items-center justify-between">
@@ -129,10 +128,10 @@ export const RunningTradesHUD: React.FC<RunningTradesHUDProps> = ({ onOpenTradeS
                     {posSymbol}
                   </span>
                   <span
-                    className={`flex items-center gap-0.5 px-2 py-0.5 rounded text-[11px] font-black ${
+                    className={`flex items-center gap-0.5 px-2 py-0.5 rounded text-[11px] font-bold ${
                       isBuy
-                        ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
-                        : 'bg-rose-500/15 text-rose-600 dark:text-rose-400'
+                        ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20'
+                        : 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20'
                     }`}
                   >
                     {isBuy ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
@@ -157,7 +156,7 @@ export const RunningTradesHUD: React.FC<RunningTradesHUDProps> = ({ onOpenTradeS
               </div>
 
               {/* Row 2: Price Telemetry (Entry -> Current -> SL/TP) */}
-              <div className="grid grid-cols-3 gap-1 bg-white dark:bg-[#071018] p-2 rounded-lg border border-slate-200/80 dark:border-[#152738] text-[11px]">
+              <div className="grid grid-cols-3 gap-1 bg-white dark:bg-[#0a0d13] p-2 rounded-lg border border-slate-200/80 dark:border-zinc-800/80 text-[11px]">
                 <div>
                   <div className="text-[9px] uppercase text-slate-400">Entry Price</div>
                   <div className="font-bold text-slate-900 dark:text-slate-200">
@@ -166,7 +165,7 @@ export const RunningTradesHUD: React.FC<RunningTradesHUDProps> = ({ onOpenTradeS
                 </div>
                 <div>
                   <div className="text-[9px] uppercase text-slate-400">Current Spot</div>
-                  <div className="font-bold text-sky-500">
+                  <div className="font-bold text-slate-900 dark:text-white">
                     {currentPrice.toFixed(cfg.digits)}
                   </div>
                 </div>
@@ -185,7 +184,7 @@ export const RunningTradesHUD: React.FC<RunningTradesHUDProps> = ({ onOpenTradeS
                     <span className="text-rose-500">SL: {pos.sl.toFixed(cfg.digits)} ({slDistancePips.toFixed(1)}p)</span>
                     <span className="text-emerald-500">TP: {pos.tp.toFixed(cfg.digits)} ({tpDistancePips.toFixed(1)}p)</span>
                   </div>
-                  <div className="w-full bg-slate-200 dark:bg-slate-800 rounded-full h-1.5 overflow-hidden flex">
+                  <div className="w-full bg-slate-200 dark:bg-zinc-800 rounded-full h-1.5 overflow-hidden flex">
                     <div
                       className={`h-full transition-all duration-300 ${
                         isPosProfit ? 'bg-emerald-500' : 'bg-rose-500'
@@ -197,7 +196,7 @@ export const RunningTradesHUD: React.FC<RunningTradesHUDProps> = ({ onOpenTradeS
               )}
 
               {/* Row 3: Action Buttons (Breakeven, Partial Scale Out, Close) */}
-              <div className="flex items-center gap-1.5 pt-1 border-t border-slate-200/60 dark:border-[#162738]">
+              <div className="flex items-center gap-1.5 pt-1 border-t border-slate-200/60 dark:border-zinc-800/60">
                 <button
                   type="button"
                   onClick={() => {
@@ -206,17 +205,17 @@ export const RunningTradesHUD: React.FC<RunningTradesHUDProps> = ({ onOpenTradeS
                     );
                     tradingEngine.modifyPositionStops(pos.ticket, bePrice, pos.tp);
                   }}
-                  className="flex-1 py-1 px-2 rounded-lg bg-sky-500/10 hover:bg-sky-500/20 text-sky-600 dark:text-sky-300 font-bold transition-colors cursor-pointer text-[10px] flex items-center justify-center gap-1"
+                  className="flex-1 py-1 px-2 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-slate-700 dark:text-zinc-200 font-bold transition-colors cursor-pointer text-[10px] flex items-center justify-center gap-1"
                   title="Move Stop Loss to Entry + 2 ticks to lock zero risk"
                 >
-                  <Shield className="w-3 h-3 text-sky-400" />
+                  <Shield className="w-3 h-3 text-slate-400" />
                   <span>Lock BE</span>
                 </button>
 
                 <button
                   type="button"
                   onClick={() => tradingEngine.scaleOutPosition(pos.ticket, 0.5)}
-                  className="py-1 px-2.5 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-[#142332] dark:hover:bg-[#1a2f44] text-slate-700 dark:text-slate-300 font-bold transition-colors cursor-pointer text-[10px]"
+                  className="py-1 px-2.5 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-slate-700 dark:text-zinc-200 font-bold transition-colors cursor-pointer text-[10px]"
                   title="Close 50% of the volume to take partial profit"
                 >
                   Scale 50%

@@ -75,7 +75,7 @@ export const HeaderView: React.FC<HeaderViewProps> = React.memo(({
   const floatingPnl = ticker.equity - ticker.balance;
 
   return (
-    <header className="relative w-full border-b border-slate-200/90 dark:border-[#1a3040] bg-white/95 dark:bg-[#0d1823]/95 backdrop-blur-md font-mono text-xs transition-colors shadow-xs z-30 pt-2 sm:pt-1.5 overflow-hidden">
+    <header className="relative w-full border-b border-slate-200 dark:border-zinc-800/80 bg-white/95 dark:bg-[#0d0e13]/95 backdrop-blur-md font-mono text-xs transition-colors shadow-xs z-30 pt-2 sm:pt-1.5 overflow-hidden">
       {/* Tier 1: Primary Navigation Bar */}
       <div className="w-full max-w-[1920px] mx-auto px-2.5 sm:px-6 lg:px-8 py-2 sm:py-2.5 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 sm:gap-4">
         {/* Row 1 on mobile / Left on desktop: Brand Identity & Symbol Switcher */}
@@ -92,7 +92,7 @@ export const HeaderView: React.FC<HeaderViewProps> = React.memo(({
           <div className="hidden sm:block h-4 w-px bg-slate-200 dark:bg-zinc-800" />
 
           {/* Quick Symbol Switcher Pills */}
-          <div className="flex items-center bg-slate-100 dark:bg-[#0a121a] p-1 rounded-xl border border-slate-200 dark:border-[#1a3040] gap-1">
+          <div className="flex items-center bg-slate-100 dark:bg-zinc-900 p-1 rounded-xl border border-slate-200 dark:border-zinc-800 gap-1">
             {SUPPORTED_SYMBOLS.map((sym) => {
               const isActive = sym === ticker.symbol;
               return (
@@ -102,8 +102,8 @@ export const HeaderView: React.FC<HeaderViewProps> = React.memo(({
                   onClick={() => tradingEngine.switchSymbol(sym)}
                   className={`px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer ${
                     isActive
-                      ? 'bg-sky-600 text-white dark:bg-sky-500 dark:text-slate-950 shadow-xs'
-                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                      ? 'bg-sky-600 text-white dark:bg-zinc-200 dark:text-zinc-950 shadow-xs'
+                      : 'text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white'
                   }`}
                   title={`Switch active instrument to ${sym}`}
                 >
@@ -124,7 +124,7 @@ export const HeaderView: React.FC<HeaderViewProps> = React.memo(({
               aria-pressed={engine.auto_trade}
               className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-xs font-black transition-all cursor-pointer ${
                 engine.auto_trade
-                  ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-600 dark:text-emerald-400 shadow-xs ring-1 ring-emerald-500/20'
+                  ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-600 dark:text-emerald-400'
                   : 'bg-slate-100 hover:bg-slate-200 dark:bg-zinc-900 dark:hover:bg-zinc-800 border-slate-200 dark:border-zinc-800 text-slate-800 dark:text-zinc-200'
               }`}
               title={
@@ -247,7 +247,7 @@ export const HeaderView: React.FC<HeaderViewProps> = React.memo(({
       </div>
 
       {/* Tier 2: Dedicated Financial Status Ribbon - Responsive with NO Mobile Slider */}
-      <div className="w-full border-t border-slate-100 dark:border-[#142332] bg-slate-50/70 dark:bg-[#09131d]/70 px-2.5 sm:px-6 lg:px-8 py-2 font-mono text-xs">
+      <div className="w-full border-t border-slate-100 dark:border-zinc-800/80 bg-slate-50/70 dark:bg-[#0e0f14]/80 px-2.5 sm:px-6 lg:px-8 py-2 font-mono text-xs">
         {/* Mobile View (<sm): Clean 2-Row Stack with Clear, Bold Typography and 3-Metric Pills (NO Slider) */}
         <div className="flex sm:hidden flex-col gap-2 w-full">
           {/* Row 1: Clocks and Margin Level */}
@@ -294,7 +294,7 @@ export const HeaderView: React.FC<HeaderViewProps> = React.memo(({
         {/* Desktop/Tablet View (sm+): Full Linear Ribbon */}
         <div className="hidden sm:flex items-center justify-between gap-2 overflow-x-auto no-scrollbar">
           {/* Dual Clocks (Server & EAT) */}
-          <div className="flex items-center gap-1.5 shrink-0 text-slate-600 dark:text-zinc-300 pr-2 border-r border-slate-200 dark:border-[#1a3040]">
+          <div className="flex items-center gap-1.5 shrink-0 text-slate-600 dark:text-zinc-300 pr-2 border-r border-slate-200 dark:border-zinc-800">
             <Clock className="w-3.5 h-3.5 text-sky-500 shrink-0" />
             <span className="tabular-nums font-semibold">{ticker.brokerTimeStr || '00:00 Server'}</span>
             <span className="text-zinc-400">·</span>

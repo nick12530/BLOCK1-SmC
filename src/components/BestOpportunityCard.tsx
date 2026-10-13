@@ -39,7 +39,7 @@ export const BestOpportunityCard: React.FC<BestOpportunityCardProps> = ({
   };
 
   return (
-    <div className="bg-slate-900 dark:bg-[#0a121a] text-slate-100 rounded-xl p-3 sm:p-3.5 border border-slate-800 dark:border-[#1a2c3d] shadow-xs flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 font-sans">
+    <div className="bg-slate-900 dark:bg-[#111216] text-slate-100 rounded-xl p-3 sm:p-3.5 border border-slate-800 dark:border-zinc-800 shadow-xs flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 font-sans">
       {/* Left: Ranked Setup Summary */}
       <div className="flex-1 flex items-start sm:items-center gap-3">
         <div className="p-2 rounded-lg bg-slate-800 border border-slate-700 text-sky-400 shrink-0">

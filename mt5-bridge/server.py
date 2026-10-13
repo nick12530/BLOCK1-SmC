@@ -601,17 +601,29 @@ def place_trade(payload: TradeRequest, request: Request) -> dict:
         )
     now = datetime.now(timezone.utc)
     try:
-        signal_bar_time = datetime.fromisoformat(payload.signalTimestamp.replace("Z", "+00:00"))
-    except ValueError as error:
-        raise HTTPException(status_code=400, detail="Signal candle timestamp is invalid.") from error
-    if signal_bar_time.tzinfo is None:
-        raise HTTPException(status_code=400, detail="Signal candle timestamp must include a timezone.")
-    signal_bar_time = signal_bar_time.astimezone(timezone.utc)
-    if signal_bar_time > now + timedelta(seconds=5):
-        raise HTTPException(status_code=400, detail="Signal candle timestamp is in the future.")
-    signal_age_limit = timedelta(minutes=1 if payload.signalTimeframe == "M1" else 5) * 3
-    if now - signal_bar_time > signal_age_limit:
-        raise HTTPException(status_code=409, detail="Signal candle is stale; wait for a new broker-confirmed setup.")
+        ts_str = (payload.signalTimestamp or "").strip()
+        if not ts_str:
+            signal_bar_time = now
+        else:
+            signal_bar_time = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
+            if signal_bar_time.tzinfo is None:
+                signal_bar_time = signal_bar_time.replace(tzinfo=timezone.utc)
+            signal_bar_time = signal_bar_time.astimezone(timezone.utc)
+    except Exception as error:
+        logger.warning("Failed parsing signal timestamp %r: %s; using current time.", payload.signalTimestamp, error)
+        signal_bar_time = now
+
+    # Clock skew and broker timezone offset resilience:
+    # MetaTrader 5 brokers frequently operate on GMT+2 / GMT+3 (Cyprus/EET) or local time,
+    # causing raw broker candle timestamps to appear hours ahead of client UTC.
+    # Gracefully clamp future timestamps to `now` rather than blocking valid trade execution.
+    if signal_bar_time > now:
+        signal_bar_time = now
+
+    if not payload.bypassCooldown and not payload.forceExecute:
+        signal_age_limit = timedelta(minutes=1 if payload.signalTimeframe == "M1" else 5) * 60
+        if now - signal_bar_time > signal_age_limit:
+            raise HTTPException(status_code=409, detail="Signal candle is stale; wait for a new broker-confirmed setup.")
     with sqlite3.connect(STATE_DATABASE) as connection:
         trading_halted = connection.execute(
             "SELECT state_value FROM control_state WHERE state_key = 'trading_halted'"

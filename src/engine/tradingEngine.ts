@@ -54,9 +54,15 @@ import {
   readStoredClosedTrades,
   readTradeRationales,
   findCorrespondingOrderBlock,
+  recordJournalSignal,
+  readStoredJournalSignals,
+  recordTradeTaken,
+  readStoredJournalTrades,
+  updateTradeClosedInJournal,
   TradeRationales,
   TradeOrderBlocks,
 } from './tradeJournal';
+import type { JournalSignalRecord, JournalTradeRecord } from '../types/smc';
 import { INSTRUMENTS, SUPPORTED_SYMBOLS, SupportedSymbol, getInstrumentConfig } from './instrumentConfig';
 import { getGlobalSessionStatus } from './sessionTimezones';
 import {
@@ -1590,6 +1596,63 @@ export class TradingEngine {
     }
   }
 
+  recordRejectedSignal(
+    signal: Signal,
+    rejectionReason: string,
+    symbol: string = this.activeSymbol
+  ): JournalSignalRecord {
+    const record = recordJournalSignal({
+      symbol,
+      direction: signal.direction,
+      strategy: signal.strategy || 'SMC Liquidity Setup',
+      timeframe: signal.timeframe || 'M1',
+      score: signal.score,
+      entry: signal.entry,
+      sl: signal.sl,
+      tp: signal.tp,
+      status: 'REJECTED',
+      rejectionReason,
+      rationale: buildSignalRationale(signal),
+    });
+    this.slog(`Journal: Signal rejected for ${symbol} ${signal.direction} · ${rejectionReason}`, 'warn');
+    this.emit('events');
+    return record;
+  }
+
+  recordExecutedSignal(
+    signal: Signal,
+    ticket: number,
+    volume: number,
+    symbol: string = this.activeSymbol,
+    rationale?: string
+  ): JournalSignalRecord {
+    const record = recordJournalSignal({
+      symbol,
+      direction: signal.direction,
+      strategy: signal.strategy || 'SMC Liquidity Setup',
+      timeframe: signal.timeframe || 'M1',
+      score: signal.score,
+      entry: signal.entry,
+      sl: signal.sl,
+      tp: signal.tp,
+      status: 'EXECUTED',
+      ticket,
+      volume,
+      rationale: rationale || buildSignalRationale(signal),
+    });
+    this.slog(`Journal: Signal executed #${ticket} ${symbol} ${signal.direction} ${volume}L`, 'trade');
+    this.emit('events');
+    return record;
+  }
+
+  getJournalSignals(): JournalSignalRecord[] {
+    return readStoredJournalSignals();
+  }
+
+  getJournalTrades(): JournalTradeRecord[] {
+    return readStoredJournalTrades();
+  }
+
   setDirectionCooldownEnabled(enabled: boolean) {
     this.directionCooldownEnabled = enabled;
     if (typeof window !== 'undefined') {
@@ -2261,9 +2324,14 @@ export class TradingEngine {
         this.slog('Auto-trade blocked: live MT5 broker candle feed is unavailable.', 'warn');
         return;
       }
-      if (this.getEntryBlockReason(sig.direction, sig)) return;
+      const blockReason = this.getEntryBlockReason(sig.direction, sig);
+      if (blockReason) {
+        this.recordRejectedSignal(sig, blockReason, this.activeSymbol);
+        return;
+      }
       const volume = this.getRiskBasedVolume(sig.sl);
       if (!volume) {
+        this.recordRejectedSignal(sig, 'Position sizing error: broker specification cannot size stop safely', this.activeSymbol);
         this.slog('Auto-trade blocked: broker symbol tick-value/volume specification cannot size this stop safely.', 'error');
         return;
       }
@@ -2272,6 +2340,7 @@ export class TradingEngine {
       this.slog(`Auto-Trader approved: ${this.activeSymbol} ${sig.timeframe} ${sig.direction} score ${sig.score} · ${rationale}`, 'signal');
       if (this.mt5Account.connected) {
         if (!mt5Bridge.getStatus().connected) {
+          this.recordRejectedSignal(sig, 'MT5 bridge is offline', this.activeSymbol);
           this.slog('MT5 auto-order blocked: local bridge is offline.', 'error');
           return;
         }
@@ -2288,7 +2357,13 @@ export class TradingEngine {
             poiKey: this.getSignalPoiKey(sig.direction, sig.entry),
             instrumentType: this.instrumentType,
             signalTimeframe: sig.timeframe === 'M1' ? 'M1' : 'M5',
-            signalTimestamp: sig.timestamp,
+            signalTimestamp: (() => {
+              if (!sig.timestamp) return new Date().toISOString();
+              const parsed = new Date(sig.timestamp).getTime();
+              return Number.isNaN(parsed) || parsed > Date.now()
+                ? new Date().toISOString()
+                : new Date(parsed).toISOString();
+            })(),
             magic: config.magicNumber,
           });
           this.recordMt5Rationale(
@@ -2298,6 +2373,23 @@ export class TradingEngine {
             findCorrespondingOrderBlock(sig.direction, sig.entry, market.zones)
           );
           this.recordAcceptedEntry(sig.direction, sig);
+          this.recordExecutedSignal(sig, result.ticket, volume, this.activeSymbol, rationale);
+          recordTradeTaken({
+            ticket: result.ticket,
+            symbol: this.activeSymbol,
+            type: sig.direction,
+            volume,
+            openPrice: result.price,
+            closePrice: result.price,
+            openTime: new Date().toISOString(),
+            sl: sig.sl,
+            tp: sig.tp,
+            profit: 0,
+            pips: 0,
+            reason: 'Manual',
+            strategyRationale: rationale,
+            status: 'RUNNING',
+          });
           this.slog(
             result.pending
               ? `MT5 auto-order placed but not confirmed filled: #${result.ticket} · ${result.filledVolume} lots reported. Verify it in MT5.`
@@ -2335,9 +2427,17 @@ export class TradingEngine {
     const isManual = !comment.startsWith('auto:');
     const market = this.getMarketSnapshot();
     const blockReason = this.getEntryBlockReason(direction, market.signal, Date.now(), isManual);
-    if (blockReason) return { ok: false, error: blockReason };
+    if (blockReason) {
+      if (market.signal) {
+        this.recordRejectedSignal(market.signal, blockReason, this.activeSymbol);
+      }
+      return { ok: false, error: blockReason };
+    }
     const riskVolume = this.getRiskBasedVolume(sl, volume);
     if (!riskVolume) {
+      if (market.signal) {
+        this.recordRejectedSignal(market.signal, 'Position size is below broker minimum', this.activeSymbol);
+      }
       return { ok: false, error: 'Position size is below broker minimum or cannot be calculated from valid risk specifications.' };
     }
 
@@ -2414,6 +2514,26 @@ export class TradingEngine {
     this.positions = [...this.positions, newPos];
     this.selectedTicket = ticket; // Automatically focus the newly entered trade on the chart!
     this.recordAcceptedEntry(direction, market.signal);
+    recordTradeTaken({
+      ticket,
+      symbol: this.activeSymbol,
+      type: direction,
+      volume: riskVolume,
+      openPrice,
+      closePrice: openPrice,
+      openTime: new Date().toISOString(),
+      sl: Number(sl.toFixed(config.digits)),
+      tp: Number(tp.toFixed(config.digits)),
+      profit: 0,
+      pips: 0,
+      reason: 'Manual',
+      comment: `${this.activeSymbol}:${comment}`,
+      strategyRationale: rationale,
+      status: 'RUNNING',
+    });
+    if (market.signal) {
+      this.recordExecutedSignal(market.signal, ticket, riskVolume, this.activeSymbol, rationale);
+    }
     this.slog(`${this.activeSymbol} ${comment} ${direction} ${riskVolume} @ ${openPrice} -> #${ticket}`, 'trade');
 
     this.invalidatePositions();
@@ -2481,6 +2601,7 @@ export class TradingEngine {
     // ClosedTrades order must be preserved (Priority 15)
     this.closedTrades = [closed, ...this.closedTrades];
     persistClosedTrades(this.closedTrades);
+    updateTradeClosedInJournal(pos.ticket, closePrice, profit, pips, reason, closedAt.toISOString());
     this.account.balance = Number((this.account.balance + profit).toFixed(2));
     const remainingFloatingPnl = this.positions.reduce((sum, p) => sum + p.profit, 0);
     this.account.equity = Number((this.account.balance + remainingFloatingPnl).toFixed(2));

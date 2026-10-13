@@ -100,7 +100,7 @@ export const LiveExecutionCard: React.FC<LiveExecutionCardProps> = React.memo(({
   };
 
   return (
-    <div className="bg-white dark:bg-[#0d1823] border border-slate-200/90 dark:border-[#1a3040] rounded-xl sm:rounded-2xl p-2.5 sm:p-4.5 flex flex-col justify-between shadow-xs space-y-2.5 sm:space-y-4 font-mono text-xs transition-colors">
+    <div className="bg-white dark:bg-[#0c0e12] border border-slate-200 dark:border-zinc-800 rounded-xl sm:rounded-2xl p-2.5 sm:p-4.5 flex flex-col justify-between shadow-xs space-y-2.5 sm:space-y-4 font-mono text-xs transition-colors">
       {/* Top Header: Title, Active Orders Counter & Bulk Actions */}
       <div className="flex items-center justify-between border-b border-slate-100 dark:border-zinc-800/80 pb-3 flex-wrap gap-2">
         <div className="flex items-center gap-2 flex-wrap">
@@ -124,7 +124,7 @@ export const LiveExecutionCard: React.FC<LiveExecutionCardProps> = React.memo(({
             aria-pressed={engine.auto_trade}
             className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-bold transition-all cursor-pointer ${
               engine.auto_trade
-                ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-600 dark:text-emerald-400 shadow-xs ring-1 ring-emerald-500/20'
+                ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-600 dark:text-emerald-400'
                 : 'bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 border-slate-200 dark:border-zinc-700 text-slate-700 dark:text-zinc-300'
             }`}
             title={
@@ -455,7 +455,7 @@ export const LiveExecutionCard: React.FC<LiveExecutionCardProps> = React.memo(({
               aria-pressed={engine.auto_trade}
               className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-bold transition-all cursor-pointer ${
                 engine.auto_trade
-                  ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-600 dark:text-emerald-400 shadow-xs ring-1 ring-emerald-500/20'
+                  ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-600 dark:text-emerald-400'
                   : 'bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 border-slate-200 dark:border-zinc-700 text-slate-700 dark:text-zinc-300'
               }`}
             >

@@ -654,7 +654,7 @@ export function evaluateConfluence(
     tp: Number(tp.toFixed(2)),
     reasons,
     atr: Number(atrNow.toFixed(2)),
-    timestamp: new Date(toMilliseconds(lastCandle.time)).toISOString(),
+    timestamp: new Date(Math.min(toMilliseconds(lastCandle.time), Date.now())).toISOString(),
     actionReason,
     perfectEntryReason,
     candlestickPattern: activePattern,

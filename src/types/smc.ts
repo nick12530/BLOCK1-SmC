@@ -189,6 +189,29 @@ export interface ClosedTrade {
   comment?: string;
   strategyRationale?: string;
   strategyOrderBlock?: Zone;
+  status?: 'RUNNING' | 'CLOSED';
+}
+
+export interface JournalSignalRecord {
+  id: string;
+  timestamp: string; // ISO string
+  symbol: string;
+  direction: TradeDirection;
+  strategy: string;
+  timeframe: string;
+  score: number;
+  entry: number;
+  sl: number;
+  tp: number;
+  status: 'EXECUTED' | 'REJECTED';
+  rejectionReason?: string;
+  ticket?: number;
+  volume?: number;
+  rationale?: string;
+}
+
+export interface JournalTradeRecord extends ClosedTrade {
+  status: 'RUNNING' | 'CLOSED';
 }
 
 export interface EngineLog {

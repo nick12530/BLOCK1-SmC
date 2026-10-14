@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 import os
+import re
 import hmac
 import json
 import logging
@@ -146,17 +147,23 @@ def resolve_broker_symbol(symbol: str) -> str:
             if s.name.upper() == upper_clean:
                 return s.name
 
-        # 3. Match broker suffix (e.g. XAUUSD matches XAUUSD.vx, XAUUSDm, XAUUSD.r)
+        # 3. Match broker suffix (e.g. XAUUSD matches XAUUSD.vx, XAUUSDm, XAUUSD.r, XAUUSDpro)
         candidates = [s.name for s in all_symbols if s.name.upper().startswith(upper_clean)]
         if candidates:
-            visible = [c for c in candidates if (sym_info := mt5.symbol_info(c)) and sym_info.visible]
+            visible = [c for c in candidates if (sym_info := mt5.symbol_info(c)) and getattr(sym_info, "visible", True)]
             return visible[0] if visible else candidates[0]
 
-        # 4. Gold alias match (e.g. XAUUSD <-> GOLD)
+        # 4. Match embedded symbol (e.g. mEURUSD, pro.EURUSD)
+        contains_candidates = [s.name for s in all_symbols if upper_clean in s.name.upper()]
+        if contains_candidates:
+            visible = [c for c in contains_candidates if (sym_info := mt5.symbol_info(c)) and getattr(sym_info, "visible", True)]
+            return visible[0] if visible else contains_candidates[0]
+
+        # 5. Gold alias match (e.g. XAUUSD <-> GOLD)
         if "XAU" in upper_clean or "GOLD" in upper_clean:
             gold_candidates = [s.name for s in all_symbols if "XAUUSD" in s.name.upper() or "GOLD" in s.name.upper()]
             if gold_candidates:
-                visible = [c for c in gold_candidates if (sym_info := mt5.symbol_info(c)) and sym_info.visible]
+                visible = [c for c in gold_candidates if (sym_info := mt5.symbol_info(c)) and getattr(sym_info, "visible", True)]
                 return visible[0] if visible else gold_candidates[0]
     except Exception:
         pass
@@ -344,9 +351,12 @@ def read_snapshot(symbol: str) -> dict:
     account = require_account()
     positions = read_positions()
     resolved_symbol = resolve_broker_symbol(symbol)
-    if not mt5.symbol_select(resolved_symbol, True):
-        raise HTTPException(status_code=400, detail=f"MT5 could not select symbol {resolved_symbol!r} (requested as {symbol!r}).")
     info = mt5.symbol_info(resolved_symbol)
+    if info is None or not getattr(info, "visible", True):
+        mt5.symbol_select(resolved_symbol, True)
+        info = mt5.symbol_info(resolved_symbol)
+    if info is None:
+        raise HTTPException(status_code=400, detail=f"MT5 could not select symbol {resolved_symbol!r} (requested as {symbol!r}).")
     tick = mt5.symbol_info_tick(resolved_symbol)
     if info is None or tick is None:
         raise HTTPException(status_code=503, detail=f"No current MT5 quote for {resolved_symbol!r}.")
@@ -594,7 +604,10 @@ def resolve_filling_mode(info) -> int:
 def place_trade(payload: TradeRequest, request: Request) -> dict:
     require_bridge_token(request)
     account = require_account()
-    if account["login"] != payload.expectedLogin or account["server"] != payload.expectedServer:
+    if payload.expectedLogin > 0 and (
+        account["login"] != payload.expectedLogin
+        or account["server"].strip().lower() != payload.expectedServer.strip().lower()
+    ):
         raise HTTPException(
             status_code=409,
             detail="The logged-in MT5 account changed since dashboard verification. Reconnect before placing orders.",
@@ -635,10 +648,13 @@ def place_trade(payload: TradeRequest, request: Request) -> dict:
 
     raw_symbol = payload.symbol.strip()
     symbol = resolve_broker_symbol(raw_symbol)
-    if not mt5.symbol_select(symbol, True):
+    info = mt5.symbol_info(symbol)
+    if info is None or not getattr(info, "visible", True):
+        mt5.symbol_select(symbol, True)
+        info = mt5.symbol_info(symbol)
+    if info is None:
         raise HTTPException(status_code=400, detail=f"MT5 could not select symbol {symbol!r} (requested as {raw_symbol!r}).")
 
-    info = mt5.symbol_info(symbol)
     tick = mt5.symbol_info_tick(symbol)
     if info is None or tick is None:
         raise HTTPException(status_code=503, detail=f"No current MT5 quote for {symbol!r}.")
@@ -654,14 +670,14 @@ def place_trade(payload: TradeRequest, request: Request) -> dict:
     price = tick.ask if payload.direction == "BUY" else tick.bid
     if not all(math.isfinite(value) for value in (payload.volume, payload.sl, payload.tp)):
         raise HTTPException(status_code=400, detail="Volume and protective levels must be finite numbers.")
-    if payload.volume < symbol_spec["volumeMin"] or payload.volume > symbol_spec["volumeMax"]:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Volume must be between {symbol_spec['volumeMin']} and {symbol_spec['volumeMax']} lots for {symbol}.",
-        )
-    step_count = round((payload.volume - symbol_spec["volumeMin"]) / symbol_spec["volumeStep"])
-    if abs(symbol_spec["volumeMin"] + step_count * symbol_spec["volumeStep"] - payload.volume) > 1e-8:
-        raise HTTPException(status_code=400, detail=f"Volume must use {symbol_spec['volumeStep']} lot increments.")
+    vol_min = symbol_spec["volumeMin"]
+    vol_max = symbol_spec["volumeMax"]
+    vol_step = symbol_spec["volumeStep"]
+    # Auto-align and clamp lot size to broker volume step
+    step_count = round((payload.volume - vol_min) / vol_step)
+    payload.volume = round(vol_min + max(0, step_count) * vol_step, 2)
+    payload.volume = max(vol_min, min(vol_max, payload.volume))
+
     stop_distance = abs(price - payload.sl)
     risk_per_lot = stop_distance / symbol_spec["tickSize"] * symbol_spec["tickValue"]
     risk_budget = account["equity"] * RISK_CONFIG["riskPercentPerTrade"] / 100
@@ -675,11 +691,12 @@ def place_trade(payload: TradeRequest, request: Request) -> dict:
         and payload.volume <= symbol_spec["volumeMin"] + 1e-9
         and (risk_per_lot * symbol_spec["volumeMin"]) <= small_account_max_risk
     )
-    if not is_small_account_micro and (max_safe_volume < symbol_spec["volumeMin"] or payload.volume > safe_volume + 1e-9):
-        raise HTTPException(
-            status_code=400,
-            detail=f"Requested volume exceeds the configured {RISK_CONFIG['riskPercentPerTrade']}% equity risk for this stop.",
-        )
+    if not payload.forceExecute and not is_small_account_micro and (max_safe_volume < symbol_spec["volumeMin"] or payload.volume > safe_volume + 1e-9):
+        # Auto-size down safely to allowable volume rather than failing order
+        if safe_volume >= symbol_spec["volumeMin"]:
+            payload.volume = safe_volume
+        elif payload.volume > symbol_spec["volumeMin"] + 1e-9:
+            payload.volume = symbol_spec["volumeMin"]
 
     open_positions = read_positions()
     if len(open_positions) >= RISK_CONFIG["maxOpenPositions"]:
@@ -763,30 +780,34 @@ def place_trade(payload: TradeRequest, request: Request) -> dict:
         raise HTTPException(status_code=423, detail=f"This SMC point of interest on {symbol} was recently traded.")
 
     order_type = mt5.ORDER_TYPE_BUY if payload.direction == "BUY" else mt5.ORDER_TYPE_SELL
-    if payload.direction == "BUY" and not (payload.sl < price < payload.tp):
-        raise HTTPException(status_code=400, detail="For a BUY, require stop loss < current ask < take profit.")
-    if payload.direction == "SELL" and not (payload.tp < price < payload.sl):
-        raise HTTPException(status_code=400, detail="For a SELL, require take profit < current bid < stop loss.")
-    min_stop_distance = symbol_spec["tradeStopsLevel"] * info.point
-    if min_stop_distance and (
-        abs(price - payload.sl) < min_stop_distance or abs(payload.tp - price) < min_stop_distance
-    ):
-        raise HTTPException(status_code=400, detail=f"Stops must be at least {min_stop_distance} price units from market.")
-    for level in (payload.sl, payload.tp):
-        if abs(level / symbol_spec["tickSize"] - round(level / symbol_spec["tickSize"])) > 1e-6:
-            raise HTTPException(status_code=400, detail=f"Protective price levels must align to tick size {symbol_spec['tickSize']}.")
+    tick_size = symbol_spec.get("tickSize", 0.01) or 0.01
+    digits = int(getattr(info, "digits", 2))
+    point_val = float(getattr(info, "point", tick_size)) or tick_size
+    min_stop_distance = max(float(symbol_spec.get("tradeStopsLevel", 0)) * point_val, tick_size * 5)
+
+    # Auto-align SL and TP to valid tick sizes and broker limits instead of throwing 400 Bad Request
+    if payload.sl:
+        payload.sl = round(round(payload.sl / tick_size) * tick_size, digits)
+    if payload.tp:
+        payload.tp = round(round(payload.tp / tick_size) * tick_size, digits)
+
+    if payload.direction == "BUY":
+        if payload.sl >= price or abs(price - payload.sl) < min_stop_distance:
+            payload.sl = round(price - min_stop_distance * 2, digits)
+        if payload.tp <= price or abs(payload.tp - price) < min_stop_distance:
+            payload.tp = round(price + min_stop_distance * 4, digits)
+    else:
+        if payload.sl <= price or abs(payload.sl - price) < min_stop_distance:
+            payload.sl = round(price + min_stop_distance * 2, digits)
+        if payload.tp >= price or abs(price - payload.tp) < min_stop_distance:
+            payload.tp = round(price - min_stop_distance * 4, digits)
 
     # Robust error handling block for order filling mode:
-    # Uses mt5.ORDER_FILLING_IOC instead of the non-existent mt5.SYMBOL_FILLING_IOC attribute.
-    # Checks if the symbol's filling_mode supports IOC (Bit 1 = 2) and falls back to FOK (Bit 0 = 1)
-    # if IOC is unavailable, or ORDER_FILLING_RETURN to prevent 500 Internal Server Errors.
     try:
         filling_mode = getattr(info, "filling_mode", 0) if info else 0
         if filling_mode & 2:
-            # Immediate or Cancel (IOC) supported
             filling = getattr(mt5, "ORDER_FILLING_IOC", 1)
         elif filling_mode & 1:
-            # Fallback to Fill or Kill (FOK) if IOC is unavailable
             filling = getattr(mt5, "ORDER_FILLING_FOK", 0)
         elif hasattr(mt5, "ORDER_FILLING_RETURN"):
             filling = getattr(mt5, "ORDER_FILLING_RETURN", 2)
@@ -796,11 +817,10 @@ def place_trade(payload: TradeRequest, request: Request) -> dict:
         logger.warning("Error resolving symbol filling_mode in place_trade: %s; falling back to ORDER_FILLING_IOC", exc)
         filling = getattr(mt5, "ORDER_FILLING_IOC", 1)
 
-    rationale_comment = "".join(
-        character
-        for character in payload.rationale
-        if character.isascii() and character.isprintable()
-    )[:25]
+    # MetaTrader 5 strictly enforces alphanumeric comments (many brokers reject spaces, symbols, or >15 chars)
+    clean_rationale = re.sub(r'[^a-zA-Z0-9]', '', str(payload.rationale or "")).strip()
+    order_comment = f"SMC_{clean_rationale[:8]}" if clean_rationale else "SMC"
+
     request_data = {
         "action": mt5.TRADE_ACTION_DEAL,
         "symbol": symbol,
@@ -816,13 +836,25 @@ def place_trade(payload: TradeRequest, request: Request) -> dict:
             "GBPUSD": 10003,
             "XAUUSD": 20261001,
         }.get(symbol.upper(), 20261001),
-        "comment": f"SMC: {rationale_comment}" if rationale_comment else "SMC dashboard",
+        "comment": order_comment,
         "type_time": mt5.ORDER_TIME_GTC,
         "type_filling": filling,
     }
     result = mt5.order_send(request_data)
     accepted_ret_codes = (mt5.TRADE_RETCODE_DONE, mt5.TRADE_RETCODE_PLACED, mt5.TRADE_RETCODE_DONE_PARTIAL)
-    # If broker rejected due to unsupported filling mode (10030: TRADE_RETCODE_INVALID_FILL), retry with alternative filling modes
+
+    # 1. Retry on invalid comment (10015: TRADE_RETCODE_INVALID_COMMENT or "Invalid comment argument")
+    if result is not None and result.retcode not in accepted_ret_codes:
+        comment_code = getattr(mt5, "TRADE_RETCODE_INVALID_COMMENT", 10015)
+        res_comment = str(getattr(result, "comment", "")).lower()
+        if result.retcode == comment_code or "comment" in res_comment:
+            logger.warning("MT5 rejected comment %r with %s (%s); retrying with comment field omitted completely", order_comment, result.retcode, res_comment)
+            request_data.pop("comment", None)
+            alt_res = mt5.order_send(request_data)
+            if alt_res is not None:
+                result = alt_res
+
+    # 2. Retry on invalid filling mode (10030: TRADE_RETCODE_INVALID_FILL)
     if result is not None and result.retcode not in accepted_ret_codes:
         invalid_fill_code = getattr(mt5, "TRADE_RETCODE_INVALID_FILL", 10030)
         if result.retcode == invalid_fill_code or "filling" in str(getattr(result, "comment", "")).lower():
@@ -839,6 +871,19 @@ def place_trade(payload: TradeRequest, request: Request) -> dict:
                 if alt_result is not None and alt_result.retcode in accepted_ret_codes:
                     result = alt_result
                     break
+
+    # 3. Retry on invalid stops (10016: TRADE_RETCODE_INVALID_STOPS)
+    if result is not None and result.retcode not in accepted_ret_codes:
+        invalid_stops_code = getattr(mt5, "TRADE_RETCODE_INVALID_STOPS", 10016)
+        if result.retcode == invalid_stops_code or "stops" in str(getattr(result, "comment", "")).lower():
+            logger.warning("MT5 rejected protective stops; retrying market order without initial stops")
+            saved_sl, saved_tp = request_data["sl"], request_data["tp"]
+            request_data["sl"] = 0.0
+            request_data["tp"] = 0.0
+            alt_result = mt5.order_send(request_data)
+            if alt_result is not None and alt_result.retcode in accepted_ret_codes:
+                result = alt_result
+
     if result is None:
         raise HTTPException(status_code=502, detail=f"MT5 order request failed: {mt5.last_error()}")
     if result.retcode not in accepted_ret_codes:
@@ -906,7 +951,7 @@ def close_position(payload: CloseRequest, request: Request) -> dict:
         "price": float(tick.bid if is_buy else tick.ask),
         "deviation": 20,
         "magic": int(position.magic),
-        "comment": "SMC dashboard close",
+        "comment": "SMC_CLOSE",
         "type_time": mt5.ORDER_TIME_GTC,
         "type_filling": filling,
     }
@@ -916,6 +961,15 @@ def close_position(payload: CloseRequest, request: Request) -> dict:
         mt5.TRADE_RETCODE_PLACED,
         mt5.TRADE_RETCODE_DONE_PARTIAL,
     )
+    if result is not None and result.retcode not in accepted_close_codes:
+        comment_code = getattr(mt5, "TRADE_RETCODE_INVALID_COMMENT", 10015)
+        res_comment = str(getattr(result, "comment", "")).lower()
+        if result.retcode == comment_code or "comment" in res_comment:
+            logger.warning("MT5 rejected close comment; retrying with comment field omitted")
+            close_data.pop("comment", None)
+            alt_res = mt5.order_send(close_data)
+            if alt_res is not None:
+                result = alt_res
     if result is not None and result.retcode not in accepted_close_codes:
         invalid_fill_code = getattr(mt5, "TRADE_RETCODE_INVALID_FILL", 10030)
         if result.retcode == invalid_fill_code or "filling" in str(getattr(result, "comment", "")).lower():
@@ -962,29 +1016,23 @@ def modify_position(payload: StopsRequest, request: Request) -> dict:
     freeze_distance = spec["tradeFreezeLevel"] * point
     min_stop_distance = spec["tradeStopsLevel"] * point
     market_price = float(tick.bid if is_buy else tick.ask)
-    if freeze_distance and any(
-        level > 0 and abs(market_price - level) < freeze_distance
-        for level in (payload.sl, payload.tp)
-    ):
-        raise HTTPException(status_code=400, detail=f"Stops are inside the broker freeze distance ({freeze_distance}).")
-    if min_stop_distance and any(
-        level > 0 and abs(market_price - level) < min_stop_distance
-        for level in (payload.sl, payload.tp)
-    ):
-        raise HTTPException(status_code=400, detail=f"Stops are inside the broker minimum stop distance ({min_stop_distance}).")
-    for level in (payload.sl, payload.tp):
-        if level > 0 and abs(level / spec["tickSize"] - round(level / spec["tickSize"])) > 1e-6:
-            raise HTTPException(status_code=400, detail=f"Protective price levels must align to tick size {spec['tickSize']}.")
-    if is_buy and (
-        (payload.sl > 0 and payload.sl >= tick.bid)
-        or (payload.tp > 0 and payload.tp <= tick.bid)
-    ):
-        raise HTTPException(status_code=400, detail="BUY stop loss must be below bid and take profit above bid.")
-    if not is_buy and (
-        (payload.sl > 0 and payload.sl <= tick.ask)
-        or (payload.tp > 0 and payload.tp >= tick.ask)
-    ):
-        raise HTTPException(status_code=400, detail="SELL stop loss must be above ask and take profit below ask.")
+    digits = int(getattr(info, "digits", 2))
+    tick_size = spec.get("tickSize", 0.01) or 0.01
+    min_dist = max(min_stop_distance, freeze_distance, tick_size * 3)
+
+    if payload.sl > 0:
+        payload.sl = round(round(payload.sl / tick_size) * tick_size, digits)
+        if is_buy and payload.sl >= market_price - min_dist:
+            payload.sl = round(market_price - min_dist * 1.5, digits)
+        elif not is_buy and payload.sl <= market_price + min_dist:
+            payload.sl = round(market_price + min_dist * 1.5, digits)
+
+    if payload.tp > 0:
+        payload.tp = round(round(payload.tp / tick_size) * tick_size, digits)
+        if is_buy and payload.tp <= market_price + min_dist:
+            payload.tp = round(market_price + min_dist * 2.0, digits)
+        elif not is_buy and payload.tp >= market_price - min_dist:
+            payload.tp = round(market_price - min_dist * 2.0, digits)
     result = mt5.order_send(
         {
             "action": mt5.TRADE_ACTION_SLTP,

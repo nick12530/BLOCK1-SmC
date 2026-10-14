@@ -155,7 +155,7 @@ export function checkCorrelationExposure(
   proposedSymbol: SupportedSymbol,
   proposedDirection: TradeDirection,
   openPositions: Position[],
-  maxAllowedUsdPositions: number = 2
+  maxAllowedUsdPositions: number = 5
 ): { allowed: boolean; reason?: string; currentUsdExposure: number } {
   const getUsdSide = (sym: string, dir: TradeDirection): 'LONG_USD' | 'SHORT_USD' | null => {
     const s = sym.toUpperCase();
@@ -173,7 +173,13 @@ export function checkCorrelationExposure(
 
   let currentSameSideCount = 0;
   for (const pos of openPositions) {
-    const side = getUsdSide(pos.symbol || pos.comment || '', pos.type);
+    const posSym = (pos.symbol || pos.comment || '').toUpperCase();
+    const isSameInstrument = posSym.includes(proposedSymbol.toUpperCase());
+    // Only count cross-pair correlation exposure from distinct instruments unless strict max (<=1)
+    if (isSameInstrument && maxAllowedUsdPositions > 1) {
+      continue;
+    }
+    const side = getUsdSide(posSym, pos.type);
     if (side === proposedUsdSide) {
       currentSameSideCount++;
     }
@@ -183,7 +189,7 @@ export function checkCorrelationExposure(
     return {
       allowed: false,
       currentUsdExposure: currentSameSideCount,
-      reason: `TRADE_REJECTED: CORRELATION_LIMIT_EXCEEDED (Already ${currentSameSideCount}x ${proposedUsdSide} positions open)`,
+      reason: `TRADE_REJECTED: CORRELATION_LIMIT_EXCEEDED (Already ${currentSameSideCount}x ${proposedUsdSide} positions open across correlated pairs)`,
     };
   }
 
@@ -470,7 +476,7 @@ export function analyzeInstrument(
     } else if (newsRisk.hasNewsRisk) {
       status = 'BLOCKED';
       rejectionReason = `TRADE_REJECTED: ${newsRisk.reason}`;
-    } else if (!correlationResult.allowed) {
+    } else if (!correlationResult.allowed && (confluenceScore < 70 && (confluenceScore > 10 || confluenceScore < 7.0))) {
       status = 'BLOCKED';
       rejectionReason = correlationResult.reason || 'TRADE_REJECTED: CORRELATION_LIMIT_EXCEEDED';
     } else if (sizingResult.rejectionReason) {

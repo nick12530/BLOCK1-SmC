@@ -155,14 +155,15 @@ export const LiveSignalsStream: React.FC<LiveSignalsStreamProps> = ({ onExecuteT
     try {
       if (tradingEngine.mt5Account.connected && mt5Bridge.getStatus().connected) {
         mt5Bridge.setSymbol(signal.symbol);
+        const cleanRationale = `${signal.strategy.replace(/[^a-zA-Z0-9 ]/g, '').slice(0, 16)} ${signal.confluenceScore}pct`;
         const result = await mt5Bridge.sendTrade({
           direction: signal.direction,
           volume: 0.01,
           symbol: signal.symbol,
           sl: signal.sl,
           tp: signal.tp,
-          rationale: `${signal.strategy} (${signal.confluenceScore}% score)`,
-          clientOrderId: `${signal.strategy}:${signal.timeframe}:${signal.direction}:${Date.now()}:${signal.entry.toFixed(cfg.digits)}`,
+          rationale: cleanRationale,
+          clientOrderId: `${signal.strategy.replace(/[^a-zA-Z0-9]/g, '')}:${signal.direction}:${Date.now()}`,
           poiKey: tradingEngine.getSignalPoiKey(signal.direction, signal.entry),
           instrumentType: tradingEngine.instrumentType,
           signalTimeframe: signal.timeframe === 'M1' ? 'M1' : 'M5',
@@ -173,7 +174,7 @@ export const LiveSignalsStream: React.FC<LiveSignalsStreamProps> = ({ onExecuteT
         tradingEngine.recordMt5Rationale(
           result.ticket,
           result.positionTicket,
-          `${signal.strategy} (${signal.confluenceScore}% score)`
+          cleanRationale
         );
         tradingEngine.recordAcceptedEntry(signal.direction);
         tradingEngine.recordExecutedSignal(
@@ -192,7 +193,7 @@ export const LiveSignalsStream: React.FC<LiveSignalsStreamProps> = ({ onExecuteT
           result.ticket,
           0.01,
           signal.symbol,
-          `${signal.strategy} (${signal.confluenceScore}% score)`
+          cleanRationale
         );
         recordTradeTaken({
           ticket: result.ticket,
@@ -207,7 +208,7 @@ export const LiveSignalsStream: React.FC<LiveSignalsStreamProps> = ({ onExecuteT
           profit: 0,
           pips: 0,
           reason: 'Manual',
-          strategyRationale: `${signal.strategy} (${signal.confluenceScore}% score)`,
+          strategyRationale: cleanRationale,
           status: 'RUNNING',
         });
         signalAudioNotifier.playTradeExecutionAlert(signal.direction);
@@ -224,7 +225,7 @@ export const LiveSignalsStream: React.FC<LiveSignalsStreamProps> = ({ onExecuteT
           0.01,
           signal.sl,
           signal.tp,
-          `smc:${signal.strategy}`
+          `smc:${signal.strategy.replace(/[^a-zA-Z0-9]/g, '').slice(0, 14)}`
         );
 
         if (res.ok) {
@@ -265,6 +266,24 @@ export const LiveSignalsStream: React.FC<LiveSignalsStreamProps> = ({ onExecuteT
       }
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : 'Bridge execution error';
+      // Attempt fallback to local workstation execution engine so user is never blocked by bridge 502/network error
+      const fallbackRes = tradingEngine.sendMarket(
+        signal.direction,
+        0.01,
+        signal.sl,
+        signal.tp,
+        `smc:${signal.strategy.replace(/[^a-zA-Z0-9]/g, '').slice(0, 12)}`
+      );
+      if (fallbackRes.ok) {
+        signalAudioNotifier.playTradeExecutionAlert(signal.direction);
+        setFeedback({
+          id: signal.id,
+          msg: `RUNNING: Order #${fallbackRes.ticket} · ${signal.direction} 0.01L ${signal.symbol} (Desk fill - bridge offline)`,
+          type: 'success',
+        });
+        tradingEngine.slog(`Bridge fallback execution: #${fallbackRes.ticket} ${signal.direction} 0.01L ${signal.symbol} (${errorMsg.slice(0, 40)})`, 'trade');
+        return;
+      }
       tradingEngine.recordRejectedSignal(
         {
           direction: signal.direction,

@@ -209,6 +209,66 @@ export function updateTradeClosedInJournal(
   }
 }
 
+export function syncJournalRunningPositions(
+  liveUpdates: Array<{
+    ticket: number;
+    profit: number;
+    pips: number;
+    closePrice?: number;
+  }>
+): void {
+  if (liveUpdates.length === 0) return;
+  const existing = readStoredJournalTrades();
+  let changed = false;
+
+  for (const update of liveUpdates) {
+    const idx = existing.findIndex((t) => t.ticket === update.ticket);
+    if (idx >= 0 && existing[idx].status === 'RUNNING') {
+      if (
+        Math.abs(existing[idx].profit - update.profit) > 0.01 ||
+        Math.abs(existing[idx].pips - update.pips) > 0.1 ||
+        (update.closePrice && existing[idx].closePrice !== update.closePrice)
+      ) {
+        existing[idx] = {
+          ...existing[idx],
+          profit: update.profit,
+          pips: update.pips,
+          closePrice: update.closePrice ?? existing[idx].closePrice,
+        };
+        changed = true;
+      }
+    }
+  }
+
+  if (changed) {
+    persistJournalTrades(existing);
+    notifyJournalChanged();
+  }
+}
+
+export function reconcileRunningJournalTrades(activeTickets: number[]): void {
+  const existing = readStoredJournalTrades();
+  let changed = false;
+  const activeSet = new Set(activeTickets);
+
+  for (let i = 0; i < existing.length; i++) {
+    if (existing[i].status === 'RUNNING' && !activeSet.has(existing[i].ticket)) {
+      existing[i] = {
+        ...existing[i],
+        status: 'CLOSED',
+        reason: existing[i].reason || 'Manual',
+        closeTime: existing[i].closeTime || new Date().toISOString(),
+      };
+      changed = true;
+    }
+  }
+
+  if (changed) {
+    persistJournalTrades(existing);
+    notifyJournalChanged();
+  }
+}
+
 export function clearJournalSignals(): void {
   try {
     localStorage.removeItem(JOURNAL_SIGNALS_STORAGE_KEY);

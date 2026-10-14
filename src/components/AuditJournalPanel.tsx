@@ -9,8 +9,16 @@
  */
 
 import React, { useState, useMemo } from 'react';
-import { useClosedTrades, useJournalSignals, useJournalTrades, usePositions } from '../hooks/useTradingStore';
-import { clearJournalSignals, clearJournalTrades } from '../engine/tradeJournal';
+import {
+  useClosedTrades,
+  useJournalSignals,
+  useJournalTrades,
+  usePositions,
+  useTicker,
+} from '../hooks/useTradingStore';
+import { clearJournalSignals, clearJournalTrades, updateTradeClosedInJournal } from '../engine/tradeJournal';
+import { tradingEngine } from '../engine/tradingEngine';
+import { getInstrumentConfig, SupportedSymbol } from '../engine/instrumentConfig';
 import {
   History,
   CheckCircle2,
@@ -29,32 +37,34 @@ export const AuditJournalPanel: React.FC = () => {
   const [signalFilter, setSignalFilter] = useState<'all' | 'executed' | 'rejected'>('all');
   const [searchQuery, setSearchQuery] = useState('');
 
+  const ticker = useTicker();
   const closedTrades = useClosedTrades();
   const storedJournalTrades = useJournalTrades();
   const { positions: livePositions } = usePositions();
   const journalSignals = useJournalSignals();
 
-  // Combine live positions and recorded trades taken into a single deduplicated list
+  // Combine live positions and recorded trades taken into a single deduplicated list with dynamic real-time PnL
   const allTradesTaken = useMemo<JournalTradeRecord[]>(() => {
     const map = new Map<number, JournalTradeRecord>();
 
     for (const trade of storedJournalTrades) {
-      map.set(trade.ticket, trade);
+      map.set(trade.ticket, { ...trade });
     }
 
     for (const trade of closedTrades) {
-      if (!map.has(trade.ticket)) {
-        map.set(trade.ticket, {
-          ...trade,
-          status: 'CLOSED',
-        });
-      }
+      const prev = map.get(trade.ticket);
+      map.set(trade.ticket, {
+        ...prev,
+        ...trade,
+        status: 'CLOSED',
+      });
     }
 
     for (const pos of livePositions) {
+      const prev = map.get(pos.ticket);
       map.set(pos.ticket, {
         ticket: pos.ticket,
-        openTime: pos.time || new Date().toISOString(),
+        openTime: prev?.openTime || pos.time || new Date().toISOString(),
         closeTime: '',
         symbol: pos.symbol,
         type: pos.type,
@@ -65,13 +75,46 @@ export const AuditJournalPanel: React.FC = () => {
         tp: pos.tp,
         profit: pos.profit,
         pips: pos.pips,
-        reason: 'Manual',
+        reason: prev?.reason || 'Manual',
+        strategyRationale: prev?.strategyRationale,
         status: 'RUNNING',
       });
     }
 
+    // Actively compute real-time dynamic P&L on every market tick for all RUNNING trades
+    for (const [ticket, trade] of map.entries()) {
+      if (trade.status === 'RUNNING') {
+        const matchingPos = livePositions.find((p) => p.ticket === ticket || (p.symbol === trade.symbol && p.type === trade.type));
+        if (matchingPos) {
+          trade.profit = matchingPos.profit;
+          trade.pips = matchingPos.pips;
+          trade.closePrice = matchingPos.type === 'BUY' ? ticker.bid : ticker.ask;
+        } else {
+          const sym = (trade.symbol || ticker.symbol || 'XAUUSD') as SupportedSymbol;
+          const pairQuote = tradingEngine.pairData[sym];
+          const curBid = sym === ticker.symbol ? ticker.bid : (pairQuote?.bid ?? trade.openPrice);
+          const curAsk = sym === ticker.symbol ? ticker.ask : (pairQuote?.ask ?? trade.openPrice);
+          const curPrice = trade.type === 'BUY' ? curBid : curAsk;
+          const cfg = getInstrumentConfig(sym);
+          const pts = trade.type === 'BUY' ? curPrice - trade.openPrice : trade.openPrice - curPrice;
+          const pips = Number((pts / cfg.pipSize).toFixed(1));
+          let profit = 0;
+          if (cfg.category === 'metals') {
+            profit = Number((pts * trade.volume * cfg.contractSize).toFixed(2));
+          } else if (sym === 'USDJPY') {
+            profit = Number(((pts * trade.volume * cfg.contractSize) / Math.max(1, curPrice)).toFixed(2));
+          } else {
+            profit = Number((pts * trade.volume * cfg.contractSize).toFixed(2));
+          }
+          trade.profit = profit;
+          trade.pips = pips;
+          trade.closePrice = curPrice;
+        }
+      }
+    }
+
     return Array.from(map.values()).sort((a, b) => b.ticket - a.ticket);
-  }, [storedJournalTrades, closedTrades, livePositions]);
+  }, [storedJournalTrades, closedTrades, livePositions, ticker.bid, ticker.ask, ticker.symbol]);
 
   // Filtered trades
   const filteredTrades = useMemo(() => {
@@ -146,6 +189,35 @@ export const AuditJournalPanel: React.FC = () => {
 
   const [confirmClear, setConfirmClear] = useState(false);
 
+  const handleCloseRunningTrade = (ticket: number) => {
+    tradingEngine.closePosition(ticket, 'Manual');
+    const liveTrade = allTradesTaken.find((t) => t.ticket === ticket);
+    if (liveTrade) {
+      updateTradeClosedInJournal(
+        ticket,
+        liveTrade.closePrice || liveTrade.openPrice,
+        liveTrade.profit,
+        liveTrade.pips,
+        'Manual'
+      );
+    }
+  };
+
+  const handleCloseAllRunningTrades = () => {
+    tradingEngine.closeAll('Manual');
+    for (const t of allTradesTaken) {
+      if (t.status === 'RUNNING') {
+        updateTradeClosedInJournal(
+          t.ticket,
+          t.closePrice || t.openPrice,
+          t.profit,
+          t.pips,
+          'Manual'
+        );
+      }
+    }
+  };
+
   const handleClearCurrent = () => {
     if (!confirmClear) {
       setConfirmClear(true);
@@ -153,6 +225,7 @@ export const AuditJournalPanel: React.FC = () => {
       return;
     }
     if (activeTab === 'trades') {
+      tradingEngine.closeAll('Manual');
       clearJournalTrades();
     } else {
       clearJournalSignals();
@@ -161,7 +234,7 @@ export const AuditJournalPanel: React.FC = () => {
   };
 
   return (
-    <div className="w-full bg-white dark:bg-[#0c0e12] border border-slate-200 dark:border-zinc-800 rounded-xl sm:rounded-2xl p-3 sm:p-5 shadow-xs font-mono text-xs flex flex-col gap-4 transition-colors">
+    <div className="w-full bg-white dark:bg-[#111216] border border-slate-200 dark:border-zinc-800 rounded-xl sm:rounded-2xl p-3 sm:p-5 shadow-xs font-mono text-xs flex flex-col gap-4 transition-colors">
       {/* Top Bar: Title & Sub-Tabs */}
       <div className="flex items-center justify-between flex-wrap gap-3 pb-3 border-b border-slate-200 dark:border-zinc-800">
         <div className="flex items-center gap-2.5">
@@ -362,6 +435,17 @@ export const AuditJournalPanel: React.FC = () => {
             />
           </div>
 
+          {activeTab === 'trades' && runningCount > 0 && (
+            <button
+              onClick={handleCloseAllRunningTrades}
+              className="px-2.5 py-1.5 rounded-lg text-xs font-bold bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/30 transition-colors cursor-pointer flex items-center gap-1"
+              title="Close and reconcile all running positions"
+            >
+              <Zap className="w-3.5 h-3.5 fill-current" />
+              <span>Close All ({runningCount})</span>
+            </button>
+          )}
+
           <button
             onClick={handleExportCSV}
             className="px-2.5 py-1.5 rounded-lg text-xs font-bold bg-slate-100 dark:bg-zinc-800/80 text-slate-700 dark:text-zinc-300 hover:text-slate-950 dark:hover:text-white transition-colors cursor-pointer flex items-center gap-1"
@@ -431,20 +515,34 @@ export const AuditJournalPanel: React.FC = () => {
                         <span className="text-zinc-500">{t.volume}L</span>
                       </td>
                       <td className="py-2.5 px-2 text-slate-700 dark:text-zinc-300 tabular-nums">
-                        {isRunning ? (
-                          <span>@ ${t.openPrice.toFixed(2)}</span>
-                        ) : (
-                          <span>
-                            ${t.openPrice.toFixed(2)} → ${t.closePrice.toFixed(2)}
-                          </span>
-                        )}
+                        {(() => {
+                          const symCfg = getInstrumentConfig((t.symbol || 'XAUUSD') as SupportedSymbol);
+                          const d = symCfg.digits;
+                          return isRunning ? (
+                            <span>@ ${t.openPrice.toFixed(d)}</span>
+                          ) : (
+                            <span>
+                              ${t.openPrice.toFixed(d)} → ${t.closePrice.toFixed(d)}
+                            </span>
+                          );
+                        })()}
                       </td>
                       <td className="py-2.5 px-2">
                         {isRunning ? (
-                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-bold border border-emerald-500/20">
-                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                            RUNNING
-                          </span>
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-bold border border-emerald-500/20">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                              RUNNING
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => handleCloseRunningTrade(t.ticket)}
+                              className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-rose-500/10 hover:bg-rose-500/20 text-rose-500 border border-rose-500/30 transition-colors cursor-pointer"
+                              title="Close this trade at market"
+                            >
+                              Close
+                            </button>
+                          </div>
                         ) : (
                           <span className="px-1.5 py-0.5 rounded text-[10px] bg-slate-100 dark:bg-zinc-800 text-slate-700 dark:text-zinc-300">
                             {t.reason || 'Closed'}

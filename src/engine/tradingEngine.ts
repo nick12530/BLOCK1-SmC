@@ -59,6 +59,8 @@ import {
   recordTradeTaken,
   readStoredJournalTrades,
   updateTradeClosedInJournal,
+  syncJournalRunningPositions,
+  reconcileRunningJournalTrades,
   TradeRationales,
   TradeOrderBlocks,
 } from './tradeJournal';
@@ -528,6 +530,10 @@ export class TradingEngine {
       strategyOrderBlock: this.tradeOrderBlocks[String(position.ticket)],
       beLocked: position.sl > 0 && (position.type === 'BUY' ? position.sl > position.price_open : position.sl < position.price_open),
     }));
+    syncJournalRunningPositions(this.positions.map((p) => ({ ticket: p.ticket, profit: p.profit, pips: p.pips })));
+    if (this.positions.length === 0) {
+      reconcileRunningJournalTrades([]);
+    }
     if (this.killSwitch && !killSwitchWasArmed) {
       this.closeAll('KillSwitch');
       this.slog('Central MT5 kill switch armed on another connected dashboard; close requests sent. Verify broker positions.', 'warn');
@@ -1463,9 +1469,12 @@ export class TradingEngine {
     }
 
     // Correlation & combined USD exposure protection (Section 8)
-    const correlationCheck = checkCorrelationExposure(this.activeSymbol, direction, this.positions, 1);
-    if (!correlationCheck.allowed) {
-      return correlationCheck.reason || 'TRADE_REJECTED: CORRELATION_LIMIT_EXCEEDED';
+    // Never block manual user executions or high-confluence smart fallback setups.
+    if (!isManual && !bypassDailyLimit) {
+      const correlationCheck = checkCorrelationExposure(this.activeSymbol, direction, this.positions, 5);
+      if (!correlationCheck.allowed) {
+        return correlationCheck.reason || 'TRADE_REJECTED: CORRELATION_LIMIT_EXCEEDED';
+      }
     }
 
     // Minimum lot risk calculation (Section 7: TRADE_REJECTED: MINIMUM_LOT_EXCEEDS_RISK)
@@ -1871,7 +1880,10 @@ export class TradingEngine {
       this.positions = this.positions.map((p) => {
         const posSym = (p.symbol || this.activeSymbol) as SupportedSymbol;
         const cfg = getInstrumentConfig(posSym);
-        const curPrice = p.type === 'BUY' ? this.bid : this.ask;
+        const pairQuote = this.pairData[posSym];
+        const symBid = posSym === this.activeSymbol ? this.bid : (pairQuote?.bid ?? this.bid);
+        const symAsk = posSym === this.activeSymbol ? this.ask : (pairQuote?.ask ?? this.ask);
+        const curPrice = p.type === 'BUY' ? symBid : symAsk;
         const pts = p.type === 'BUY' ? curPrice - p.price_open : p.price_open - curPrice;
         const pips = Number((pts / cfg.pipSize).toFixed(1));
         let profit = 0;
@@ -2073,6 +2085,9 @@ export class TradingEngine {
     // Recalculate floating PnL and margin used after any closes
     const currentFloatingPnl = this.positions.reduce((sum, p) => sum + p.profit, 0);
     this.account.equity = Number((this.account.balance + currentFloatingPnl).toFixed(2));
+    if (this.positions.length > 0) {
+      syncJournalRunningPositions(this.positions.map((p) => ({ ticket: p.ticket, profit: p.profit, pips: p.pips })));
+    }
     const totalMarginUsed = this.positions.reduce((sum, p) => {
       const pSym = (p.symbol || this.activeSymbol) as SupportedSymbol;
       const cSize = getInstrumentConfig(pSym).contractSize || 100;

@@ -119,16 +119,16 @@ export const RunningTradesHUD: React.FC<RunningTradesHUDProps> = ({ onOpenTradeS
           return (
             <div
               key={pos.ticket}
-              className="bg-slate-50 dark:bg-[#12161f] border border-slate-200 dark:border-zinc-800/80 rounded-xl p-3 flex flex-col justify-between gap-2.5 transition-all hover:border-slate-300 dark:hover:border-zinc-700"
+              className="bg-slate-50 dark:bg-[#12161f] border border-slate-200 dark:border-zinc-800/80 rounded-xl p-3 flex flex-col justify-between gap-2.5 transition-all hover:border-slate-300 dark:hover:border-zinc-700 min-w-0 overflow-hidden"
             >
               {/* Row 1: Symbol, Direction, Volume, Live P&L */}
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-1.5">
+              <div className="flex items-center justify-between gap-2 min-w-0">
+                <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
                   <span className="font-black text-slate-900 dark:text-white text-sm">
                     {posSymbol}
                   </span>
                   <span
-                    className={`flex items-center gap-0.5 px-2 py-0.5 rounded text-[11px] font-bold ${
+                    className={`flex items-center gap-0.5 px-2 py-0.5 rounded text-[11px] font-bold shrink-0 ${
                       isBuy
                         ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20'
                         : 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20'
@@ -138,10 +138,10 @@ export const RunningTradesHUD: React.FC<RunningTradesHUDProps> = ({ onOpenTradeS
                     <span>{pos.type}</span>
                     <span className="ml-0.5 text-[10px] font-mono">{pos.volume}L</span>
                   </span>
-                  <span className="text-[10px] text-slate-400">#{pos.ticket}</span>
+                  <span className="text-[10px] text-slate-400 shrink-0">#{pos.ticket}</span>
                 </div>
 
-                <div className="text-right">
+                <div className="text-right shrink-0">
                   <div
                     className={`font-black text-sm sm:text-base ${
                       isPosProfit ? 'text-emerald-500' : 'text-rose-500'

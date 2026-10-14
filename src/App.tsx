@@ -203,14 +203,14 @@ export default function App() {
         return;
       }
 
-      if (tradingEngine.mt5Account.connected && !mt5Bridge.getStatus().connected) {
-        tradingEngine.recordRejectedSignal(signal, 'MT5 bridge is offline', ticker.symbol);
-        setConfirmDialog({
-          title: 'MT5 bridge unavailable',
-          message: 'The linked MT5 bridge is offline. No order was sent. Reconnect the bridge before trying again.',
-          confirmLabel: 'Understood',
-          onConfirm: () => setConfirmDialog(null),
-        });
+      // If bridge is offline or in standby, automatically execute via workstation desk fill
+      if (!mt5Bridge.getStatus().connected) {
+        if (positionCount > 1) {
+          tradingEngine.tradeMultiplePositions(positionCount, customVolume);
+        } else {
+          tradingEngine.tradeSignal(customVolume);
+        }
+        signalAudioNotifier.playTradeExecutionAlert(signal.direction);
         return;
       }
 

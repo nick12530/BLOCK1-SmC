@@ -239,20 +239,12 @@ export const LiveExecutionCard: React.FC<LiveExecutionCardProps> = React.memo(({
 
                       <button
                         type="button"
-                        onClick={() => tradingEngine.executePendingOrderNow(order.ticket)}
-                        className="px-2 py-1 rounded-md text-[10px] font-bold bg-sky-600 hover:bg-sky-500 text-white transition-colors cursor-pointer"
-                        title="Execute immediately at market price"
-                      >
-                        Fill Now
-                      </button>
-
-                      <button
-                        type="button"
                         onClick={() => tradingEngine.cancelPendingOrder(order.ticket)}
-                        className="p-1 rounded-md text-slate-400 hover:text-rose-500 hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer"
+                        className="px-2 py-1 rounded-md text-[11px] font-bold text-slate-500 hover:text-rose-500 hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer flex items-center gap-1"
                         title="Cancel pending order"
                       >
                         <X className="w-3.5 h-3.5" />
+                        <span>Cancel</span>
                       </button>
                     </div>
                   </div>
@@ -281,166 +273,71 @@ export const LiveExecutionCard: React.FC<LiveExecutionCardProps> = React.memo(({
         </div>
       )}
 
-      {/* Body: Active Running Positions or Clean Standby State */}
+      {/* Body: Active Running Positions Summary or Clean Standby State */}
       {totalPositions > 0 ? (
-        <div className="space-y-2.5 max-h-[360px] overflow-y-auto pr-1">
-          {positions.map((pos) => {
-            const isBuy = pos.type === 'BUY';
-            const curPrice = isBuy ? ticker.bid : ticker.ask;
-            const diffFromEntry = isBuy ? curPrice - pos.price_open : pos.price_open - curPrice;
-            const totalTargetDiff = Math.abs(pos.tp - pos.price_open) || 4.0;
-            const progressPct = Math.min(100, Math.max(0, Math.round((diffFromEntry / totalTargetDiff) * 100)));
+        <div className="space-y-2">
+          <div className="flex items-center justify-between text-[11px] font-bold text-slate-500 dark:text-zinc-400 pb-1">
+            <span>ACTIVE BROKER POSITIONS ({totalPositions})</span>
+            <span className="text-[10px]">Managed in Running Trades HUD above</span>
+          </div>
+          <div className="space-y-1.5 max-h-[220px] overflow-y-auto pr-1">
+            {positions.map((pos) => {
+              const isBuy = pos.type === 'BUY';
+              const isSelected = selectedTicket === pos.ticket;
 
-            return (
-              <div
-                key={pos.ticket}
-                className={`p-3.5 sm:p-4 rounded-xl border bg-slate-50/60 dark:bg-zinc-900/60 space-y-3 transition-colors ${
-                  selectedTicket === pos.ticket
-                    ? 'border-sky-500 dark:border-sky-700'
-                    : 'border-slate-200 dark:border-zinc-800/90'
-                }`}
-              >
-                {/* Row 1: Direction, Ticket, Lots & Floating P&L */}
-                <div className="flex items-center justify-between flex-wrap gap-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      tradingEngine.setSelectedTicket(pos.ticket);
-                      onFocusChart?.();
-                    }}
-                    aria-pressed={selectedTicket === pos.ticket}
-                    aria-label={`Show ${pos.type} position ${pos.ticket} and its order block on the chart`}
-                    className="flex min-h-11 min-w-0 flex-1 flex-wrap items-center gap-2 text-left"
-                  >
+              return (
+                <div
+                  key={pos.ticket}
+                  onClick={() => {
+                    tradingEngine.setSelectedTicket(pos.ticket);
+                    onFocusChart?.();
+                  }}
+                  className={`p-2.5 rounded-xl border flex items-center justify-between gap-2 text-xs transition-colors cursor-pointer ${
+                    isSelected
+                      ? 'bg-sky-50 dark:bg-sky-950/20 border-sky-400 dark:border-sky-800'
+                      : 'bg-slate-50/70 dark:bg-zinc-900/50 border-slate-200 dark:border-zinc-800 hover:border-slate-300 dark:hover:border-zinc-700'
+                  }`}
+                  title="Click to view position on chart"
+                >
+                  <div className="flex items-center gap-2 min-w-0">
                     <span
-                      className={`px-2.5 py-1 rounded text-xs font-black uppercase flex items-center gap-1 border ${
+                      className={`px-2 py-0.5 rounded text-[10px] font-black uppercase flex items-center gap-0.5 shrink-0 ${
                         isBuy
-                          ? 'bg-zinc-900 text-white dark:bg-white dark:text-black border-zinc-700'
-                          : 'bg-zinc-200 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100 border-zinc-300 dark:border-zinc-700'
+                          ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
+                          : 'bg-rose-500/15 text-rose-600 dark:text-rose-400'
                       }`}
                     >
-                      {isBuy ? <TrendingUp className="w-3 h-3 text-emerald-500" /> : <TrendingDown className="w-3 h-3 text-rose-500" />}
+                      {isBuy ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
                       <span>{pos.type}</span>
                     </span>
 
-                    <span className="font-bold text-slate-900 dark:text-white text-sm">
-                      {pos.volume} Lots
+                    <span className="font-bold text-slate-900 dark:text-white truncate">
+                      {pos.symbol || ticker.symbol} · {pos.volume}L @ ${pos.price_open.toFixed(2)}
                     </span>
+                    <span className="text-slate-400 text-[10px] shrink-0">#{pos.ticket}</span>
+                  </div>
 
-                    <span className="text-slate-500 text-xs">
-                      #{pos.ticket}
-                    </span>
-
-                    {pos.partialTaken && (
-                      <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/30 flex items-center gap-1">
-                        <CheckCircle2 className="w-3 h-3 text-amber-500" />
-                        <span>50% Scaled (1.5R)</span>
-                      </span>
-                    )}
-
-                    {pos.trailLocked && (
-                      <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-purple-500/15 text-purple-700 dark:text-purple-300 border border-purple-500/30">
-                        OB Trailed SL
-                      </span>
-                    )}
-
-                    <span className="ml-auto inline-flex items-center gap-1 text-xs font-semibold text-sky-700 dark:text-sky-300">
-                      <Crosshair className="h-4 w-4" />
-                      {selectedTicket === pos.ticket ? 'Focused' : 'Chart'}
-                    </span>
-                  </button>
-
-                  <div className="flex items-center gap-1.5 flex-wrap">
+                  <div className="flex items-center gap-2 shrink-0">
                     <span
-                      className={`font-black text-sm tabular-nums px-2 py-1 ${
+                      className={`font-black tabular-nums text-xs ${
                         pos.profit >= 0
                           ? 'text-emerald-600 dark:text-emerald-400'
                           : 'text-rose-600 dark:text-rose-400'
                       }`}
                     >
-                      {pos.profit >= 0 ? '+' : ''}${pos.profit.toFixed(2)} USD
+                      {pos.profit >= 0 ? '+' : ''}${pos.profit.toFixed(2)}
                     </span>
-
-                    <button
-                      type="button"
-                      onClick={() => handleScaleOut(pos.ticket)}
-                      disabled={pos.partialTaken || pos.volume < 0.02}
-                      aria-label={`Scale out 50% of position ${pos.ticket}`}
-                      className={`min-h-10 px-2.5 rounded border text-[10px] font-bold transition-colors cursor-pointer flex items-center gap-1 ${
-                        pos.partialTaken || pos.volume < 0.02
-                          ? 'border-zinc-300 dark:border-zinc-800 text-zinc-400 dark:text-zinc-600 cursor-default opacity-50'
-                          : 'border-amber-500/40 bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 dark:text-amber-300'
-                      }`}
-                      title={pos.partialTaken ? '50% scale-out already executed' : 'Close 50% volume and lock BE+2pts'}
-                    >
-                      <Scissors className="w-3 h-3 text-amber-500" />
-                      <span>50% Scale</span>
-                    </button>
-
-                    <button
-                      onClick={() => handleLockBE(pos.ticket)}
-                      disabled={pos.beLocked}
-                      aria-label={`Move ${pos.type} position ${pos.ticket} stop to break-even`}
-                      className={`min-h-10 min-w-10 px-2 rounded border text-[10px] font-bold transition-colors cursor-pointer flex items-center justify-center ${
-                        pos.beLocked
-                          ? 'border-zinc-300 dark:border-zinc-800 text-zinc-400 dark:text-zinc-600 cursor-default'
-                          : 'border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 hover:bg-slate-100 text-zinc-700 dark:text-zinc-200'
-                      }`}
-                      title="Move SL to break-even"
-                    >
-                      <Shield className="w-3 h-3" />
-                    </button>
-
-                    <button
-                      onClick={() => handleClose(pos.ticket)}
-                      aria-label={`Close ${pos.type} position ${pos.ticket}`}
-                      className="min-h-10 min-w-10 rounded bg-slate-200 hover:bg-rose-600 hover:text-white dark:bg-zinc-800 dark:hover:bg-rose-600 text-zinc-600 dark:text-zinc-300 transition-colors cursor-pointer flex items-center justify-center"
-                      title="Close order"
-                    >
-                      <X className="w-3.5 h-3.5" />
-                    </button>
+                    <span className="text-[10px] text-sky-600 dark:text-sky-400 font-bold hidden sm:inline">
+                      {isSelected ? 'Chart Focused' : 'View Chart →'}
+                    </span>
                   </div>
                 </div>
-
-                {/* Row 2: Price Progression & TP / SL */}
-                <div className="grid grid-cols-2 gap-2 text-xs text-center pt-2 border-t border-slate-200/50 dark:border-zinc-800/50 sm:grid-cols-4">
-                  <div>
-                    <span className="text-zinc-500 block uppercase">Entry</span>
-                    <strong className="text-slate-800 dark:text-zinc-200">${pos.price_open.toFixed(2)}</strong>
-                  </div>
-                  <div>
-                    <span className="text-zinc-500 block uppercase">Spot</span>
-                    <strong className="text-slate-900 dark:text-white">${curPrice.toFixed(2)}</strong>
-                  </div>
-                  <div>
-                    <span className="text-zinc-500 block uppercase">SL</span>
-                    <strong className="text-rose-500">${pos.sl.toFixed(2)}</strong>
-                  </div>
-                  <div>
-                    <span className="text-zinc-500 block uppercase">TP</span>
-                    <strong className="text-emerald-500">${pos.tp.toFixed(2)}</strong>
-                  </div>
-                </div>
-
-                {/* Row 3: Progress Bar */}
-                <div className="w-full h-1 bg-slate-200 dark:bg-zinc-800 rounded-full overflow-hidden">
-                  <div
-                    className="h-full bg-sky-500 rounded-full transition-all duration-300"
-                    style={{ width: `${Math.max(2, progressPct)}%` }}
-                  />
-                </div>
-                {pos.strategyRationale && (
-                  <p className="text-xs leading-relaxed text-slate-600 dark:text-zinc-300">
-                    <span className="font-bold text-sky-700 dark:text-sky-300">Trade rationale: </span>
-                    {pos.strategyRationale}
-                  </p>
-                )}
-              </div>
-            );
-          })}
+              );
+            })}
+          </div>
         </div>
       ) : pendingOrders.length === 0 ? (
-        <div className="py-6 px-4 rounded-xl border border-dashed border-slate-200 dark:border-zinc-800 text-center space-y-2">
+        <div className="py-5 px-4 rounded-xl border border-dashed border-slate-200 dark:border-zinc-800 text-center space-y-2">
           <Activity className="w-5 h-5 text-zinc-400 dark:text-zinc-600 mx-auto" />
           <h4 className="font-bold text-xs uppercase tracking-wider text-slate-700 dark:text-zinc-300">
             Awaiting Next Trade Execution

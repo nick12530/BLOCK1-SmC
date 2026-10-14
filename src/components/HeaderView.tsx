@@ -74,6 +74,12 @@ export const HeaderView: React.FC<HeaderViewProps> = React.memo(({
   const isProfit = ticker.equity >= ticker.balance;
   const floatingPnl = ticker.equity - ticker.balance;
 
+  const cleanBrokerTime = useMemo(() => {
+    if (!ticker.brokerTimeStr) return '00:00 Server';
+    const trimmed = ticker.brokerTimeStr.replace(/^\d{4}[.-]\d{2}[.-]\d{2}\s*/, '');
+    return trimmed || ticker.brokerTimeStr;
+  }, [ticker.brokerTimeStr]);
+
   return (
     <header className="relative w-full border-b border-slate-200 dark:border-zinc-800/80 bg-white/95 dark:bg-[#0d0e13]/95 backdrop-blur-md font-mono text-xs transition-colors shadow-xs z-30 pt-2 sm:pt-1.5 overflow-hidden">
       {/* Tier 1: Primary Navigation Bar */}
@@ -150,14 +156,14 @@ export const HeaderView: React.FC<HeaderViewProps> = React.memo(({
               type="button"
               onClick={() => onOpenModal('bridge')}
               title="MetaTrader 5 Bridge Status & Terminal Linking"
-              className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-xs font-black transition-all cursor-pointer ${
+              className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-xs font-black transition-all cursor-pointer min-w-0 shrink-0 ${
                 mt5?.connected
                   ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-600 dark:text-emerald-400'
                   : 'bg-slate-100 hover:bg-slate-200 dark:bg-zinc-900 dark:hover:bg-zinc-800 border-slate-200 dark:border-zinc-800 text-slate-800 dark:text-zinc-200'
               }`}
             >
-              <Server className={`w-4.5 h-4.5 shrink-0 ${mt5?.connected ? 'text-emerald-500' : 'text-slate-400'}`} />
-              <span className="font-mono text-xs whitespace-nowrap">
+              <Server className={`w-4 h-4 shrink-0 ${mt5?.connected ? 'text-emerald-500' : 'text-slate-400'}`} />
+              <span className="font-mono text-xs max-w-[130px] truncate">
                 {mt5?.connected ? (
                   <>
                     <span className="hidden sm:inline">MT5 </span>
@@ -251,16 +257,16 @@ export const HeaderView: React.FC<HeaderViewProps> = React.memo(({
         {/* Mobile View (<sm): Clean 2-Row Stack with Clear, Bold Typography and 3-Metric Pills (NO Slider) */}
         <div className="flex sm:hidden flex-col gap-2 w-full">
           {/* Row 1: Clocks and Margin Level */}
-          <div className="flex items-center justify-between text-slate-700 dark:text-zinc-200 text-xs font-bold">
-            <div className="flex items-center gap-1.5">
+          <div className="flex items-center justify-between text-slate-700 dark:text-zinc-200 text-xs font-bold min-w-0">
+            <div className="flex items-center gap-1.5 min-w-0">
               <Clock className="w-4 h-4 text-sky-500 shrink-0" />
-              <span className="tabular-nums font-bold">{ticker.brokerTimeStr || '00:00 Server'}</span>
-              <span className="text-zinc-400">·</span>
-              <span className="text-emerald-600 dark:text-emerald-400 font-black tabular-nums">
+              <span className="tabular-nums font-bold truncate">{cleanBrokerTime}</span>
+              <span className="text-zinc-400 shrink-0">·</span>
+              <span className="text-emerald-600 dark:text-emerald-400 font-black tabular-nums shrink-0">
                 {ticker.kenyaTimeStr || '00:00 EAT'}
               </span>
             </div>
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-1 shrink-0">
               <span className="text-slate-500 dark:text-slate-400 font-medium">Margin:</span>
               <strong className="text-emerald-600 dark:text-emerald-400 font-black tabular-nums">
                 {marginMetrics.marginLevelPct}
@@ -270,21 +276,21 @@ export const HeaderView: React.FC<HeaderViewProps> = React.memo(({
 
           {/* Row 2: 3 Balance / Equity / Free Margin Metric Cards */}
           <div className="grid grid-cols-3 gap-1.5 border-t border-slate-200/60 dark:border-zinc-800/60 pt-2 text-center">
-            <div className="p-1.5 rounded-lg bg-slate-100/70 dark:bg-zinc-900/70 border border-slate-200/50 dark:border-zinc-800/50">
-              <div className="text-xs text-slate-500 dark:text-slate-400 font-bold uppercase tracking-tight">Balance</div>
-              <div className="font-black text-slate-900 dark:text-white tabular-nums text-sm sm:text-base mt-0.5">
+            <div className="p-1.5 rounded-lg bg-slate-100/70 dark:bg-zinc-900/70 border border-slate-200/50 dark:border-zinc-800/50 min-w-0 overflow-hidden">
+              <div className="text-xs text-slate-500 dark:text-slate-400 font-bold uppercase tracking-tight truncate">Balance</div>
+              <div className="font-black text-slate-900 dark:text-white tabular-nums text-sm sm:text-base mt-0.5 truncate">
                 ${formatMT5(ticker.balance)}
               </div>
             </div>
-            <div className="p-1.5 rounded-lg bg-slate-100/70 dark:bg-zinc-900/70 border border-slate-200/50 dark:border-zinc-800/50">
-              <div className="text-xs text-slate-500 dark:text-slate-400 font-bold uppercase tracking-tight">Equity</div>
-              <div className={`font-black tabular-nums text-sm sm:text-base mt-0.5 ${isProfit ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
+            <div className="p-1.5 rounded-lg bg-slate-100/70 dark:bg-zinc-900/70 border border-slate-200/50 dark:border-zinc-800/50 min-w-0 overflow-hidden">
+              <div className="text-xs text-slate-500 dark:text-slate-400 font-bold uppercase tracking-tight truncate">Equity</div>
+              <div className={`font-black tabular-nums text-sm sm:text-base mt-0.5 truncate ${isProfit ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
                 ${formatMT5(ticker.equity)}
               </div>
             </div>
-            <div className="p-1.5 rounded-lg bg-slate-100/70 dark:bg-zinc-900/70 border border-slate-200/50 dark:border-zinc-800/50">
-              <div className="text-xs text-slate-500 dark:text-slate-400 font-bold uppercase tracking-tight">Free Margin</div>
-              <div className="font-bold text-slate-800 dark:text-slate-200 tabular-nums text-sm sm:text-base mt-0.5">
+            <div className="p-1.5 rounded-lg bg-slate-100/70 dark:bg-zinc-900/70 border border-slate-200/50 dark:border-zinc-800/50 min-w-0 overflow-hidden">
+              <div className="text-xs text-slate-500 dark:text-slate-400 font-bold uppercase tracking-tight truncate">Free Margin</div>
+              <div className="font-bold text-slate-800 dark:text-slate-200 tabular-nums text-sm sm:text-base mt-0.5 truncate">
                 ${formatMT5(marginMetrics.freeMargin)}
               </div>
             </div>
@@ -292,11 +298,11 @@ export const HeaderView: React.FC<HeaderViewProps> = React.memo(({
         </div>
 
         {/* Desktop/Tablet View (sm+): Full Linear Ribbon */}
-        <div className="hidden sm:flex items-center justify-between gap-2 overflow-x-auto no-scrollbar">
+        <div className="hidden sm:flex items-center justify-between gap-2 sm:gap-3 flex-wrap min-w-0">
           {/* Dual Clocks (Server & EAT) */}
-          <div className="flex items-center gap-1.5 shrink-0 text-slate-600 dark:text-zinc-300 pr-2 border-r border-slate-200 dark:border-zinc-800">
+          <div className="flex items-center gap-1.5 shrink-0 text-slate-600 dark:text-zinc-300 pr-2 sm:border-r border-slate-200 dark:border-zinc-800">
             <Clock className="w-3.5 h-3.5 text-sky-500 shrink-0" />
-            <span className="tabular-nums font-semibold">{ticker.brokerTimeStr || '00:00 Server'}</span>
+            <span className="tabular-nums font-semibold">{cleanBrokerTime}</span>
             <span className="text-zinc-400">·</span>
             <span className="text-emerald-600 dark:text-emerald-400 font-bold tabular-nums">
               {ticker.kenyaTimeStr || '00:00 EAT'}
@@ -304,7 +310,7 @@ export const HeaderView: React.FC<HeaderViewProps> = React.memo(({
           </div>
 
           {/* MT5 Telemetry Metrics */}
-          <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+          <div className="flex items-center gap-2 sm:gap-3 flex-wrap min-w-0">
             {/* Balance */}
             <div className="flex items-baseline gap-1 whitespace-nowrap">
               <span className="text-slate-500 dark:text-slate-400 font-medium">Balance:</span>

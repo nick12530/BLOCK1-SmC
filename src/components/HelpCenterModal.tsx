@@ -127,14 +127,14 @@ export const HelpCenterModal: React.FC<HelpCenterModalProps> = ({
           </button>
         </div>
 
-        {/* Search Bar & Grid Tab Selectors */}
-        <div className="p-3 sm:px-6 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950/80 space-y-2.5 shrink-0">
+        {/* Search Bar & Sleek Horizontal Scrolling Tab Selectors */}
+        <div className="p-2.5 sm:px-6 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950/80 space-y-2 shrink-0">
           {/* Quick Search Input */}
           <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800">
-            <Search className="w-3.5 h-3.5 text-zinc-400" />
+            <Search className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
             <input
               type="text"
-              placeholder="Search pairs, indicators (e.g. EURUSD, ATR, countdown, discount, MT5)..."
+              placeholder="Search topics (e.g. EURUSD, ATR, countdown, discount, MT5)..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="bg-transparent outline-none text-xs text-zinc-900 dark:text-white w-full font-sans"
@@ -146,8 +146,8 @@ export const HelpCenterModal: React.FC<HelpCenterModalProps> = ({
             )}
           </div>
 
-          {/* Upgraded Grid Item Selectors */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-1.5">
+          {/* Sleek Horizontal Scrolling Tab Bar - Compact & Non-Blocking */}
+          <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5 scroll-smooth">
             {filteredTabs.map((tab) => {
               const Icon = tab.icon;
               const isActive = activeTab === tab.id;
@@ -155,19 +155,15 @@ export const HelpCenterModal: React.FC<HelpCenterModalProps> = ({
                 <button
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id)}
-                  className={`py-2 px-2.5 rounded-xl text-left border transition-all cursor-pointer flex flex-col justify-between ${
+                  className={`py-1.5 px-3 rounded-xl border transition-all cursor-pointer flex items-center gap-1.5 shrink-0 whitespace-nowrap text-xs font-mono ${
                     isActive
-                      ? 'bg-zinc-950 text-white dark:bg-sky-500 dark:text-slate-950 border-zinc-950 dark:border-sky-400 shadow-xs'
+                      ? 'bg-zinc-950 text-white dark:bg-sky-500 dark:text-slate-950 border-zinc-950 dark:border-sky-400 shadow-xs font-bold'
                       : 'bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400 hover:border-zinc-400 dark:hover:border-zinc-600'
                   }`}
                 >
-                  <div className="flex items-center justify-between w-full mb-1">
-                    <Icon className="w-3.5 h-3.5" />
-                    <span className="text-[9px] font-mono opacity-70">{tab.num}</span>
-                  </div>
-                  <span className="font-bold text-[11px] leading-tight truncate w-full">
-                    {tab.title}
-                  </span>
+                  <Icon className="w-3.5 h-3.5 shrink-0" />
+                  <span className="text-[10px] opacity-70">{tab.num}</span>
+                  <span className="font-semibold text-[11px]">{tab.title}</span>
                 </button>
               );
             })}

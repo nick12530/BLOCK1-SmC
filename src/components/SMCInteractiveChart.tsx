@@ -338,49 +338,49 @@ export const SMCInteractiveChart: React.FC<SMCInteractiveChartProps> = ({
     return scannerAnalyses.filter((item) => item.symbol !== ticker.symbol);
   }, [scannerAnalyses, ticker.symbol]);
 
-  // Helper to render dotted horizontal line with centered text
+  // Helper to render dotted horizontal line with right-anchored badge that never covers center candlesticks
   const renderDottedTextLine = (
     y: number,
     text: string,
     color: string,
-    textWidth: number = 110,
-    fontSize: number = 9.5
+    badgeWidth: number = 110,
+    fontSize: number = 9
   ) => {
     if (isNaN(y) || y < 6 || y > vbHeight - 6) return null;
-    const cx = plotWidth / 2;
-    const half = textWidth / 2;
+    const badgeX = Math.max(15, plotWidth - badgeWidth - 6);
     return (
       <g>
         <line
           x1={10}
           y1={y}
-          x2={Math.max(15, cx - half - 6)}
+          x2={badgeX - 4}
           y2={y}
           stroke={color}
-          strokeWidth="1.3"
+          strokeWidth="1.1"
           strokeDasharray="4 4"
         />
+        <rect
+          x={badgeX}
+          y={y - 7}
+          width={badgeWidth}
+          height={14}
+          rx="3"
+          fill="#0c1017"
+          stroke={color}
+          strokeWidth="0.8"
+        />
         <text
-          x={cx}
+          x={badgeX + badgeWidth / 2}
           y={y + 3.5}
           fill={color}
           fontSize={fontSize}
           fontWeight="bold"
           fontFamily="monospace"
           textAnchor="middle"
-          letterSpacing="0.5"
+          letterSpacing="0.3"
         >
           {text}
         </text>
-        <line
-          x1={Math.min(plotWidth - 5, cx + half + 6)}
-          y1={y}
-          x2={plotWidth}
-          y2={y}
-          stroke={color}
-          strokeWidth="1.3"
-          strokeDasharray="4 4"
-        />
       </g>
     );
   };
@@ -531,7 +531,7 @@ export const SMCInteractiveChart: React.FC<SMCInteractiveChartProps> = ({
             const yBsl = getY(timeframeBSL);
             return (
               <g key="bsl-level">
-                {renderDottedTextLine(yBsl, `······ BSL LIQUIDITY $${timeframeBSL.toFixed(2)} ······`, '#f43f5e', 180, 9.5)}
+                {renderDottedTextLine(yBsl, `BSL $${timeframeBSL.toFixed(2)}`, '#f43f5e', 140, 9)}
               </g>
             );
           })()}
@@ -539,22 +539,22 @@ export const SMCInteractiveChart: React.FC<SMCInteractiveChartProps> = ({
             const ySsl = getY(timeframeSSL);
             return (
               <g key="ssl-level">
-                {renderDottedTextLine(ySsl, `······ SSL LIQUIDITY $${timeframeSSL.toFixed(2)} ······`, '#10b981', 180, 9.5)}
+                {renderDottedTextLine(ySsl, `SSL $${timeframeSSL.toFixed(2)}`, '#10b981', 140, 9)}
               </g>
             );
           })()}
 
-          {/* 2. 50% EQUILIBRIUM LEVEL (Dotted Line with Text Inside) */}
+          {/* 2. 50% EQUILIBRIUM LEVEL */}
           {showIndicators && indicatorConfig.structure && eqPrice > 0 && (() => {
             const yEq = getY(eqPrice);
             return (
               <g key="eq-level">
-                {renderDottedTextLine(yEq, '······ 50% EQUILIBRIUM ······', '#fbbf24', 160, 9)}
+                {renderDottedTextLine(yEq, `50% EQ $${eqPrice.toFixed(2)}`, '#fbbf24', 135, 9)}
               </g>
             );
           })()}
 
-          {/* 3. ORDER BLOCKS & BREAKER BLOCKS (Shaded boxes with bold text inside, matching image.png) */}
+          {/* 3. ORDER BLOCKS & BREAKER BLOCKS (Institutional translucent shaded zones with crisp right badges) */}
           {showIndicators && indicatorConfig.orderBlocks && (() => {
             const obList = nearestZones.filter((zone) => zone.kind === 'OB');
             if (selectedOrderBlock && !obList.some((z) => Math.abs(z.bottom - selectedOrderBlock.bottom) < 0.01)) {
@@ -568,9 +568,6 @@ export const SMCInteractiveChart: React.FC<SMCInteractiveChartProps> = ({
               const y = Math.min(yTop, yBottom);
               const isBull = ob.bullish;
               const isBreaker = ob.tests > 0;
-              const boxW = Math.max(120, plotWidth - 40);
-              const boxCenterX = 30 + boxW / 2;
-              const boxCenterY = y + h / 2;
 
               // Check if this OB belongs to the tapped / selected trade
               const isTradeOB = selectedPosition && (
@@ -582,49 +579,42 @@ export const SMCInteractiveChart: React.FC<SMCInteractiveChartProps> = ({
               );
 
               const color = isTradeOB ? '#38bdf8' : isBull ? '#10b981' : '#f43f5e';
+              const label = isTradeOB
+                ? `Trade #${selectedPosition.ticket} OB`
+                : isBreaker
+                ? `Breaker $${ob.bottom.toFixed(1)}–$${ob.top.toFixed(1)}`
+                : isBull
+                ? `+OB $${ob.bottom.toFixed(1)}–$${ob.top.toFixed(1)}`
+                : `-OB $${ob.bottom.toFixed(1)}–$${ob.top.toFixed(1)}`;
 
               return (
                 <g key={`ob-${idx}`}>
-                  {/* Coloured lines with text (NO filled coloured bar overlay) */}
-                  <line
-                    x1={15}
-                    y1={yTop}
-                    x2={plotWidth}
-                    y2={yTop}
+                  {/* Institutional translucent shaded zone */}
+                  <rect
+                    x={15}
+                    y={y}
+                    width={plotWidth - 15}
+                    height={h}
+                    fill={isBull ? 'rgba(16, 185, 129, 0.08)' : 'rgba(244, 63, 94, 0.08)'}
                     stroke={color}
-                    strokeWidth={isTradeOB ? 2.0 : 1.3}
-                    strokeDasharray="4 4"
+                    strokeWidth={isTradeOB ? 1.5 : 0.8}
+                    strokeDasharray="3 3"
+                    rx="2"
                   />
-                  <line
-                    x1={15}
-                    y1={yBottom}
-                    x2={plotWidth}
-                    y2={yBottom}
-                    stroke={color}
-                    strokeWidth={isTradeOB ? 2.0 : 1.3}
-                    strokeDasharray="4 4"
-                  />
-
-                  {/* Centred text directly along the level */}
+                  {/* Clean right-anchored badge */}
                   {renderDottedTextLine(
-                    boxCenterY,
-                    isTradeOB
-                      ? `······ TRADE #${selectedPosition.ticket} ORDER BLOCK ······`
-                      : isBreaker
-                      ? '······ BREAKER BLOCK ······'
-                      : isBull
-                      ? `······ BULLISH ORDER BLOCK $${ob.bottom.toFixed(2)} – $${ob.top.toFixed(2)} ······`
-                      : `······ BEARISH ORDER BLOCK $${ob.bottom.toFixed(2)} – $${ob.top.toFixed(2)} ······`,
+                    y + h / 2,
+                    label,
                     color,
-                    240,
-                    chartWidth < 500 ? 9.5 : 10.5
+                    Math.min(170, label.length * 7.5 + 16),
+                    chartWidth < 500 ? 8.5 : 9
                   )}
                 </g>
               );
             });
           })()}
 
-          {/* 4. FAIR VALUE GAPS (FVG) - Coloured lines and text without coloured bar */}
+          {/* 4. FAIR VALUE GAPS (FVG) - Subtle imbalance zone with right badge */}
           {showIndicators && indicatorConfig.fairValueGaps && nearestZones
             .filter((zone) => zone.kind === 'FVG')
             .map((fvg, idx) => {
@@ -632,48 +622,42 @@ export const SMCInteractiveChart: React.FC<SMCInteractiveChartProps> = ({
               const yBottom = getY(fvg.bottom);
               const h = Math.max(6, Math.abs(yBottom - yTop));
               const y = Math.min(yTop, yBottom);
+              const label = `FVG $${fvg.bottom.toFixed(1)}–$${fvg.top.toFixed(1)}`;
               return (
                 <g key={`fvg-${idx}`}>
-                  <line
-                    x1={15}
-                    y1={yTop}
-                    x2={plotWidth}
-                    y2={yTop}
+                  <rect
+                    x={15}
+                    y={y}
+                    width={plotWidth - 15}
+                    height={h}
+                    fill="rgba(234, 179, 8, 0.07)"
                     stroke="#eab308"
-                    strokeWidth="1.2"
+                    strokeWidth="0.8"
                     strokeDasharray="3 3"
-                  />
-                  <line
-                    x1={15}
-                    y1={yBottom}
-                    x2={plotWidth}
-                    y2={yBottom}
-                    stroke="#eab308"
-                    strokeWidth="1.2"
-                    strokeDasharray="3 3"
+                    rx="2"
                   />
                   {renderDottedTextLine(
                     y + h / 2,
-                    `······ FVG (IMBALANCE) $${fvg.bottom.toFixed(2)} – $${fvg.top.toFixed(2)} ······`,
+                    label,
                     '#eab308',
-                    250,
-                    9.5
+                    Math.min(160, label.length * 7 + 14),
+                    8.5
                   )}
                 </g>
               );
             })}
 
-          {/* 5. BOS & CHOCH STRUCTURAL BREAK LINES (Dotted lines with embedded text) */}
+          {/* 5. BOS & CHOCH STRUCTURAL BREAK LINES */}
           {showIndicators && indicatorConfig.structure && chartStructure.bos && (() => {
             const yBos = getY(chartStructure.bos.price);
             return (
               <g key="bos-line">
                 {renderDottedTextLine(
                   yBos,
-                  `······ BOS (${chartStructure.bos.direction.toUpperCase()} CONTINUATION) ······`,
+                  `BOS ${chartStructure.bos.direction.toUpperCase()}`,
                   '#c084fc',
-                  220,
-                  9.5
+                  120,
+                  9
                 )}
               </g>
             );
@@ -685,38 +669,38 @@ export const SMCInteractiveChart: React.FC<SMCInteractiveChartProps> = ({
               <g key="choch-line">
                 {renderDottedTextLine(
                   yChoch,
-                  `······ CHoCH (${chartStructure.choch.direction.toUpperCase()} REVERSAL) ······`,
+                  `CHoCH ${chartStructure.choch.direction.toUpperCase()}`,
                   '#38bdf8',
-                  220,
-                  9.5
+                  125,
+                  9
                 )}
               </g>
             );
           })()}
 
-          {/* 6. SIGNAL TARGETS (Dotted lines with embedded text) */}
+          {/* 6. SIGNAL TARGETS */}
           {showIndicators && indicatorConfig.signals && chartSignal && (
             <g key="signal-targets">
               {renderDottedTextLine(
                 getY(chartSignal.entry),
-                `······ SIGNAL ENTRY $${chartSignal.entry.toFixed(2)} ······`,
+                `ENTRY $${chartSignal.entry.toFixed(2)}`,
                 '#38bdf8',
-                170,
-                9.5
+                130,
+                9
               )}
               {renderDottedTextLine(
                 getY(chartSignal.sl),
-                `······ STOP LOSS $${chartSignal.sl.toFixed(2)} ······`,
+                `SL $${chartSignal.sl.toFixed(2)}`,
                 '#f43f5e',
-                150,
-                9.5
+                110,
+                9
               )}
               {renderDottedTextLine(
                 getY(chartSignal.tp),
-                `······ TAKE PROFIT $${chartSignal.tp.toFixed(2)} ······`,
+                `TP $${chartSignal.tp.toFixed(2)}`,
                 '#10b981',
-                160,
-                9.5
+                110,
+                9
               )}
             </g>
           )}
@@ -771,30 +755,30 @@ export const SMCInteractiveChart: React.FC<SMCInteractiveChartProps> = ({
                 {/* Entry Dotted Line with Text */}
                 {renderDottedTextLine(
                   yEntry,
-                  `······ TRADE #${pos.ticket} ${pos.type} @ $${pos.price_open.toFixed(2)} ······`,
+                  `#${pos.ticket} ${pos.type} @ $${pos.price_open.toFixed(2)}`,
                   '#38bdf8',
-                  190,
-                  9.5
+                  145,
+                  9
                 )}
 
                 {/* Stop Loss Line */}
                 {pos.sl > 0 &&
                   renderDottedTextLine(
                     ySL,
-                    `······ SL $${pos.sl.toFixed(2)} ······`,
+                    `SL $${pos.sl.toFixed(2)}`,
                     '#f43f5e',
-                    120,
-                    9
+                    95,
+                    8.5
                   )}
 
                 {/* Take Profit Line */}
                 {pos.tp > 0 &&
                   renderDottedTextLine(
                     yTP,
-                    `······ TP $${pos.tp.toFixed(2)} ······`,
+                    `TP $${pos.tp.toFixed(2)}`,
                     '#10b981',
-                    120,
-                    9
+                    95,
+                    8.5
                   )}
               </g>
             );

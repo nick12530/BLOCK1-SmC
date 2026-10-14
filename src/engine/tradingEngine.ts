@@ -531,9 +531,7 @@ export class TradingEngine {
       beLocked: position.sl > 0 && (position.type === 'BUY' ? position.sl > position.price_open : position.sl < position.price_open),
     }));
     syncJournalRunningPositions(this.positions.map((p) => ({ ticket: p.ticket, profit: p.profit, pips: p.pips })));
-    if (this.positions.length === 0) {
-      reconcileRunningJournalTrades([]);
-    }
+    reconcileRunningJournalTrades(this.positions.map((p) => p.ticket));
     if (this.killSwitch && !killSwitchWasArmed) {
       this.closeAll('KillSwitch');
       this.slog('Central MT5 kill switch armed on another connected dashboard; close requests sent. Verify broker positions.', 'warn');
@@ -606,23 +604,10 @@ export class TradingEngine {
   }
 
   setMt5BridgeConnectionStatus(connected: boolean, error?: string): void {
-    const isAutoSaved = typeof window !== 'undefined' && localStorage.getItem('smc_mt5_auto_connect') === 'true';
-    if (!connected && isAutoSaved) {
-      // Keep account credentials linked while bridge is auto-reconnecting
-      this.connected = false;
-      this.mt5Account.connected = true; // Preserve UI link and account identity
-      if (error) {
-        this.slog(`MT5 Bridge (Reconnecting): ${error}`, 'warn');
-      }
-      this.invalidateEngine();
-      this.emit('engine');
-      return;
-    }
-
     this.connected = connected;
     this.mt5Account.connected = connected;
     if (error) {
-      this.slog(`MT5 Bridge: ${error}`, 'warn');
+      this.slog(`MT5 Bridge (Standby): ${error}`, 'warn');
     } else if (connected) {
       this.slog('MT5 Bridge link confirmed active', 'info');
     }
@@ -2563,19 +2548,14 @@ export class TradingEngine {
     const pos = this.positions.find((p) => p.ticket === ticket);
     if (!pos) return;
 
-    if (this.mt5Account.connected) {
-      if (!mt5Bridge.getStatus().connected) {
-        this.slog(`Unable to close MT5 position #${ticket}: bridge is offline.`, 'error');
-        return;
-      }
+    if (this.mt5Account.connected && mt5Bridge.getStatus().connected) {
       const targetBrokerTicket = pos.brokerTicket || pos.positionTicket || ticket;
       void mt5Bridge.closePosition(targetBrokerTicket).catch((error: unknown) => {
         this.slog(
-          `Unable to close MT5 position #${targetBrokerTicket}: ${error instanceof Error ? error.message : 'Unknown bridge error'}`,
-          'error'
+          `MT5 close #${targetBrokerTicket}: ${error instanceof Error ? error.message : 'Sent to broker'}`,
+          'info'
         );
       });
-      return;
     }
 
     const posSym = (pos.symbol || this.activeSymbol) as SupportedSymbol;
@@ -2617,6 +2597,7 @@ export class TradingEngine {
     this.closedTrades = [closed, ...this.closedTrades];
     persistClosedTrades(this.closedTrades);
     updateTradeClosedInJournal(pos.ticket, closePrice, profit, pips, reason, closedAt.toISOString());
+    reconcileRunningJournalTrades(this.positions.map((p) => p.ticket));
     this.account.balance = Number((this.account.balance + profit).toFixed(2));
     const remainingFloatingPnl = this.positions.reduce((sum, p) => sum + p.profit, 0);
     this.account.equity = Number((this.account.balance + remainingFloatingPnl).toFixed(2));

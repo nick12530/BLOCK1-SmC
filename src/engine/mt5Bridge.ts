@@ -580,17 +580,18 @@ export class MT5BridgeConnector {
       this.consecutiveErrors += 1;
       this.lastError = error instanceof Error ? error.message : 'Unknown MT5 bridge polling error.';
 
-      // Grace tolerance for network hops / terminal refreshes:
+      // When bridge fails, mark disconnected so engine falls back cleanly to desk execution
       const auto = typeof window !== 'undefined' && localStorage.getItem('smc_mt5_auto_connect') === 'true';
-      if (this.consecutiveErrors >= 3 && !auto) {
+      if (this.consecutiveErrors >= 2) {
         this.isConnected = false;
-        this.isReconnecting = false;
         this.onConnectionChangeCallback?.(false, this.lastError);
-      } else {
-        // When auto-connect is enabled, stay in reconnecting state and keep retrying
-        this.isReconnecting = true;
       }
-      console.warn(`[MT5 Bridge] Transient sync attempt (${this.consecutiveErrors}); maintaining connection retry:`, error);
+      if (auto) {
+        this.isReconnecting = true;
+      } else if (this.consecutiveErrors >= 3) {
+        this.isReconnecting = false;
+      }
+      console.warn(`[MT5 Bridge] Sync attempt (${this.consecutiveErrors}); offline/retry state:`, error);
     } finally {
       this.accountPollInFlight = false;
       if (this.pollingEnabled) {
@@ -630,6 +631,11 @@ export class MT5BridgeConnector {
         },
       });
       this.lastLatencyMs = Math.round(performance.now() - start);
+
+      if (response.status === 502 || response.status === 503 || response.status === 504) {
+        throw new Error(`MT5 Bridge is currently standby/offline (${response.status} Bad Gateway). Desk execution active.`);
+      }
+
       const contentType = response.headers.get('content-type') || '';
       let data: any;
       if (contentType.includes('application/json')) {
@@ -637,12 +643,12 @@ export class MT5BridgeConnector {
       } else {
         const text = await response.text();
         if (!response.ok) {
-          throw new Error(`MT5 Bridge error (HTTP ${response.status}): ${text.slice(0, 150) || 'Non-JSON response'}`);
+          throw new Error(`MT5 Bridge error (HTTP ${response.status}): ${text.slice(0, 120) || 'Standby'}`);
         }
         try {
           data = JSON.parse(text);
         } catch {
-          throw new Error(`MT5 Bridge returned non-JSON response from ${baseUrl}${path}. Check that MT5 Bridge is running and proxy URL is correct.`);
+          throw new Error(`MT5 Bridge offline or proxy waiting for server at ${baseUrl}${path}.`);
         }
       }
       if (!response.ok) {

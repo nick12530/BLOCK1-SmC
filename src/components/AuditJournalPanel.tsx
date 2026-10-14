@@ -16,7 +16,12 @@ import {
   usePositions,
   useTicker,
 } from '../hooks/useTradingStore';
-import { clearJournalSignals, clearJournalTrades, updateTradeClosedInJournal } from '../engine/tradeJournal';
+import {
+  clearJournalSignals,
+  clearJournalTrades,
+  updateTradeClosedInJournal,
+  reconcileRunningJournalTrades,
+} from '../engine/tradeJournal';
 import { tradingEngine } from '../engine/tradingEngine';
 import { getInstrumentConfig, SupportedSymbol } from '../engine/instrumentConfig';
 import {
@@ -42,6 +47,11 @@ export const AuditJournalPanel: React.FC = () => {
   const storedJournalTrades = useJournalTrades();
   const { positions: livePositions } = usePositions();
   const journalSignals = useJournalSignals();
+
+  // Keep journal storage strictly in sync with live positions
+  React.useEffect(() => {
+    reconcileRunningJournalTrades(livePositions.map((p) => p.ticket));
+  }, [livePositions]);
 
   // Combine live positions and recorded trades taken into a single deduplicated list with dynamic real-time PnL
   const allTradesTaken = useMemo<JournalTradeRecord[]>(() => {
@@ -81,34 +91,19 @@ export const AuditJournalPanel: React.FC = () => {
       });
     }
 
-    // Actively compute real-time dynamic P&L on every market tick for all RUNNING trades
+    // Strictly synchronize running trades with live positions - orphaned tickets are marked CLOSED
     for (const [ticket, trade] of map.entries()) {
       if (trade.status === 'RUNNING') {
-        const matchingPos = livePositions.find((p) => p.ticket === ticket || (p.symbol === trade.symbol && p.type === trade.type));
+        const matchingPos = livePositions.find((p) => p.ticket === ticket);
         if (matchingPos) {
           trade.profit = matchingPos.profit;
           trade.pips = matchingPos.pips;
           trade.closePrice = matchingPos.type === 'BUY' ? ticker.bid : ticker.ask;
         } else {
-          const sym = (trade.symbol || ticker.symbol || 'XAUUSD') as SupportedSymbol;
-          const pairQuote = tradingEngine.pairData[sym];
-          const curBid = sym === ticker.symbol ? ticker.bid : (pairQuote?.bid ?? trade.openPrice);
-          const curAsk = sym === ticker.symbol ? ticker.ask : (pairQuote?.ask ?? trade.openPrice);
-          const curPrice = trade.type === 'BUY' ? curBid : curAsk;
-          const cfg = getInstrumentConfig(sym);
-          const pts = trade.type === 'BUY' ? curPrice - trade.openPrice : trade.openPrice - curPrice;
-          const pips = Number((pts / cfg.pipSize).toFixed(1));
-          let profit = 0;
-          if (cfg.category === 'metals') {
-            profit = Number((pts * trade.volume * cfg.contractSize).toFixed(2));
-          } else if (sym === 'USDJPY') {
-            profit = Number(((pts * trade.volume * cfg.contractSize) / Math.max(1, curPrice)).toFixed(2));
-          } else {
-            profit = Number((pts * trade.volume * cfg.contractSize).toFixed(2));
+          trade.status = 'CLOSED';
+          if (!trade.closeTime) {
+            trade.closeTime = new Date().toISOString();
           }
-          trade.profit = profit;
-          trade.pips = pips;
-          trade.closePrice = curPrice;
         }
       }
     }

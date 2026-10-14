@@ -86,17 +86,31 @@ export const SMCOverlayHUD: React.FC<SMCOverlayHUDProps> = memo(({
 
   return (
     <div className="absolute inset-0 pointer-events-none z-10 flex flex-col justify-between p-2 select-none overflow-hidden font-mono bg-transparent">
-      {/* Top Bar: Minimal Line Status & Linked Cross-Pair Signals Strip */}
-      <div className="flex flex-col gap-1.5 pointer-events-auto">
+      {/* Top Bar: Minimal Line Status, SMC Structure Telemetry & Linked Cross-Pair Signals Strip */}
+      <div className="flex flex-col gap-1.5 pointer-events-auto bg-black/60 backdrop-blur-xs p-1.5 rounded-xl border border-slate-800/80">
         <div className="flex items-center justify-between gap-2 flex-wrap">
-          {/* Active Overlay Status */}
-          <div className="flex items-center gap-2 text-[11px] font-bold">
+          {/* Active Overlay Status & Live Structure */}
+          <div className="flex items-center gap-2 text-[10px] sm:text-[11px] font-bold flex-wrap">
             <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-            <span className="text-sky-300">SMC INDICATORS ACTIVE</span>
+            <span className="text-sky-300">SMC</span>
             <span className="text-slate-500">|</span>
             <span className={isPremium ? 'text-rose-400 font-bold' : 'text-emerald-400 font-bold'}>
               {isPremium ? 'PREMIUM (Sells)' : 'DISCOUNT (Buys)'}
             </span>
+            <span className="text-slate-500">|</span>
+            <span className="text-slate-300">EQ: <strong className="text-amber-300">${eqPrice.toFixed(2)}</strong></span>
+            {demandOB && (
+              <>
+                <span className="text-slate-600 hidden sm:inline">|</span>
+                <span className="text-slate-300 hidden sm:inline">Demand: <strong className="text-emerald-400">${demandOB.bottom.toFixed(2)}</strong></span>
+              </>
+            )}
+            {supplyOB && (
+              <>
+                <span className="text-slate-600 hidden sm:inline">|</span>
+                <span className="text-slate-300 hidden sm:inline">Supply: <strong className="text-rose-400">${supplyOB.bottom.toFixed(2)}</strong></span>
+              </>
+            )}
           </div>
 
           {/* Quick Cross-Pair Indicator Links */}
@@ -128,41 +142,6 @@ export const SMCOverlayHUD: React.FC<SMCOverlayHUDProps> = memo(({
                 );
               })}
             </div>
-          )}
-        </div>
-      </div>
-
-      {/* Middle Chart Area: Live Institutional SMC Telemetry Ribbon */}
-      <div className="my-auto w-full flex flex-col items-center gap-2 py-2 pointer-events-auto">
-        {onSwitchToSMC && (
-          <button
-            type="button"
-            onClick={onSwitchToSMC}
-            className="px-3 py-1.5 rounded-full bg-slate-900/90 hover:bg-slate-800 text-sky-300 hover:text-white border border-sky-500/40 shadow-lg text-[11px] font-bold transition-all flex items-center gap-2 backdrop-blur-md cursor-pointer active:scale-95"
-            title="Switch to SMC Engine Canvas where all indicator lines are rendered directly onto candlesticks"
-          >
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-            <span>View 100% Price-Synced Lines on SMC Engine Canvas →</span>
-          </button>
-        )}
-
-        {/* Live Structure Reference Card */}
-        <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-black/70 border border-slate-700/60 text-[10px] backdrop-blur-sm flex-wrap justify-center text-slate-300">
-          <span>EQ (50%): <strong className="text-amber-300">${eqPrice.toFixed(2)}</strong></span>
-          <span className="text-slate-600">|</span>
-          {demandOB && <span>Demand OB: <strong className="text-emerald-400">${demandOB.bottom.toFixed(2)}–${demandOB.top.toFixed(2)}</strong></span>}
-          {supplyOB && <span>Supply OB: <strong className="text-rose-400">${supplyOB.bottom.toFixed(2)}–${supplyOB.top.toFixed(2)}</strong></span>}
-          {activeFVG && (
-            <>
-              <span className="text-slate-600">|</span>
-              <span>FVG: <strong className="text-amber-400">${activeFVG.bottom.toFixed(2)}–${activeFVG.top.toFixed(2)}</strong></span>
-            </>
-          )}
-          {signal && (
-            <>
-              <span className="text-slate-600">|</span>
-              <span>Signal: <strong className={signal.direction === 'BUY' ? 'text-emerald-400' : 'text-rose-400'}>{signal.direction} @ ${signal.entry.toFixed(2)}</strong></span>
-            </>
           )}
         </div>
       </div>

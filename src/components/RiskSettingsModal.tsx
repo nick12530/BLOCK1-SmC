@@ -161,7 +161,7 @@ export const RiskSettingsModal: React.FC<RiskSettingsModalProps> = ({
               <span>Small Account ($10) Safety Engine</span>
             </div>
             <ul className="list-disc list-inside space-y-0.5 text-[10px] text-slate-600 dark:text-zinc-400">
-              <li>Max simultaneous open trades: 1</li>
+              <li>Max simultaneous open trades: 5</li>
               <li>Daily limit: 5 trades max / day (3 trades max / pair)</li>
               <li>Rejects micro-lot if risk exceeds budget: <code>TRADE_REJECTED: MINIMUM_LOT_EXCEEDS_RISK</code></li>
               <li>Zero Martingale, zero averaging, and USD correlation exposure protection enabled</li>

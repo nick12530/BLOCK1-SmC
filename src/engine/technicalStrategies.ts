@@ -19,7 +19,7 @@ function ema(values: number[], period: number): number[] {
 function createSignal(
   strategy: Signal['strategy'],
   direction: TradeDirection,
-  timeframe: 'M1' | 'M5',
+  timeframe: 'M1' | 'M5' | 'M15',
   score: number,
   candle: Candle,
   atr: number,
@@ -53,7 +53,22 @@ function createSignal(
   const stopPips = Number((effectiveStopDistance / pipSize).toFixed(1));
 
   const sl = normalizePrice(direction === 'BUY' ? entry - effectiveStopDistance : entry + effectiveStopDistance);
-  const tp = normalizePrice(direction === 'BUY' ? entry + effectiveStopDistance * 2 : entry - effectiveStopDistance * 2);
+  const tp1 = normalizePrice(direction === 'BUY' ? entry + effectiveStopDistance * 1.8 : entry - effectiveStopDistance * 1.8);
+  const tp2 = normalizePrice(direction === 'BUY' ? entry + effectiveStopDistance * 3.2 : entry - effectiveStopDistance * 3.2);
+  const tp3 = normalizePrice(direction === 'BUY' ? entry + effectiveStopDistance * 5.5 : entry - effectiveStopDistance * 5.5);
+  const tp = tp2; // Primary targets high-pip 3.2R expansion
+
+  const targetPips1 = Number((Math.abs(tp1 - entry) / pipSize).toFixed(1));
+  const targetPips2 = Number((Math.abs(tp2 - entry) / pipSize).toFixed(1));
+  const targetPips3 = Number((Math.abs(tp3 - entry) / pipSize).toFixed(1));
+  const targetPips = targetPips2;
+
+  const validityDurationMs = timeframe === 'M15' ? 15 * 60_000 : timeframe === 'M5' ? 5 * 60_000 : 90_000;
+  const candleTimeMs = candle.time < 1_000_000_000_000 ? candle.time * 1000 : candle.time;
+  const expiryTimestamp = candleTimeMs + validityDurationMs;
+  const validitySeconds = Math.max(0, Math.round((expiryTimestamp - Date.now()) / 1000));
+  const isSniper = (timeframe === 'M15' || timeframe === 'M5') && score >= 4.2;
+
   return {
     strategy,
     direction,
@@ -62,31 +77,37 @@ function createSignal(
     entry,
     sl,
     tp,
+    tp1,
+    tp2,
+    tp3,
+    slPips: stopPips,
+    targetPips1,
+    targetPips2,
+    targetPips3,
+    targetPips,
+    expiryTimestamp,
+    validitySeconds,
+    isSniper,
     reasons,
     atr: effectiveStopDistance,
-    timestamp: new Date(
-      Math.min(
-        candle.time < 1_000_000_000_000 ? candle.time * 1000 : candle.time,
-        Date.now()
-      )
-    ).toISOString(),
+    timestamp: new Date(Math.min(candleTimeMs, Date.now())).toISOString(),
     actionReason: `${strategy} ${direction} (${stopPips} pips safe stop beyond spread noise)`,
-    perfectEntryReason: `Closed-candle setup with 1:2 risk/reward using ${stopPips} pips protective stop distance.`,
+    perfectEntryReason: `Closed-candle setup with 1:3.2 high-yield risk/reward using ${stopPips} pips protective stop distance.`,
   };
 }
 
 export function evaluateTechnicalStrategies(
   executionCandles: Candle[],
   higherTimeframeCandles: Candle[],
-  timeframe: 'M1' | 'M5',
+  timeframe: 'M1' | 'M5' | 'M15',
   instrumentType: InstrumentType,
   digits: number = 2,
   tickSize?: number,
   symbol?: string
 ): Signal[] {
   if (executionCandles.length < EMA_SLOW + 2 || higherTimeframeCandles.length < EMA_SLOW + 2) return [];
-  const intervalMs = timeframe === 'M1' ? 60_000 : 300_000;
-  const htfIntervalMs = timeframe === 'M1' ? 300_000 : 900_000;
+  const intervalMs = timeframe === 'M1' ? 60_000 : timeframe === 'M5' ? 300_000 : 900_000;
+  const htfIntervalMs = timeframe === 'M1' ? 300_000 : timeframe === 'M5' ? 900_000 : 3600_000;
   const now = Date.now();
   const latest = executionCandles[executionCandles.length - 1];
   const higherLatest = higherTimeframeCandles[higherTimeframeCandles.length - 1];

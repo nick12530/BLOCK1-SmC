@@ -524,6 +524,9 @@ export function evaluateConfluence(
 
   let sl = 0;
   let tp = 0;
+  let tp1 = 0;
+  let tp2 = 0;
+  let tp3 = 0;
 
   if (zone) {
     direction = zone.bullish ? 'BUY' : 'SELL';
@@ -549,7 +552,13 @@ export function evaluateConfluence(
       risk = atrNow;
       reasons.push('SL buffered to 1.0x ATR beyond market noise');
     }
-    tp = direction === 'BUY' ? price + rr * risk : price - rr * risk;
+    const mult1 = Math.max(1.8, Number((rr * 0.9).toFixed(1)));
+    const mult2 = Math.max(3.2, Number((rr * 1.6).toFixed(1)));
+    const mult3 = Math.max(5.5, Number((rr * 2.8).toFixed(1)));
+    tp1 = direction === 'BUY' ? price + mult1 * risk : price - mult1 * risk;
+    tp2 = direction === 'BUY' ? price + mult2 * risk : price - mult2 * risk;
+    tp3 = direction === 'BUY' ? price + mult3 * risk : price - mult3 * risk;
+    tp = tp2; // Primary target targets high-yield 3.2R+ pips
   } else {
     return null;
   }
@@ -645,6 +654,23 @@ export function evaluateConfluence(
     riskRewardSummary: `Risking $${riskPts.toFixed(1)} to make $${rewardPts.toFixed(1)} per oz (1 : ${rrRatio} Reward-to-Risk).`,
   };
 
+  const pipSize = price > 500 ? 0.1 : 0.0001;
+  const slPips = Number((riskPts / pipSize).toFixed(1));
+  const targetPips1 = Number((Math.abs(tp1 - price) / pipSize).toFixed(1));
+  const targetPips2 = Number((Math.abs(tp2 - price) / pipSize).toFixed(1));
+  const targetPips3 = Number((Math.abs(tp3 - price) / pipSize).toFixed(1));
+  const targetPips = targetPips2;
+
+  // Entry countdown timer:
+  // M1: 90s validity window, M5: 300s validity window, M15: 900s validity window
+  const validityDurationMs = timeframe === 'M15' ? 15 * 60_000 : timeframe === 'M5' ? 5 * 60_000 : 90_000;
+  const candleTimeMs = toMilliseconds(lastCandle.time);
+  const expiryTimestamp = candleTimeMs + validityDurationMs;
+  const validitySeconds = Math.max(0, Math.round((expiryTimestamp - now) / 1000));
+
+  // Sniper setup criteria: M15 or M5 timeframe, fresh POI or liquidity sweep, score >= 4.2
+  const isSniper = (timeframe === 'M15' || timeframe === 'M5') && score >= 4.2;
+
   return {
     direction,
     timeframe,
@@ -652,6 +678,17 @@ export function evaluateConfluence(
     entry: Number(price.toFixed(2)),
     sl: Number(sl.toFixed(2)),
     tp: Number(tp.toFixed(2)),
+    tp1: Number(tp1.toFixed(2)),
+    tp2: Number(tp2.toFixed(2)),
+    tp3: Number(tp3.toFixed(2)),
+    slPips,
+    targetPips1,
+    targetPips2,
+    targetPips3,
+    targetPips,
+    expiryTimestamp,
+    validitySeconds,
+    isSniper,
     reasons,
     atr: Number(atrNow.toFixed(2)),
     timestamp: new Date(Math.min(toMilliseconds(lastCandle.time), Date.now())).toISOString(),

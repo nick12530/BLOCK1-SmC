@@ -191,11 +191,11 @@ export default function App() {
         return;
       }
 
-      if (positionCount !== 1 || positionsState.positions.length + positionCount > RISK_CONFIG.maxOpenPositions) {
+      if (positionCount < 1 || positionsState.positions.length + positionCount > RISK_CONFIG.maxOpenPositions) {
         tradingEngine.recordRejectedSignal(signal, `Max open positions limit (${RISK_CONFIG.maxOpenPositions}) reached`, ticker.symbol);
         setConfirmDialog({
-          title: 'Signal stacking is disabled',
-          message: `One position per qualified signal is allowed, with a maximum of ${RISK_CONFIG.maxOpenPositions} open positions. You currently have ${positionsState.positions.length}.`,
+          title: 'Maximum Open Positions Limit Reached',
+          message: `The terminal allows a maximum of ${RISK_CONFIG.maxOpenPositions} simultaneous open positions. You currently have ${positionsState.positions.length} active trade${positionsState.positions.length === 1 ? '' : 's'}.`,
           confirmLabel: 'Understood',
           isDestructive: false,
           onConfirm: () => setConfirmDialog(null),
@@ -352,8 +352,8 @@ export default function App() {
         <WeekendMarketBanner />
       </div>
 
-      {/* Subtle Non-Disruptive Signal Toast Notification */}
-      <SignalToastNotification />
+      {/* Floating Sniper Signal Button & Cockpit (Auto Lot & Entry Countdown) */}
+      <SignalToastNotification onExecuteSignal={handleExecuteSignal} />
 
       {/* 2. Top Header with responsive mobile layout (NO horizontal slider) */}
       <HeaderView

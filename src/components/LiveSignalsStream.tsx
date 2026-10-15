@@ -17,6 +17,8 @@ import {
   RefreshCw,
   Sparkles,
   Play,
+  Clock,
+  Target,
 } from 'lucide-react';
 
 interface LiveSignalsStreamProps {
@@ -32,7 +34,13 @@ interface QueuedSignal {
   entry: number;
   sl: number;
   tp: number;
+  tp1?: number;
+  tp2?: number;
+  tp3?: number;
   stopPips: number;
+  targetPips1?: number;
+  targetPips2?: number;
+  targetPips3?: number;
   targetPips: number;
   riskUsd: number;
   rewardUsd: number;
@@ -40,6 +48,8 @@ interface QueuedSignal {
   confluenceScore: number;
   quality: 'PRIME' | 'STRONG' | 'MODERATE';
   timestamp: string;
+  expiryTimestamp?: number;
+  isSniper?: boolean;
 }
 
 export const LiveSignalsStream: React.FC<LiveSignalsStreamProps> = ({ onExecuteTrade }) => {
@@ -51,6 +61,13 @@ export const LiveSignalsStream: React.FC<LiveSignalsStreamProps> = ({ onExecuteT
   const [executingId, setExecutingId] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<{ id: string; msg: string; type: 'success' | 'error' } | null>(null);
   const [signalsQueue, setSignalsQueue] = useState<QueuedSignal[]>([]);
+  const [currentTime, setCurrentTime] = useState(Date.now());
+
+  // 1-second interval to update live countdown timer and auto-expire passed signals
+  useEffect(() => {
+    const timer = setInterval(() => setCurrentTime(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, []);
 
   // Update signals queue from multi-pair analyses and active market signal
   useEffect(() => {
@@ -66,22 +83,29 @@ export const LiveSignalsStream: React.FC<LiveSignalsStreamProps> = ({ onExecuteT
         const pipSize = cfg.pipSize;
         const pipVal = cfg.pipValuePerMicroLot;
 
-        const stopPips = cfg.recommendedStopPips || 15;
-        const targetPips = cfg.minTakeProfitPips || 30;
-        const stopDistance = stopPips * pipSize;
-        const targetDistance = targetPips * pipSize;
+        const stopPips = analysis.slPips || cfg.recommendedStopPips || 15;
+        const targetPips = analysis.targetPips2 || analysis.targetPips || cfg.minTakeProfitPips || 30;
+        const targetPips1 = analysis.targetPips1 || Math.round(stopPips * 1.8);
+        const targetPips2 = targetPips;
+        const targetPips3 = analysis.targetPips3 || Math.round(stopPips * 5.5);
 
+        const stopDistance = stopPips * pipSize;
         const sl = analysis.suggestedSL > 0
           ? analysis.suggestedSL
           : Number((dir === 'BUY' ? entry - stopDistance : entry + stopDistance).toFixed(cfg.digits));
         const tp = analysis.suggestedTP > 0
           ? analysis.suggestedTP
-          : Number((dir === 'BUY' ? entry + targetDistance : entry - targetDistance).toFixed(cfg.digits));
+          : Number((dir === 'BUY' ? entry + targetPips * pipSize : entry - targetPips * pipSize).toFixed(cfg.digits));
+        const tp1 = analysis.suggestedTP1 || Number((dir === 'BUY' ? entry + targetPips1 * pipSize : entry - targetPips1 * pipSize).toFixed(cfg.digits));
+        const tp2 = analysis.suggestedTP2 || tp;
+        const tp3 = analysis.suggestedTP3 || Number((dir === 'BUY' ? entry + targetPips3 * pipSize : entry - targetPips3 * pipSize).toFixed(cfg.digits));
 
         const riskUsd = Number((stopPips * pipVal).toFixed(2));
         const rewardUsd = Number((targetPips * pipVal).toFixed(2));
         const score = analysis.confluenceScore || 70;
         const strategyName = analysis.signal?.strategy || (dir === 'BUY' ? 'Institutional Discount Entry' : 'Institutional Premium Entry');
+
+        const expiryMs = analysis.expiryTimestamp || (Date.now() + (analysis.signal?.timeframe === 'M15' ? 15 * 60_000 : 5 * 60_000));
 
         list.push({
           id: `${symbol}-${dir}-${strategyName}`,
@@ -92,7 +116,13 @@ export const LiveSignalsStream: React.FC<LiveSignalsStreamProps> = ({ onExecuteT
           entry,
           sl,
           tp,
+          tp1,
+          tp2,
+          tp3,
           stopPips,
+          targetPips1,
+          targetPips2,
+          targetPips3,
           targetPips,
           riskUsd,
           rewardUsd,
@@ -100,6 +130,8 @@ export const LiveSignalsStream: React.FC<LiveSignalsStreamProps> = ({ onExecuteT
           confluenceScore: score,
           quality: score >= 80 ? 'PRIME' : score >= 70 ? 'STRONG' : 'MODERATE',
           timestamp: new Date().toISOString(),
+          expiryTimestamp: expiryMs,
+          isSniper: analysis.isSniper || score >= 75,
         });
       }
     });
@@ -107,15 +139,20 @@ export const LiveSignalsStream: React.FC<LiveSignalsStreamProps> = ({ onExecuteT
     // Also include active symbol signal if present
     if (market.signal) {
       const sig = market.signal;
-      const sym = (ticker.symbol || 'USDJPY') as SupportedSymbol;
+      const sym = (ticker.symbol || 'XAUUSD') as SupportedSymbol;
       const cfg = getInstrumentConfig(sym);
       const stopDist = Math.abs(sig.entry - sig.sl);
       const targetDist = Math.abs(sig.tp - sig.entry);
-      const stopPips = Number((stopDist / cfg.pipSize).toFixed(1));
-      const targetPips = Number((targetDist / cfg.pipSize).toFixed(1));
+      const stopPips = sig.slPips || Number((stopDist / cfg.pipSize).toFixed(1));
+      const targetPips = sig.targetPips2 || sig.targetPips || Number((targetDist / cfg.pipSize).toFixed(1));
+      const targetPips1 = sig.targetPips1 || Math.round(stopPips * 1.8);
+      const targetPips2 = targetPips;
+      const targetPips3 = sig.targetPips3 || Math.round(stopPips * 5.5);
+
       const riskUsd = Number((stopPips * cfg.pipValuePerMicroLot).toFixed(2));
       const rewardUsd = Number((targetPips * cfg.pipValuePerMicroLot).toFixed(2));
       const score = sig.score <= 10 ? Math.round(sig.score * 10) : sig.score;
+      const expiryMs = sig.expiryTimestamp || (new Date(sig.timestamp).getTime() + (sig.timeframe === 'M15' ? 15 * 60_000 : 5 * 60_000));
 
       const exists = list.some((item) => item.symbol === sym && item.direction === sig.direction);
       if (!exists) {
@@ -123,19 +160,27 @@ export const LiveSignalsStream: React.FC<LiveSignalsStreamProps> = ({ onExecuteT
           id: `active-${sym}-${sig.direction}`,
           symbol: sym,
           direction: sig.direction,
-          strategy: sig.strategy || 'SMC Liquidity Setup',
-          timeframe: sig.timeframe || 'M1',
+          strategy: sig.strategy || 'SMC POI Retest',
+          timeframe: sig.timeframe || 'M5',
           entry: sig.entry,
           sl: sig.sl,
           tp: sig.tp,
+          tp1: sig.tp1,
+          tp2: sig.tp2,
+          tp3: sig.tp3,
           stopPips,
+          targetPips1,
+          targetPips2,
+          targetPips3,
           targetPips,
           riskUsd,
           rewardUsd,
-          rrRatio: stopDist > 0 ? (targetDist / stopDist).toFixed(1) : '2.0',
+          rrRatio: stopDist > 0 ? (targetDist / stopDist).toFixed(1) : '3.2',
           confluenceScore: score,
           quality: score >= 80 ? 'PRIME' : score >= 70 ? 'STRONG' : 'MODERATE',
           timestamp: new Date().toISOString(),
+          expiryTimestamp: expiryMs,
+          isSniper: sig.isSniper || score >= 75,
         });
       }
     }
@@ -166,7 +211,7 @@ export const LiveSignalsStream: React.FC<LiveSignalsStreamProps> = ({ onExecuteT
           clientOrderId: `${signal.strategy.replace(/[^a-zA-Z0-9]/g, '')}:${signal.direction}:${Date.now()}`,
           poiKey: tradingEngine.getSignalPoiKey(signal.direction, signal.entry),
           instrumentType: tradingEngine.instrumentType,
-          signalTimeframe: signal.timeframe === 'M1' ? 'M1' : 'M5',
+          signalTimeframe: signal.timeframe === 'M1' ? 'M1' : signal.timeframe === 'M15' ? 'M15' : 'M5',
           signalTimestamp: new Date().toISOString(),
           magic: cfg.magicNumber,
         });
@@ -311,9 +356,17 @@ export const LiveSignalsStream: React.FC<LiveSignalsStreamProps> = ({ onExecuteT
     }
   };
 
-  const filteredSignals = activeFilter === 'ALL'
-    ? signalsQueue
-    : signalsQueue.filter((s) => s.symbol === activeFilter);
+  const formatCountdown = (sec: number) => {
+    const m = Math.floor(sec / 60);
+    const s = sec % 60;
+    return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+  };
+
+  const filteredSignals = (
+    activeFilter === 'ALL'
+      ? signalsQueue
+      : signalsQueue.filter((s) => s.symbol === activeFilter)
+  ).filter((s) => !s.expiryTimestamp || s.expiryTimestamp > currentTime);
 
   return (
     <div className="w-full bg-white dark:bg-[#0d1117] border border-slate-200 dark:border-zinc-800/80 rounded-xl sm:rounded-2xl p-3 sm:p-4 shadow-xs font-mono text-xs flex flex-col gap-3">
@@ -328,7 +381,7 @@ export const LiveSignalsStream: React.FC<LiveSignalsStreamProps> = ({ onExecuteT
               Live Signals Execution Queue
             </h3>
             <p className="text-[11px] text-slate-500 dark:text-zinc-400">
-              Institutional setups lined up across 4 pairs • 1-Click instant execution (0.01L)
+              Institutional setups lined up across 4 pairs • Multi-Target TP 1, TP 2, TP 3, SL • 1-Click instant execution (0.01L)
             </p>
           </div>
         </div>
@@ -378,6 +431,18 @@ export const LiveSignalsStream: React.FC<LiveSignalsStreamProps> = ({ onExecuteT
             const isExecuting = executingId === sig.id;
             const cfg = getInstrumentConfig(sig.symbol);
 
+            const riskDist = Math.abs(sig.entry - sig.sl);
+            const tp1Val = sig.tp1 ?? Number((isBuy ? sig.entry + riskDist * 1.8 : sig.entry - riskDist * 1.8).toFixed(cfg.digits));
+            const tp2Val = sig.tp2 ?? sig.tp;
+            const tp3Val = sig.tp3 ?? Number((isBuy ? sig.entry + riskDist * 5.5 : sig.entry - riskDist * 5.5).toFixed(cfg.digits));
+            const tp1Pips = sig.targetPips1 ?? Math.round(sig.stopPips * 1.8);
+            const tp2Pips = sig.targetPips2 ?? sig.targetPips;
+            const tp3Pips = sig.targetPips3 ?? Math.round(sig.stopPips * 5.5);
+
+            const secondsRemaining = sig.expiryTimestamp
+              ? Math.max(0, Math.floor((sig.expiryTimestamp - currentTime) / 1000))
+              : 0;
+
             // Check if there is already an open position on this pair
             const hasOpenTradeOnSymbol = positions.some(
               (p) => (p.symbol || ticker.symbol) === sig.symbol
@@ -388,7 +453,7 @@ export const LiveSignalsStream: React.FC<LiveSignalsStreamProps> = ({ onExecuteT
                 key={sig.id}
                 className="bg-slate-50 dark:bg-[#12161f] border border-slate-200 dark:border-zinc-800/80 rounded-xl p-3 sm:p-3.5 flex flex-col md:flex-row md:items-center justify-between gap-3 transition-all hover:border-slate-300 dark:hover:border-zinc-700"
               >
-                {/* Column 1: Symbol, Direction, Strategy, Score */}
+                {/* Column 1: Symbol, Direction, Strategy, Score & Expiry Countdown */}
                 <div className="flex items-center gap-2.5 flex-wrap">
                   <span className="font-black text-slate-900 dark:text-white text-sm">
                     {sig.symbol}
@@ -406,7 +471,7 @@ export const LiveSignalsStream: React.FC<LiveSignalsStreamProps> = ({ onExecuteT
                   </span>
 
                   <span className="text-[11px] text-slate-700 dark:text-slate-300 font-bold bg-white dark:bg-zinc-800 px-2 py-0.5 rounded border border-slate-200 dark:border-zinc-700">
-                    {sig.strategy}
+                    {sig.strategy} ({sig.timeframe})
                   </span>
 
                   <span
@@ -421,6 +486,13 @@ export const LiveSignalsStream: React.FC<LiveSignalsStreamProps> = ({ onExecuteT
                     {sig.confluenceScore}% {sig.quality}
                   </span>
 
+                  {secondsRemaining > 0 && (
+                    <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-amber-500/15 text-amber-500 dark:text-amber-300 border border-amber-500/30 flex items-center gap-1">
+                      <Clock className="w-3 h-3 animate-pulse" />
+                      <span>{formatCountdown(secondsRemaining)}</span>
+                    </span>
+                  )}
+
                   {hasOpenTradeOnSymbol && (
                     <span className="text-[9px] px-1.5 py-0.2 rounded bg-sky-500/10 text-sky-400 border border-sky-500/30 font-bold">
                       ACTIVE TRADE IN BASKET
@@ -428,38 +500,50 @@ export const LiveSignalsStream: React.FC<LiveSignalsStreamProps> = ({ onExecuteT
                   )}
                 </div>
 
-                {/* Column 2: Price Metrics (Entry, SL, TP, Risk/Reward) */}
-                <div className="flex items-center gap-3 text-[11px] flex-wrap font-mono">
+                {/* Column 2: Structured Multi-Target Metrics (Entry, TP1, TP2, TP3, SL) */}
+                <div className="flex items-center gap-2.5 sm:gap-3 text-[11px] flex-wrap font-mono">
+                  {/* Entry */}
                   <div>
-                    <span className="text-[9px] uppercase text-slate-400 block">Entry Spot</span>
+                    <span className="text-[8px] uppercase text-slate-400 block font-bold">Entry</span>
                     <span className="font-bold text-slate-900 dark:text-white">
                       {sig.entry.toFixed(cfg.digits)}
                     </span>
                   </div>
 
+                  {/* TP 1 */}
                   <div>
-                    <span className="text-[9px] uppercase text-rose-500 block">
-                      SL ({sig.stopPips}p)
+                    <span className="text-[8px] uppercase text-emerald-500 block font-bold">TP 1</span>
+                    <span className="font-bold text-emerald-500">
+                      {tp1Val.toFixed(cfg.digits)}
                     </span>
+                    <span className="text-[8px] text-emerald-400/80 block">+{tp1Pips}p</span>
+                  </div>
+
+                  {/* TP 2 */}
+                  <div>
+                    <span className="text-[8px] uppercase text-emerald-400 block font-bold">TP 2</span>
+                    <span className="font-bold text-emerald-400">
+                      {tp2Val.toFixed(cfg.digits)}
+                    </span>
+                    <span className="text-[8px] text-emerald-400/80 block">+{tp2Pips}p</span>
+                  </div>
+
+                  {/* TP 3 (Max Pips Runner) */}
+                  <div>
+                    <span className="text-[8px] uppercase text-sky-400 block font-bold">TP 3</span>
+                    <span className="font-bold text-sky-400">
+                      {tp3Val.toFixed(cfg.digits)}
+                    </span>
+                    <span className="text-[8px] text-sky-400/80 block">+{tp3Pips}p</span>
+                  </div>
+
+                  {/* Stop Loss */}
+                  <div>
+                    <span className="text-[8px] uppercase text-rose-500 block font-bold">SL</span>
                     <span className="font-bold text-rose-500">
                       {sig.sl.toFixed(cfg.digits)}
                     </span>
-                    <span className="text-[9px] text-slate-400 block">-${sig.riskUsd}</span>
-                  </div>
-
-                  <div>
-                    <span className="text-[9px] uppercase text-emerald-500 block">
-                      TP ({sig.targetPips}p)
-                    </span>
-                    <span className="font-bold text-emerald-500">
-                      {sig.tp.toFixed(cfg.digits)}
-                    </span>
-                    <span className="text-[9px] text-slate-400 block">+${sig.rewardUsd}</span>
-                  </div>
-
-                  <div className="hidden sm:block">
-                    <span className="text-[9px] uppercase text-slate-400 block">R:R Ratio</span>
-                    <span className="font-bold text-sky-400">1:{sig.rrRatio}</span>
+                    <span className="text-[8px] text-rose-400/80 block">-{sig.stopPips}p</span>
                   </div>
                 </div>
 

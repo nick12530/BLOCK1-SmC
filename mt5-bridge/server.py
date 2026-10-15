@@ -259,7 +259,7 @@ class TradeRequest(BaseModel):
     expectedServer: str = Field(min_length=1, max_length=128)
     clientOrderId: str = Field(min_length=1, max_length=160)
     poiKey: str = Field(default="", max_length=160)
-    signalTimeframe: Literal["M1", "M5"] = "M1"
+    signalTimeframe: Literal["M1", "M5", "M15"] = "M1"
     signalTimestamp: str = Field(default="", max_length=40)
     magic: int | None = None
     bypassCooldown: bool = False
@@ -634,7 +634,8 @@ def place_trade(payload: TradeRequest, request: Request) -> dict:
         signal_bar_time = now
 
     if not payload.bypassCooldown and not payload.forceExecute:
-        signal_age_limit = timedelta(minutes=1 if payload.signalTimeframe == "M1" else 5) * 60
+        tf_mins = 1 if payload.signalTimeframe == "M1" else 15 if payload.signalTimeframe == "M15" else 5
+        signal_age_limit = timedelta(minutes=tf_mins) * 60
         if now - signal_bar_time > signal_age_limit:
             raise HTTPException(status_code=409, detail="Signal candle is stale; wait for a new broker-confirmed setup.")
     with sqlite3.connect(STATE_DATABASE) as connection:
@@ -802,101 +803,165 @@ def place_trade(payload: TradeRequest, request: Request) -> dict:
         if payload.tp >= price or abs(price - payload.tp) < min_stop_distance:
             payload.tp = round(price - min_stop_distance * 4, digits)
 
-    # Robust error handling block for order filling mode:
-    try:
-        filling_mode = getattr(info, "filling_mode", 0) if info else 0
-        if filling_mode & 2:
-            filling = getattr(mt5, "ORDER_FILLING_IOC", 1)
-        elif filling_mode & 1:
-            filling = getattr(mt5, "ORDER_FILLING_FOK", 0)
-        elif hasattr(mt5, "ORDER_FILLING_RETURN"):
-            filling = getattr(mt5, "ORDER_FILLING_RETURN", 2)
-        else:
-            filling = getattr(mt5, "ORDER_FILLING_IOC", 1)
-    except Exception as exc:
-        logger.warning("Error resolving symbol filling_mode in place_trade: %s; falling back to ORDER_FILLING_IOC", exc)
-        filling = getattr(mt5, "ORDER_FILLING_IOC", 1)
+    # Target SL and TP requested
+    desired_sl = float(payload.sl or 0.0)
+    desired_tp = float(payload.tp or 0.0)
 
-    # MetaTrader 5 strictly enforces alphanumeric comments (many brokers reject spaces, symbols, or >15 chars)
+    # Determine execution mode: Market Execution (2) requires sl=0, tp=0 on entry deal
+    trade_ex_mode = getattr(info, "trade_ex_mode", None)
+    is_market_exec = (trade_ex_mode == getattr(mt5, "SYMBOL_TRADE_EXECUTION_MARKET", 2))
+
+    # Priority filling modes to test
+    filling_mode = getattr(info, "filling_mode", 0) if info else 0
+    candidate_fillings = []
+    if filling_mode & 2:
+        candidate_fillings.append(getattr(mt5, "ORDER_FILLING_IOC", 1))
+    if filling_mode & 1:
+        candidate_fillings.append(getattr(mt5, "ORDER_FILLING_FOK", 0))
+    if hasattr(mt5, "ORDER_FILLING_RETURN"):
+        candidate_fillings.append(getattr(mt5, "ORDER_FILLING_RETURN", 2))
+    for f in (getattr(mt5, "ORDER_FILLING_IOC", 1), getattr(mt5, "ORDER_FILLING_RETURN", 2), getattr(mt5, "ORDER_FILLING_FOK", 0)):
+        if f not in candidate_fillings:
+            candidate_fillings.append(f)
+
+    # Comments to test
     clean_rationale = re.sub(r'[^a-zA-Z0-9]', '', str(payload.rationale or "")).strip()
     order_comment = f"SMC_{clean_rationale[:8]}" if clean_rationale else "SMC"
+    candidate_comments = [order_comment, ""]
 
-    request_data = {
-        "action": mt5.TRADE_ACTION_DEAL,
-        "symbol": symbol,
-        "volume": payload.volume,
-        "type": order_type,
-        "price": price,
-        "sl": payload.sl,
-        "tp": payload.tp,
-        "deviation": 20,
-        "magic": payload.magic or {
-            "EURUSD": 10001,
-            "USDJPY": 10002,
-            "GBPUSD": 10003,
-            "XAUUSD": 20261001,
-        }.get(symbol.upper(), 20261001),
-        "comment": order_comment,
-        "type_time": mt5.ORDER_TIME_GTC,
-        "type_filling": filling,
-    }
-    result = mt5.order_send(request_data)
-    accepted_ret_codes = (mt5.TRADE_RETCODE_DONE, mt5.TRADE_RETCODE_PLACED, mt5.TRADE_RETCODE_DONE_PARTIAL)
+    # Stops to try on initial entry
+    # If broker uses Market Execution (mode 2), start immediately with sl=0, tp=0
+    if is_market_exec:
+        candidate_stops = [(0.0, 0.0)]
+    else:
+        candidate_stops = [(desired_sl, desired_tp), (0.0, 0.0)]
 
-    # 1. Retry on invalid comment (10015: TRADE_RETCODE_INVALID_COMMENT or "Invalid comment argument")
-    if result is not None and result.retcode not in accepted_ret_codes:
-        comment_code = getattr(mt5, "TRADE_RETCODE_INVALID_COMMENT", 10015)
-        res_comment = str(getattr(result, "comment", "")).lower()
-        if result.retcode == comment_code or "comment" in res_comment:
-            logger.warning("MT5 rejected comment %r with %s (%s); retrying with comment field omitted completely", order_comment, result.retcode, res_comment)
-            request_data.pop("comment", None)
-            alt_res = mt5.order_send(request_data)
-            if alt_res is not None:
-                result = alt_res
+    accepted_ret_codes = (
+        getattr(mt5, "TRADE_RETCODE_DONE", 10009),
+        getattr(mt5, "TRADE_RETCODE_PLACED", 10008),
+        getattr(mt5, "TRADE_RETCODE_DONE_PARTIAL", 10010),
+    )
 
-    # 2. Retry on invalid filling mode (10030: TRADE_RETCODE_INVALID_FILL)
-    if result is not None and result.retcode not in accepted_ret_codes:
-        invalid_fill_code = getattr(mt5, "TRADE_RETCODE_INVALID_FILL", 10030)
-        if result.retcode == invalid_fill_code or "filling" in str(getattr(result, "comment", "")).lower():
-            alt_fillings = [
-                getattr(mt5, "ORDER_FILLING_FOK", 0),
-                getattr(mt5, "ORDER_FILLING_IOC", 1),
-                getattr(mt5, "ORDER_FILLING_RETURN", 2),
-            ]
-            for alt_filling in alt_fillings:
-                if alt_filling == filling:
-                    continue
-                request_data["type_filling"] = alt_filling
-                alt_result = mt5.order_send(request_data)
-                if alt_result is not None and alt_result.retcode in accepted_ret_codes:
-                    result = alt_result
+    magic_num = payload.magic or {
+        "EURUSD": 10001,
+        "USDJPY": 10002,
+        "GBPUSD": 10003,
+        "XAUUSD": 20261001,
+    }.get(symbol.upper(), 20261001)
+
+    result = None
+    applied_sl_tp_afterwards = False
+
+    logger.info(f"⚡ [MT5 Order] Sending {payload.direction} {payload.volume}L on {symbol} (MarketExec={is_market_exec}, Desired SL={desired_sl}, TP={desired_tp})...")
+
+    # Execution matrix: iterate combinations until MT5 accepts
+    for sl_val, tp_val in candidate_stops:
+        for cmt in candidate_comments:
+            for fill in candidate_fillings:
+                # Refresh tick for accurate live price on each pass
+                cur_tick = mt5.symbol_info_tick(symbol)
+                cur_price = (cur_tick.ask if payload.direction == "BUY" else cur_tick.bid) if cur_tick else price
+
+                request_data = {
+                    "action": mt5.TRADE_ACTION_DEAL,
+                    "symbol": symbol,
+                    "volume": payload.volume,
+                    "type": order_type,
+                    "price": cur_price,
+                    "sl": sl_val,
+                    "tp": tp_val,
+                    "deviation": 300,  # 300 points slippage tolerance for fast broker fills
+                    "magic": magic_num,
+                    "type_time": mt5.ORDER_TIME_GTC,
+                    "type_filling": fill,
+                }
+                if cmt:
+                    request_data["comment"] = cmt
+
+                result = mt5.order_send(request_data)
+                ret_code = getattr(result, "retcode", None)
+                ret_cmt = getattr(result, "comment", "")
+
+                if result is not None and result.retcode in accepted_ret_codes:
+                    logger.info(f"✅ [MT5 Order Success] Filled: ticket={result.order or result.deal}, retcode={result.retcode}, filling={fill}, stops=({sl_val},{tp_val})")
+                    if sl_val == 0.0 and (desired_sl > 0 or desired_tp > 0):
+                        applied_sl_tp_afterwards = True
                     break
+                else:
+                    # If AlgoTrading is disabled, don't waste time trying all combinations - break early
+                    if ret_code in (getattr(mt5, "TRADE_RETCODE_CLIENT_DISABLES_AT", 10027), getattr(mt5, "TRADE_RETCODE_AUTOTRADING_DISABLED", 10026)) or "autotrading" in str(ret_cmt).lower():
+                        logger.error(f"❌ MT5 Algo Trading is disabled in terminal: retcode={ret_code} ({ret_cmt})")
+                        break
+                    logger.warning(f"MT5 order attempt failed: retcode={ret_code} ({ret_cmt}), fill={fill}, cmt={cmt!r}, sl/tp=({sl_val},{tp_val})")
+            
+            if result is not None and result.retcode in accepted_ret_codes:
+                break
+            if result is not None and getattr(result, "retcode", None) in (getattr(mt5, "TRADE_RETCODE_CLIENT_DISABLES_AT", 10027), getattr(mt5, "TRADE_RETCODE_AUTOTRADING_DISABLED", 10026)):
+                break
+        if result is not None and result.retcode in accepted_ret_codes:
+            break
+        if result is not None and getattr(result, "retcode", None) in (getattr(mt5, "TRADE_RETCODE_CLIENT_DISABLES_AT", 10027), getattr(mt5, "TRADE_RETCODE_AUTOTRADING_DISABLED", 10026)):
+            break
 
-    # 3. Retry on invalid stops (10016: TRADE_RETCODE_INVALID_STOPS)
-    if result is not None and result.retcode not in accepted_ret_codes:
-        invalid_stops_code = getattr(mt5, "TRADE_RETCODE_INVALID_STOPS", 10016)
-        if result.retcode == invalid_stops_code or "stops" in str(getattr(result, "comment", "")).lower():
-            logger.warning("MT5 rejected protective stops; retrying market order without initial stops")
-            saved_sl, saved_tp = request_data["sl"], request_data["tp"]
-            request_data["sl"] = 0.0
-            request_data["tp"] = 0.0
-            alt_result = mt5.order_send(request_data)
-            if alt_result is not None and alt_result.retcode in accepted_ret_codes:
-                result = alt_result
+    if result is None or result.retcode not in accepted_ret_codes:
+        retcode = getattr(result, "retcode", None)
+        comment = getattr(result, "comment", "")
+        last_err = mt5.last_error()
+        logger.error("=" * 65)
+        logger.error(f"❌ MT5 Order Placement Failed on {symbol}:")
+        logger.error(f"   Retcode: {retcode}")
+        logger.error(f"   Comment: {comment}")
+        logger.error(f"   Last Error: {last_err}")
 
-    if result is None:
-        raise HTTPException(status_code=502, detail=f"MT5 order request failed: {mt5.last_error()}")
-    if result.retcode not in accepted_ret_codes:
+        if retcode in (getattr(mt5, "TRADE_RETCODE_CLIENT_DISABLES_AT", 10027), getattr(mt5, "TRADE_RETCODE_AUTOTRADING_DISABLED", 10026)) or "autotrading" in str(comment).lower():
+            logger.error("👉 FIX: Enable 'Algo Trading' in your MetaTrader 5 terminal!")
+            logger.error("👉 Click the 'Algo Trading' button in MT5 toolbar, or press Ctrl+E")
+            logger.error("=" * 65)
+            raise HTTPException(
+                status_code=400,
+                detail="MT5 AutoTrading is disabled in terminal. Click the 'Algo Trading' button in MT5 toolbar (or Ctrl+E)."
+            )
+
+        if retcode == getattr(mt5, "TRADE_RETCODE_MARKET_CLOSED", 10018) or "closed" in str(comment).lower():
+            logger.error(f"👉 Market for {symbol} is currently closed.")
+            logger.error("=" * 65)
+            raise HTTPException(status_code=400, detail=f"Market for {symbol} is currently closed.")
+
+        if retcode == getattr(mt5, "TRADE_RETCODE_NO_MONEY", 10019) or "money" in str(comment).lower():
+            logger.error(f"👉 Insufficient margin to open {payload.volume}L on {symbol}.")
+            logger.error("=" * 65)
+            raise HTTPException(status_code=400, detail=f"Insufficient free margin to open {payload.volume}L on {symbol}.")
+
+        logger.error("=" * 65)
         raise HTTPException(
-            status_code=502,
-            detail=f"MT5 rejected order ({result.retcode}): {result.comment}",
+            status_code=400,
+            detail=f"MT5 broker rejected order ({retcode}): {comment or last_err or 'Check broker symbol specifications'}"
         )
+
     snapshot = read_snapshot(symbol)
     position_ticket = int(result.order or result.deal)
     if result.deal:
         deal_matches = mt5.history_deals_get(ticket=int(result.deal))
         if deal_matches:
             position_ticket = int(deal_matches[0].position_id)
+
+    # If order was filled with sl=0, tp=0, attach protective stops now
+    if applied_sl_tp_afterwards and position_ticket and (desired_sl > 0 or desired_tp > 0):
+        try:
+            sltp_req = {
+                "action": mt5.TRADE_ACTION_SLTP,
+                "symbol": symbol,
+                "position": position_ticket,
+                "sl": desired_sl,
+                "tp": desired_tp,
+            }
+            sltp_res = mt5.order_send(sltp_req)
+            if sltp_res is not None and sltp_res.retcode in accepted_ret_codes:
+                logger.info(f"🛡️ [MT5 Stops Attached] Position #{position_ticket} SL={desired_sl}, TP={desired_tp}")
+            else:
+                logger.warning(f"Could not attach initial SL/TP to #{position_ticket}: {getattr(sltp_res, 'comment', 'N/A')}")
+        except Exception as exc:
+            logger.warning(f"Error attaching initial SL/TP to #{position_ticket}: {exc}")
 
     response_ticket = int(result.order or result.deal)
     execution_price = float(result.price or price)
@@ -910,7 +975,7 @@ def place_trade(payload: TradeRequest, request: Request) -> dict:
             """,
             (
                 payload.clientOrderId, account["login"], account["server"], symbol, payload.poiKey, payload.direction,
-                payload.volume, payload.sl, payload.tp, response_ticket, position_ticket,
+                payload.volume, desired_sl, desired_tp, response_ticket, position_ticket,
                 execution_price, float(result.volume or 0),
                 int(result.retcode == mt5.TRADE_RETCODE_DONE_PARTIAL),
                 int(result.retcode == mt5.TRADE_RETCODE_PLACED), now.isoformat(),
@@ -992,7 +1057,9 @@ def close_position(payload: CloseRequest, request: Request) -> dict:
         mt5.TRADE_RETCODE_DONE_PARTIAL,
     ):
         reason = f"{result.retcode}: {result.comment}" if result else str(mt5.last_error())
-        raise HTTPException(status_code=502, detail=f"MT5 close request failed: {reason}")
+        logger.error(f"❌ MT5 Close Request Failed for position {payload.ticket}: {reason}")
+        raise HTTPException(status_code=400, detail=f"MT5 close request failed: {reason}")
+    logger.info(f"✅ MT5 Closed position #{payload.ticket} successfully")
     return read_snapshot(position.symbol)
 
 
@@ -1044,7 +1111,9 @@ def modify_position(payload: StopsRequest, request: Request) -> dict:
     )
     if result is None or result.retcode != mt5.TRADE_RETCODE_DONE:
         reason = f"{result.retcode}: {result.comment}" if result else str(mt5.last_error())
-        raise HTTPException(status_code=502, detail=f"MT5 stop update failed: {reason}")
+        logger.error(f"❌ MT5 Stop Update Failed for position #{payload.ticket}: {reason}")
+        raise HTTPException(status_code=400, detail=f"MT5 stop update failed: {reason}")
+    logger.info(f"🛡️ MT5 Stop Update OK for position #{payload.ticket}: SL={payload.sl}, TP={payload.tp}")
     return read_snapshot(position.symbol)
 
 

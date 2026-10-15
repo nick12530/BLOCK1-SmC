@@ -406,7 +406,7 @@ export class MT5BridgeConnector {
     clientOrderId: string;
     poiKey: string;
     instrumentType: InstrumentType;
-    signalTimeframe: 'M1' | 'M5';
+    signalTimeframe: 'M1' | 'M5' | 'M15';
     signalTimestamp: string;
     magic?: number;
   }): Promise<{
@@ -632,28 +632,32 @@ export class MT5BridgeConnector {
       });
       this.lastLatencyMs = Math.round(performance.now() - start);
 
-      if (response.status === 502 || response.status === 503 || response.status === 504) {
-        throw new Error(`MT5 Bridge is currently standby/offline (${response.status} Bad Gateway). Desk execution active.`);
-      }
-
       const contentType = response.headers.get('content-type') || '';
       let data: any;
       if (contentType.includes('application/json')) {
-        data = await response.json();
+        try {
+          data = await response.json();
+        } catch {
+          data = null;
+        }
       } else {
         const text = await response.text();
-        if (!response.ok) {
-          throw new Error(`MT5 Bridge error (HTTP ${response.status}): ${text.slice(0, 120) || 'Standby'}`);
-        }
         try {
           data = JSON.parse(text);
         } catch {
-          throw new Error(`MT5 Bridge offline or proxy waiting for server at ${baseUrl}${path}.`);
+          data = text ? { detail: text.slice(0, 160) } : null;
         }
       }
+
       if (!response.ok) {
         const detail = (data as { detail?: string })?.detail;
-        throw new Error(detail || `MT5 bridge request failed (${response.status}).`);
+        if (detail) {
+          throw new Error(detail);
+        }
+        if (response.status === 502 || response.status === 503 || response.status === 504) {
+          throw new Error(`MT5 Bridge is currently standby (${response.status} Bad Gateway). Ensure your Python bridge server (uvicorn) is active at ${baseUrl}.`);
+        }
+        throw new Error(`MT5 bridge request failed (${response.status}).`);
       }
       return data as T;
     } finally {

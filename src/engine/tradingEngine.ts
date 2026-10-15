@@ -911,6 +911,14 @@ export class TradingEngine {
                     SCORE_THRESHOLD,
                     'M5'
                   ),
+                  // M15 scanning for maximum pips
+                  evaluateConfluence(
+                    this.candlesM15,
+                    this.candlesH1.length > 5 ? this.candlesH1 : this.candlesM15,
+                    this.account.auto_rr,
+                    SCORE_THRESHOLD,
+                    'M15'
+                  ),
                 ].filter((signal): signal is Signal => signal !== null)
               : []),
             ...evaluateTechnicalStrategies(
@@ -931,13 +939,39 @@ export class TradingEngine {
               undefined,
               this.activeSymbol
             ),
+            // M15 technical strategies scanning for maximum pips
+            ...evaluateTechnicalStrategies(
+              this.candlesM15,
+              this.candlesH1.length > 5 ? this.candlesH1 : this.candlesM15,
+              'M15',
+              this.instrumentType,
+              getInstrumentConfig(this.activeSymbol).digits,
+              undefined,
+              this.activeSymbol
+            ),
           ].filter((signal): signal is Signal => signal !== null)
         : [];
+      const nowMs = Date.now();
       const signals = candidateSignals
-        .map((signal) => ({
-          ...signal,
-          strategy: signal.strategy ?? 'SMC POI Retest' as const,
-        }))
+        // Entry countdown expiry filter: once entry time window passes, the signal passes/expires
+        .filter((signal) => {
+          if (signal.expiryTimestamp && nowMs > signal.expiryTimestamp) {
+            return false;
+          }
+          return true;
+        })
+        .map((signal) => {
+          const autoLot = this.getRiskBasedVolume(signal.sl, undefined, signal.direction) || 0.01;
+          const validitySeconds = signal.expiryTimestamp
+            ? Math.max(0, Math.round((signal.expiryTimestamp - nowMs) / 1000))
+            : signal.validitySeconds || 180;
+          return {
+            ...signal,
+            strategy: signal.strategy ?? 'SMC POI Retest' as const,
+            recommendedLot: autoLot,
+            validitySeconds,
+          };
+        })
         .sort((left, right) => right.score - left.score)
         .filter((signal, index, items) =>
           items.findIndex((candidate) => candidate.strategy === signal.strategy && candidate.direction === signal.direction) === index
@@ -1416,12 +1450,10 @@ export class TradingEngine {
       )
     );
 
-    // Small account maximum simultaneous positions limit (Section 7)
-    const maxSimultaneousTrades = this.account.balance <= 100
-      ? (hasValidProfitableSignal ? 2 : 1)
-      : RISK_CONFIG.maxOpenPositions;
+    // Maximum simultaneous positions limit (allows up to 5 concurrent trades)
+    const maxSimultaneousTrades = Math.max(5, RISK_CONFIG.maxOpenPositions || 5);
     if (this.positions.length >= maxSimultaneousTrades) {
-      return `TRADE_REJECTED: MAX_SIMULTANEOUS_TRADES_REACHED (Account limited to ${maxSimultaneousTrades} open position)`;
+      return `TRADE_REJECTED: MAX_SIMULTANEOUS_TRADES_REACHED (Account limit of ${maxSimultaneousTrades} open positions reached)`;
     }
 
     // Daily trade count limits (Section 7: 5 total, 3 per pair)
@@ -2356,7 +2388,7 @@ export class TradingEngine {
             clientOrderId: `${sig.strategy}:${sig.timeframe}:${sig.direction}:${sig.timestamp}:${sig.entry.toFixed(8)}`,
             poiKey: this.getSignalPoiKey(sig.direction, sig.entry),
             instrumentType: this.instrumentType,
-            signalTimeframe: sig.timeframe === 'M1' ? 'M1' : 'M5',
+            signalTimeframe: sig.timeframe === 'M1' ? 'M1' : sig.timeframe === 'M15' ? 'M15' : 'M5',
             signalTimestamp: (() => {
               if (!sig.timestamp) return new Date().toISOString();
               const parsed = new Date(sig.timestamp).getTime();
@@ -2399,7 +2431,16 @@ export class TradingEngine {
             result.pending || result.partial ? 'warn' : 'trade'
           );
         } catch (error) {
-          this.slog(`MT5 auto-order rejected: ${error instanceof Error ? error.message : 'Unknown bridge error'}`, 'error');
+          const errMsg = error instanceof Error ? error.message : 'Unknown bridge error';
+          this.slog(`MT5 auto-order rejected: ${errMsg}`, 'error');
+          this.recordRejectedSignal(sig, errMsg, this.activeSymbol);
+          this.entryHistory.push({
+            at: Date.now(),
+            direction: sig.direction,
+            symbol: this.activeSymbol,
+            poiKey: this.getSignalPoiKey(sig.direction, sig.entry),
+          });
+          this.entryHistory = this.entryHistory.slice(-100);
         }
         return;
       }
@@ -2418,42 +2459,47 @@ export class TradingEngine {
     volume: number,
     sl: number,
     tp: number,
-    comment: string = 'manual'
+    comment: string = 'manual',
+    targetSymbol?: SupportedSymbol
   ): { ok: boolean; ticket?: number; price?: number; error?: string } {
     if (this.killSwitch) {
       return { ok: false, error: 'Trading halted by Kill Switch' };
     }
 
+    const symbolToTrade = targetSymbol || this.activeSymbol;
     const isManual = !comment.startsWith('auto:');
     const market = this.getMarketSnapshot();
-    const blockReason = this.getEntryBlockReason(direction, market.signal, Date.now(), isManual);
+    const blockReason = this.getEntryBlockReason(direction, market.signal, Date.now(), isManual, symbolToTrade);
     if (blockReason) {
       if (market.signal) {
-        this.recordRejectedSignal(market.signal, blockReason, this.activeSymbol);
+        this.recordRejectedSignal(market.signal, blockReason, symbolToTrade);
       }
       return { ok: false, error: blockReason };
     }
     const riskVolume = this.getRiskBasedVolume(sl, volume);
     if (!riskVolume) {
       if (market.signal) {
-        this.recordRejectedSignal(market.signal, 'Position size is below broker minimum', this.activeSymbol);
+        this.recordRejectedSignal(market.signal, 'Position size is below broker minimum', symbolToTrade);
       }
       return { ok: false, error: 'Position size is below broker minimum or cannot be calculated from valid risk specifications.' };
     }
 
-    const config = getInstrumentConfig(this.activeSymbol);
-    const openPrice = direction === 'BUY' ? this.ask : this.bid;
+    const config = getInstrumentConfig(symbolToTrade);
+    const pairQuote = this.pairData[symbolToTrade];
+    const symBid = symbolToTrade === this.activeSymbol ? this.bid : (pairQuote?.bid ?? this.bid);
+    const symAsk = symbolToTrade === this.activeSymbol ? this.ask : (pairQuote?.ask ?? this.ask);
+    const openPrice = direction === 'BUY' ? symAsk : symBid;
     const ticket = ++this.ticketCounter;
     const rationale = market.signal
       ? buildSignalRationale(market.signal)
       :
       (direction === 'BUY'
-        ? `Liquidity sweep into M5 Bullish Order Block (+OB) in Discount zone (<50% EQ) on ${this.activeSymbol}. Confirmed FVG displacement with 1:2.0 RR target.`
-        : `Liquidity sweep into M5 Bearish Order Block (-OB) in Premium zone (>50% EQ) on ${this.activeSymbol}. Confirmed FVG displacement with 1:2.0 RR target.`);
+        ? `Liquidity sweep into Bullish Order Block (+OB) in Discount zone (<50% EQ) on ${symbolToTrade}. Confirmed FVG displacement with 1:2.0+ RR target.`
+        : `Liquidity sweep into Bearish Order Block (-OB) in Premium zone (>50% EQ) on ${symbolToTrade}. Confirmed FVG displacement with 1:2.0+ RR target.`);
 
     const newPos: Position = {
       ticket,
-      symbol: this.activeSymbol,
+      symbol: symbolToTrade,
       time: new Date().toISOString().substr(11, 8),
       type: direction,
       volume: riskVolume,
@@ -2466,7 +2512,7 @@ export class TradingEngine {
       profit: 0.0,
       pips: 0.0,
       magic: config.magicNumber,
-      comment: `${this.activeSymbol}:${comment}`,
+      comment: `${symbolToTrade}:${comment}`,
       strategyRationale: rationale,
       strategyOrderBlock: findCorrespondingOrderBlock(
         direction,
@@ -2477,20 +2523,19 @@ export class TradingEngine {
 
     // If MT5 bridge is actively connected, synchronize order to MT5 broker terminal for the selected currency pair
     if (this.mt5Account.connected && mt5Bridge.getStatus().connected) {
-      mt5Bridge.setSymbol(this.activeSymbol);
       void (async () => {
         try {
           const res = await mt5Bridge.sendTrade({
             direction,
             volume: riskVolume,
-            symbol: this.activeSymbol,
+            symbol: symbolToTrade,
             sl: Number(sl.toFixed(config.digits)),
             tp: Number(tp.toFixed(config.digits)),
             rationale,
-            clientOrderId: `${this.activeSymbol}:${direction}:${Date.now()}`,
+            clientOrderId: `${symbolToTrade}:${direction}:${Date.now()}`,
             poiKey: this.getSignalPoiKey(direction, openPrice),
             instrumentType: this.instrumentType,
-            signalTimeframe: 'M5',
+            signalTimeframe: market.currentTimeframe === 'M15' ? 'M15' : 'M5',
             signalTimestamp: new Date().toISOString(),
           });
           newPos.ticket = res.ticket;

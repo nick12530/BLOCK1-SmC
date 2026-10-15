@@ -107,6 +107,18 @@ export interface Signal {
   entry: number;
   sl: number;
   tp: number;
+  tp1?: number; // Target 1 (1:1.5 to 1:2 RR / Conservative / First pool)
+  tp2?: number; // Target 2 (1:3 to 1:4 RR / Major structural swing / High pip)
+  tp3?: number; // Target 3 (1:5 to 1:8+ RR / Dealing Range Extreme / Runner)
+  slPips?: number;
+  targetPips1?: number;
+  targetPips2?: number;
+  targetPips3?: number;
+  targetPips?: number;
+  expiryTimestamp?: number; // Unix timestamp in ms when entry window passes
+  validitySeconds?: number; // Countdown seconds remaining for entry
+  isSniper?: boolean; // Sniper setup flag (M15/M5 institutional POI + high score)
+  recommendedLot?: number; // Auto-calculated safe lot size
   reasons: string[];
   atr: number;
   timestamp: string;

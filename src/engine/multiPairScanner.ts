@@ -88,6 +88,17 @@ export interface PairAnalysis {
   entryPrice: number;
   suggestedSL: number;
   suggestedTP: number;
+  suggestedTP1?: number;
+  suggestedTP2?: number;
+  suggestedTP3?: number;
+  slPips?: number;
+  targetPips1?: number;
+  targetPips2?: number;
+  targetPips3?: number;
+  targetPips?: number;
+  expiryTimestamp?: number;
+  validitySeconds?: number;
+  isSniper?: boolean;
   riskRewardRatio: number;
   status: 'READY' | 'WAITING' | 'BLOCKED';
   rejectionReason: string | null;
@@ -441,26 +452,41 @@ export function analyzeInstrument(
     scoreHtf + scoreStructure + scoreLiquidity + scoreBosChoch + scoreObFvg + scoreMomentum + scoreSession + scoreSpread
   );
 
-  // 9. Stop Loss & Take Profit (Structure-based)
+  // 9. Stop Loss & Multi-Target Take Profit (Structure-based for Maximum Pips)
   const slBuffer = atr * 0.3;
   let suggestedSL = price;
   let suggestedTP = price;
+  let suggestedTP1 = price;
+  let suggestedTP2 = price;
+  let suggestedTP3 = price;
 
   if (tentativeBias === 'BUY') {
     const swingLowPrice = msM5.lastSwingLow?.price || dr.low;
     suggestedSL = Number(Math.min(price - atr * config.atrSlMultiplier, swingLowPrice - slBuffer).toFixed(config.digits));
     const slDist = Math.max(config.pipSize * 5, price - suggestedSL);
-    suggestedTP = Number((price + slDist * config.minRR).toFixed(config.digits));
+    suggestedTP1 = Number((price + slDist * 1.8).toFixed(config.digits));
+    suggestedTP2 = Number((price + slDist * Math.max(3.2, config.minRR * 1.5)).toFixed(config.digits));
+    suggestedTP3 = Number((price + slDist * Math.max(5.5, config.minRR * 2.8)).toFixed(config.digits));
+    suggestedTP = suggestedTP2; // Primary targets high-pip 3.2R expansion
   } else if (tentativeBias === 'SELL') {
     const swingHighPrice = msM5.lastSwingHigh?.price || dr.high;
     suggestedSL = Number(Math.max(price + atr * config.atrSlMultiplier, swingHighPrice + slBuffer).toFixed(config.digits));
     const slDist = Math.max(config.pipSize * 5, suggestedSL - price);
-    suggestedTP = Number((price - slDist * config.minRR).toFixed(config.digits));
+    suggestedTP1 = Number((price - slDist * 1.8).toFixed(config.digits));
+    suggestedTP2 = Number((price - slDist * Math.max(3.2, config.minRR * 1.5)).toFixed(config.digits));
+    suggestedTP3 = Number((price - slDist * Math.max(5.5, config.minRR * 2.8)).toFixed(config.digits));
+    suggestedTP = suggestedTP2; // Primary targets high-pip 3.2R expansion
   }
 
   const stopDistance = Math.abs(price - suggestedSL);
   const targetDistance = Math.abs(suggestedTP - price);
   const riskRewardRatio = Number((targetDistance / Math.max(0.00001, stopDistance)).toFixed(2));
+
+  const slPips = Number((stopDistance / config.pipSize).toFixed(1));
+  const targetPips1 = Number((Math.abs(suggestedTP1 - price) / config.pipSize).toFixed(1));
+  const targetPips2 = Number((Math.abs(suggestedTP2 - price) / config.pipSize).toFixed(1));
+  const targetPips3 = Number((Math.abs(suggestedTP3 - price) / config.pipSize).toFixed(1));
+  const targetPips = targetPips2;
 
   // 10. Position sizing & Correlation checks
   const sizingResult = calculateSmallAccountPositionSize(equity, riskPct, stopDistance, symbol);
@@ -487,11 +513,23 @@ export function analyzeInstrument(
     }
   }
 
-  // 11. Create Signal object if ready
+  // 11. Timeframe selection (M15 scanning prioritized for maximum pips)
+  const isM15Setup =
+    ((tentativeBias === 'BUY' && m15Trend === 'bullish') ||
+      (tentativeBias === 'SELL' && m15Trend === 'bearish')) &&
+    scoreHtf >= 15;
+  const signalTimeframe: 'M1' | 'M5' | 'M15' = isM15Setup ? 'M15' : 'M5';
+  const validityDurationMs = signalTimeframe === 'M15' ? 15 * 60_000 : 5 * 60_000;
+  const expiryTimestamp = Date.now() + validityDurationMs;
+  const validitySeconds = Math.round(validityDurationMs / 1000);
+  const isSniper = confluenceScore >= 70 && (scoreLiquidity >= 10 || scoreObFvg >= 5);
+
+  // 12. Create Signal object if ready
   let signalObj: Signal | null = null;
   if (tentativeBias !== 'WAITING' && confluenceScore >= 50) {
     const reasons: string[] = [];
     if (scoreHtf >= 15) reasons.push(`HTF ${h1Trend.toUpperCase()} Trend Alignment (+${scoreHtf})`);
+    if (isM15Setup) reasons.push(`M15 Swing Entry Alignment (+15)`);
     if (scoreStructure >= 15) reasons.push(`M5 Structure Confirmation (+${scoreStructure})`);
     if (scoreLiquidity >= 10) reasons.push(`Liquidity Pool Sweep (+${scoreLiquidity})`);
     if (scoreBosChoch >= 10) reasons.push(`BOS/CHoCH Imbalance (+${scoreBosChoch})`);
@@ -500,16 +538,28 @@ export function analyzeInstrument(
 
     signalObj = {
       direction: tentativeBias,
-      timeframe: 'M5',
+      timeframe: signalTimeframe,
       score: Number((confluenceScore / 20).toFixed(1)), // normalized 5-point scale for legacy UI
       entry: Number(price.toFixed(config.digits)),
       sl: suggestedSL,
       tp: suggestedTP,
+      tp1: suggestedTP1,
+      tp2: suggestedTP2,
+      tp3: suggestedTP3,
+      slPips,
+      targetPips1,
+      targetPips2,
+      targetPips3,
+      targetPips,
+      expiryTimestamp,
+      validitySeconds,
+      isSniper,
+      recommendedLot: sizingResult.safeVolume || undefined,
       reasons,
       atr,
       timestamp: new Date().toISOString(),
-      actionReason: `${symbol} ${tentativeBias} (${confluenceScore}/100 Confluence) - 1:${riskRewardRatio} RR`,
-      perfectEntryReason: `SMC ${tentativeBias} confluence with ${reasons.slice(0, 2).join(' + ')}`,
+      actionReason: `${symbol} ${tentativeBias} (${confluenceScore}/100 Confluence) - 1:${riskRewardRatio} RR · Targets: TP1 (${targetPips1}p), TP2 (${targetPips2}p), TP3 (${targetPips3}p)`,
+      perfectEntryReason: `SMC ${signalTimeframe} ${tentativeBias} confluence with ${reasons.slice(0, 2).join(' + ')}`,
       strategy: 'SMC POI Retest',
     };
   }
@@ -556,6 +606,17 @@ export function analyzeInstrument(
     entryPrice: Number(price.toFixed(config.digits)),
     suggestedSL,
     suggestedTP,
+    suggestedTP1,
+    suggestedTP2,
+    suggestedTP3,
+    slPips,
+    targetPips1,
+    targetPips2,
+    targetPips3,
+    targetPips,
+    expiryTimestamp,
+    validitySeconds,
+    isSniper,
     riskRewardRatio,
     status,
     rejectionReason,

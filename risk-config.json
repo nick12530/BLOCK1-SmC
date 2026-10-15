@@ -2,7 +2,7 @@
   "riskPercentPerTrade": 0.5,
   "maxDailyLossPercent": 3,
   "maxConsecutiveLosses": 3,
-  "maxOpenPositions": 3,
+  "maxOpenPositions": 5,
   "maxTradesPerHour": 100,
   "directionCooldownMinutes": 0,
   "samePoiCooldownMinutes": 0,

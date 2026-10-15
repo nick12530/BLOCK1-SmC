@@ -2790,6 +2790,9 @@ export class TradingEngine {
       );
     } else {
       this.slog('KILL SWITCH DISARMED: Engine ready', 'info');
+      if (this.mt5Account.connected) {
+        void mt5Bridge.resetCircuitBreakers().catch(() => {});
+      }
     }
     if (this.mt5Account.connected) {
       this.pendingCentralKillSwitch = this.killSwitch;

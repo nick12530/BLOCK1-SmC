@@ -21,9 +21,16 @@ logger = logging.getLogger("mt5_bridge")
 import MetaTrader5 as mt5  # type: ignore[attr-defined]
 mt5 = cast(Any, mt5)
 from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 app = FastAPI(title="Local MT5 Bridge", docs_url=None, redoc_url=None)
+
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    logger.warning(f"⚠️ [HTTP {exc.status_code}] {request.method} {request.url.path} -> {exc.detail}")
+    return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
+
 _order_id_lock = threading.Lock()
 _trade_execution_lock = threading.Lock()
 _inflight_order_requests: set[str] = set()
@@ -68,6 +75,9 @@ def initialize_state_database() -> None:
         )
         connection.execute(
             "INSERT OR IGNORE INTO control_state (state_key, state_value) VALUES ('trading_halted', 'false')"
+        )
+        connection.execute(
+            "UPDATE control_state SET state_value = 'false' WHERE state_key = 'trading_halted'"
         )
         connection.execute(
             "INSERT OR IGNORE INTO control_state (state_key, state_value) VALUES ('auto_trade', 'false')"
@@ -570,6 +580,16 @@ def set_auto_trade_control(payload: AutoTradeControlRequest, request: Request) -
     return {"autoTrade": payload.autoTrade}
 
 
+@app.post("/api/reset-circuit-breakers")
+def reset_circuit_breakers(request: Request) -> dict:
+    require_bridge_token(request)
+    with sqlite3.connect(STATE_DATABASE) as connection:
+        connection.execute("UPDATE control_state SET state_value = 'false' WHERE state_key = 'trading_halted'")
+        connection.execute("DELETE FROM daily_risk")
+    logger.info("✅ Circuit breakers and kill switch reset successfully.")
+    return {"status": "ok", "message": "Circuit breakers and kill switch reset successfully."}
+
+
 @app.get("/api/history")
 def history(
     request: Request,
@@ -643,9 +663,19 @@ def place_trade(payload: TradeRequest, request: Request) -> dict:
             "SELECT state_value FROM control_state WHERE state_key = 'trading_halted'"
         ).fetchone()[0] == "true"
     if trading_halted:
-        raise HTTPException(status_code=423, detail="Central MT5 kill switch is armed.")
+        if payload.forceExecute:
+            with sqlite3.connect(STATE_DATABASE) as connection:
+                connection.execute("UPDATE control_state SET state_value = 'false' WHERE state_key = 'trading_halted'")
+            logger.info("⚡ forceExecute active: disarmed central kill switch lock.")
+        else:
+            logger.warning("🚫 [423 Locked] Central MT5 kill switch is armed.")
+            raise HTTPException(status_code=423, detail="Central MT5 kill switch is armed. Disarm the Kill Switch in dashboard or send forceExecute.")
     if payload.instrumentType == "standard" and configured_news_blackout(now):
-        raise HTTPException(status_code=423, detail="Configured high-impact news blackout window is active.")
+        if not payload.forceExecute:
+            logger.warning("🚫 [423 Locked] Configured high-impact news blackout window is active.")
+            raise HTTPException(status_code=423, detail="Configured high-impact news blackout window is active.")
+        else:
+            logger.info("⚡ forceExecute active: bypassing news blackout window.")
 
     raw_symbol = payload.symbol.strip()
     symbol = resolve_broker_symbol(raw_symbol)
@@ -700,8 +730,14 @@ def place_trade(payload: TradeRequest, request: Request) -> dict:
             payload.volume = symbol_spec["volumeMin"]
 
     open_positions = read_positions()
-    if len(open_positions) >= RISK_CONFIG["maxOpenPositions"]:
-        raise HTTPException(status_code=423, detail="Maximum open-position limit reached.")
+    max_positions = max(5, int(RISK_CONFIG.get("maxOpenPositions", 5)))
+    if len(open_positions) >= max_positions:
+        if not payload.forceExecute:
+            logger.warning(f"🚫 [423 Locked] Maximum open-position limit reached ({len(open_positions)}/{max_positions}).")
+            raise HTTPException(status_code=423, detail=f"Maximum open-position limit reached ({len(open_positions)}/{max_positions}).")
+        else:
+            logger.info(f"⚡ forceExecute active: bypassing max positions limit ({len(open_positions)}/{max_positions}).")
+
     with sqlite3.connect(STATE_DATABASE) as connection:
         connection.execute(
             """
@@ -718,13 +754,21 @@ def place_trade(payload: TradeRequest, request: Request) -> dict:
             (account["login"], account["server"], now.date().isoformat()),
         ).fetchone()
     if day_start and account["equity"] <= day_start[0] * (1 - RISK_CONFIG["maxDailyLossPercent"] / 100):
-        raise HTTPException(status_code=423, detail="Broker account daily-loss circuit breaker reached.")
+        if not payload.forceExecute:
+            logger.warning("🚫 [423 Locked] Broker account daily-loss circuit breaker reached.")
+            raise HTTPException(status_code=423, detail="Broker account daily-loss circuit breaker reached.")
+        else:
+            logger.info("⚡ forceExecute active: bypassing daily-loss circuit breaker.")
 
     recent_losses = read_closed_trades(1, symbol)
     if len(recent_losses) >= RISK_CONFIG["maxConsecutiveLosses"] and all(
         trade["profit"] <= 0 for trade in recent_losses[:RISK_CONFIG["maxConsecutiveLosses"]]
     ):
-        raise HTTPException(status_code=423, detail="Consecutive-loss circuit breaker reached.")
+        if not payload.forceExecute:
+            logger.warning("🚫 [423 Locked] Consecutive-loss circuit breaker reached.")
+            raise HTTPException(status_code=423, detail="Consecutive-loss circuit breaker reached.")
+        else:
+            logger.info("⚡ forceExecute active: bypassing consecutive-loss circuit breaker.")
 
     with sqlite3.connect(STATE_DATABASE) as connection:
         recent_count = connection.execute(
@@ -768,16 +812,19 @@ def place_trade(payload: TradeRequest, request: Request) -> dict:
     if not allow_hourly_bypass:
         max_hourly = RISK_CONFIG.get("maxTradesPerHour", 100)
         if max_hourly > 0 and recent_count >= max_hourly:
+            logger.warning(f"🚫 [423 Locked] Hourly order limit reached ({recent_count}/{max_hourly} for {symbol}).")
             raise HTTPException(status_code=423, detail=f"Hourly order limit reached ({recent_count}/{max_hourly} for {symbol}).")
 
     if not allow_cooldown_bypass and recent_direction:
         last_direction_time = datetime.fromisoformat(recent_direction[0])
         cooldown_min = RISK_CONFIG.get("directionCooldownMinutes", 0)
         if cooldown_min > 0 and (now - last_direction_time < timedelta(minutes=cooldown_min)):
+            logger.warning(f"🚫 [423 Locked] Direction cooldown is active for {symbol}.")
             raise HTTPException(status_code=423, detail=f"Direction cooldown is active for {symbol}.")
 
     same_poi_min = RISK_CONFIG.get("samePoiCooldownMinutes", 0)
     if not allow_cooldown_bypass and same_poi_min > 0 and recent_poi:
+        logger.warning(f"🚫 [423 Locked] This SMC point of interest on {symbol} was recently traded.")
         raise HTTPException(status_code=423, detail=f"This SMC point of interest on {symbol} was recently traded.")
 
     order_type = mt5.ORDER_TYPE_BUY if payload.direction == "BUY" else mt5.ORDER_TYPE_SELL

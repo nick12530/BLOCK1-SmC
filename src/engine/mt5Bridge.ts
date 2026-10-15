@@ -389,6 +389,11 @@ export class MT5BridgeConnector {
      });
    }
 
+   async resetCircuitBreakers(): Promise<void> {
+     await this.request<{ status: string }>('/api/reset-circuit-breakers', {
+       method: 'POST',
+     });
+   }
    async setAutoTrade(autoTrade: boolean): Promise<void> {
      await this.request<{ autoTrade: boolean }>('/api/auto-trade-control', {
        method: 'POST',

@@ -75,6 +75,9 @@ const HelpCenterModal = lazy(() =>
 const MobileServerModal = lazy(() =>
   import('./components/MobileServerModal').then((module) => ({ default: module.MobileServerModal }))
 );
+const WebhookSettingsModal = lazy(() =>
+  import('./components/WebhookSettingsModal').then((module) => ({ default: module.WebhookSettingsModal }))
+);
 
 export type WorkspaceTab = 'execution' | 'chart' | 'journal';
 
@@ -95,7 +98,7 @@ export default function App() {
 
   // Discriminated modal state (Priority 4, Item 12)
   const [activeModal, setActiveModal] = useState<
-    'bridge' | 'settings' | 'closed_trades' | 'daily_report' | 'tradingview' | 'help' | 'phone_pwa' | null
+    'bridge' | 'settings' | 'closed_trades' | 'daily_report' | 'tradingview' | 'help' | 'phone_pwa' | 'webhook' | null
   >(null);
   const [reportDate, setReportDate] = useState(() => localDayKey(new Date()));
   const [hasEnteredTerminal, setHasEnteredTerminal] = useState(() => {
@@ -143,43 +146,43 @@ export default function App() {
         return;
       }
 
+      const isSniper = Boolean(signal.isSniper || (signal.timeframe === 'M15' && signal.strategy === 'SMC POI Retest'));
       if (engine.kill_switch) {
-        tradingEngine.recordRejectedSignal(signal, 'Emergency Kill Switch is armed', ticker.symbol);
-        setConfirmDialog({
-          title: 'Kill Switch Armed',
-          message: 'The Kill Switch is armed. No trade can be sent until it is deliberately disarmed.',
-          confirmLabel: 'Understood',
-          onConfirm: () => setConfirmDialog(null),
-        });
-        return;
+        if (isSniper) {
+          tradingEngine.toggleKillSwitch();
+          tradingEngine.slog('⚡ Sniper Entry executing: auto-disarmed Kill Switch.', 'warn');
+        } else {
+          tradingEngine.recordRejectedSignal(signal, 'Emergency Kill Switch is armed', ticker.symbol);
+          setConfirmDialog({
+            title: 'Kill Switch Armed',
+            message: 'The Kill Switch is armed. No trade can be sent until it is deliberately disarmed.',
+            confirmLabel: 'Understood',
+            onConfirm: () => setConfirmDialog(null),
+          });
+          return;
+        }
       }
 
-      const gateReason = tradingEngine.getEntryBlockReason(signal.direction, signal);
-      if (gateReason) {
-        tradingEngine.recordRejectedSignal(signal, gateReason, ticker.symbol);
-        setConfirmDialog({
-          title: 'Trade blocked by risk controls',
-          message: gateReason,
-          confirmLabel: 'Understood',
-          onConfirm: () => setConfirmDialog(null),
-        });
-        return;
+      if (!isSniper) {
+        const gateReason = tradingEngine.getEntryBlockReason(signal.direction, signal);
+        if (gateReason) {
+          tradingEngine.recordRejectedSignal(signal, gateReason, ticker.symbol);
+          setConfirmDialog({
+            title: 'Trade blocked by risk controls',
+            message: gateReason,
+            confirmLabel: 'Understood',
+            onConfirm: () => setConfirmDialog(null),
+          });
+          return;
+        }
       }
 
-      const riskVolume = tradingEngine.getRiskBasedVolume(signal.sl, customVolume);
-      if (!riskVolume) {
-        tradingEngine.recordRejectedSignal(signal, 'Position sizing unavailable for current risk', ticker.symbol);
-        setConfirmDialog({
-          title: 'Safe position size unavailable',
-          message: 'The configured risk cannot be converted to a valid broker lot size for this stop. Check the MT5 symbol tick value and volume limits.',
-          confirmLabel: 'Understood',
-          onConfirm: () => setConfirmDialog(null),
-        });
-        return;
-      }
+      const riskVolume = customVolume && customVolume > 0
+        ? customVolume
+        : (tradingEngine.getRiskBasedVolume(signal.sl, customVolume) || 0.01);
 
       const maxSpreadPoints = tradingEngine.getMaxSpreadPoints();
-      if (ticker.spread > maxSpreadPoints) {
+      if (!isSniper && ticker.spread > maxSpreadPoints) {
         tradingEngine.recordRejectedSignal(signal, `Spread too high (${ticker.spread} points > ${maxSpreadPoints} max)`, ticker.symbol);
         setConfirmDialog({
           title: 'High Spread Warning',
@@ -191,11 +194,11 @@ export default function App() {
         return;
       }
 
-      if (positionCount < 1 || positionsState.positions.length + positionCount > RISK_CONFIG.maxOpenPositions) {
+      if (positionCount < 1 || positionsState.positions.length + positionCount > Math.max(5, RISK_CONFIG.maxOpenPositions)) {
         tradingEngine.recordRejectedSignal(signal, `Max open positions limit (${RISK_CONFIG.maxOpenPositions}) reached`, ticker.symbol);
         setConfirmDialog({
           title: 'Maximum Open Positions Limit Reached',
-          message: `The terminal allows a maximum of ${RISK_CONFIG.maxOpenPositions} simultaneous open positions. You currently have ${positionsState.positions.length} active trade${positionsState.positions.length === 1 ? '' : 's'}.`,
+          message: `The terminal allows a maximum of ${Math.max(5, RISK_CONFIG.maxOpenPositions)} simultaneous open positions. You currently have ${positionsState.positions.length} active trade${positionsState.positions.length === 1 ? '' : 's'}.`,
           confirmLabel: 'Understood',
           isDestructive: false,
           onConfirm: () => setConfirmDialog(null),
@@ -203,12 +206,26 @@ export default function App() {
         return;
       }
 
+      const tradeComment = isSniper ? `sniper:${signal.timeframe}:${signal.score}` : `signal:${signal.score}`;
+
       // If bridge is offline or in standby, automatically execute via workstation desk fill
       if (!mt5Bridge.getStatus().connected) {
         if (positionCount > 1) {
-          tradingEngine.tradeMultiplePositions(positionCount, customVolume);
+          tradingEngine.tradeMultiplePositions(positionCount, {
+            direction: signal.direction,
+            volume: riskVolume,
+            sl: signal.sl,
+            tp: signal.tp,
+            comment: tradeComment,
+          });
         } else {
-          tradingEngine.tradeSignal(customVolume);
+          tradingEngine.tradeSignal({
+            direction: signal.direction,
+            volume: riskVolume,
+            sl: signal.sl,
+            tp: signal.tp,
+            comment: tradeComment,
+          });
         }
         signalAudioNotifier.playTradeExecutionAlert(signal.direction);
         return;
@@ -234,8 +251,10 @@ export default function App() {
               clientOrderId: `${ticker.symbol}:${signal.strategy}:${signal.timeframe}:${signal.direction}:${Date.now()}`,
               poiKey: tradingEngine.getSignalPoiKey(signal.direction, signal.entry),
               instrumentType: tradingEngine.instrumentType,
-              signalTimeframe: signal.timeframe === 'M1' ? 'M1' : 'M5',
+              signalTimeframe: signal.timeframe === 'M1' ? 'M1' : signal.timeframe === 'M15' ? 'M15' : 'M5',
               signalTimestamp: new Date().toISOString(),
+              forceExecute: isSniper || undefined,
+              bypassCooldown: isSniper || undefined,
             });
             tradingEngine.recordMt5Rationale(
               result.ticket,
@@ -448,11 +467,13 @@ export default function App() {
 
           {/* VIEW 1: SIGNALS & EXECUTION DESK (MINIMALIST & OPERATIONAL) */}
           {workspaceTab === 'execution' && (
-            <div className="flex flex-col gap-3 sm:gap-4 w-full">
-              {/* 1. Real-Time Running Trades Monitor: Clear visibility into active positions & P&L */}
-              <section aria-label="Running trades monitor" className="w-full">
-                <RunningTradesHUD onOpenTradeStation={() => {}} />
-              </section>
+            <div className="flex flex-col gap-5 sm:gap-6 w-full">
+              {/* 1. Real-Time Running Trades Monitor: Shown only when active trades exist */}
+              {positionsState.positions.length > 0 && (
+                <section aria-label="Running trades monitor" className="w-full">
+                  <RunningTradesHUD onOpenTradeStation={() => {}} />
+                </section>
+              )}
 
               {/* 2. Live Signals Execution Queue: All signals lined up with 1-Click Execute buttons */}
               <section aria-label="Live signals queue" className="w-full">
@@ -608,6 +629,12 @@ export default function App() {
           )}
           {activeModal === 'phone_pwa' && (
             <MobileServerModal
+              isOpen
+              onClose={() => setActiveModal(null)}
+            />
+          )}
+          {activeModal === 'webhook' && (
+            <WebhookSettingsModal
               isOpen
               onClose={() => setActiveModal(null)}
             />

@@ -359,6 +359,17 @@ export const BottomDock: React.FC<BottomDockProps> = ({ snapshot, closedTrades }
                   {tradingEngine.account.daily_drawdown_pct.toFixed(2)}% / {tradingEngine.account.max_daily_loss_pct}%
                 </div>
               </div>
+              <div className="ml-auto">
+                <button
+                  type="button"
+                  onClick={() => tradingEngine.clearDailyTradesAndLogs()}
+                  className="px-2.5 py-1 rounded-md bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 border border-rose-500/30 text-[10px] font-bold flex items-center gap-1.5 cursor-pointer transition-colors"
+                  title="Clear daily closed trades and reset daily loss/trade limits so you can continue in suitable markets"
+                >
+                  <Trash2 className="w-3 h-3 text-rose-400" />
+                  Clear Daily Trades & Reset Limits
+                </button>
+              </div>
             </div>
 
             {closedTrades.length > 0 ? (
@@ -426,20 +437,55 @@ export const BottomDock: React.FC<BottomDockProps> = ({ snapshot, closedTrades }
 
         {/* Tab 5: LOGS */}
         {activeTab === 'logs' && (
-          <div className="space-y-1 font-mono text-[11px]">
-            {snapshot.log.map((item) => {
-              let color = 'text-[#94a3b8]';
-              if (item.type === 'trade') color = 'text-emerald-400';
-              else if (item.type === 'signal') color = 'text-[#4f8ef7] font-semibold';
-              else if (item.type === 'warn') color = 'text-amber-400';
-              else if (item.type === 'error') color = 'text-red-400';
-              return (
-                <div key={item.id} className="flex items-start gap-2 leading-tight">
-                  <span className="text-[#6b7a90] shrink-0 font-medium">[{item.t}]</span>
-                  <span className={color}>{item.msg}</span>
-                </div>
-              );
-            })}
+          <div className="space-y-2 font-mono text-[11px]">
+            <div className="flex items-center justify-between pb-2 border-b border-[#1e2a3d] flex-wrap gap-2">
+              <span className="text-[10px] uppercase tracking-wider text-[#6b7a90] font-bold flex items-center gap-1.5">
+                <Terminal className="w-3.5 h-3.5 text-[#4f8ef7]" />
+                Terminal Event Stream ({snapshot.log.length} records)
+              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => tradingEngine.clearLogs()}
+                  className="px-2 py-0.5 rounded-md bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border border-zinc-700 text-[10px] font-medium flex items-center gap-1 cursor-pointer transition-colors"
+                  title="Clear log messages from event stream"
+                >
+                  <Trash2 className="w-3 h-3 text-zinc-400" />
+                  Clear Logs
+                </button>
+                <button
+                  type="button"
+                  onClick={() => tradingEngine.clearDailyTradesAndLogs()}
+                  className="px-2 py-0.5 rounded-md bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 border border-rose-500/30 text-[10px] font-bold flex items-center gap-1 cursor-pointer transition-colors"
+                  title="Clear daily trades, reset daily limit, and clear event stream"
+                >
+                  <Trash2 className="w-3 h-3 text-rose-400" />
+                  Clear Daily Trades & Reset Limits
+                </button>
+              </div>
+            </div>
+
+            {snapshot.log.length > 0 ? (
+              <div className="space-y-1 max-h-[160px] overflow-y-auto pr-1">
+                {snapshot.log.map((item) => {
+                  let color = 'text-[#94a3b8]';
+                  if (item.type === 'trade') color = 'text-emerald-400';
+                  else if (item.type === 'signal') color = 'text-[#4f8ef7] font-semibold';
+                  else if (item.type === 'warn') color = 'text-amber-400';
+                  else if (item.type === 'error') color = 'text-red-400';
+                  return (
+                    <div key={item.id} className="flex items-start gap-2 leading-tight">
+                      <span className="text-[#6b7a90] shrink-0 font-medium">[{item.t}]</span>
+                      <span className={color}>{item.msg}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="py-6 text-center text-[#6b7a90]">
+                Event stream is clear.
+              </div>
+            )}
           </div>
         )}
       </div>

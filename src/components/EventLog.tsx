@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { EngineLog } from '../types/smc';
+import { tradingEngine } from '../engine/tradingEngine';
 import { Terminal, Shield, CheckCircle, AlertTriangle } from 'lucide-react';
 
 interface EventLogProps {
@@ -25,8 +26,8 @@ export const EventLog: React.FC<EventLogProps> = ({ logs }) => {
           Terminal Event Stream
         </h3>
 
-        {/* Filter buttons */}
-        <div className="flex items-center gap-1 text-[11px] font-mono">
+        {/* Filter & Action buttons */}
+        <div className="flex items-center gap-1.5 text-[11px] font-mono flex-wrap">
           <button
             onClick={() => setFilter('all')}
             className={`px-1.5 py-0.5 rounded transition-colors ${
@@ -64,6 +65,23 @@ export const EventLog: React.FC<EventLogProps> = ({ logs }) => {
             }`}
           >
             Alerts
+          </button>
+          <span className="text-zinc-600">|</span>
+          <button
+            type="button"
+            onClick={() => tradingEngine.clearLogs()}
+            className="px-1.5 py-0.5 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border border-zinc-700 text-[10px] cursor-pointer transition-colors"
+            title="Clear event stream logs"
+          >
+            Clear
+          </button>
+          <button
+            type="button"
+            onClick={() => tradingEngine.clearDailyTradesAndLogs()}
+            className="px-1.5 py-0.5 rounded bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/30 text-[10px] font-bold cursor-pointer transition-colors"
+            title="Clear daily trades & reset limits"
+          >
+            Reset Daily
           </button>
         </div>
       </div>

@@ -100,7 +100,7 @@ export const LiveExecutionCard: React.FC<LiveExecutionCardProps> = React.memo(({
   };
 
   return (
-    <div className="bg-white dark:bg-[#0c0e12] border border-slate-200 dark:border-zinc-800 rounded-xl sm:rounded-2xl p-2.5 sm:p-4.5 flex flex-col justify-between shadow-xs space-y-2.5 sm:space-y-4 font-mono text-xs transition-colors">
+    <div className="bg-white dark:bg-[#0c0e12] border border-slate-200 dark:border-zinc-800 rounded-2xl p-4 sm:p-6 flex flex-col justify-between shadow-xs space-y-4 sm:space-y-5 font-mono text-xs transition-colors">
       {/* Top Header: Title, Active Orders Counter & Bulk Actions */}
       <div className="flex items-center justify-between border-b border-slate-100 dark:border-zinc-800/80 pb-3 flex-wrap gap-2">
         <div className="flex items-center gap-2 flex-wrap">

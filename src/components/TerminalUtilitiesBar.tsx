@@ -19,11 +19,12 @@ import {
   VolumeX,
   AlertOctagon,
   Smartphone,
+  Bell,
 } from 'lucide-react';
 
 interface TerminalUtilitiesBarProps {
   onOpenModal: (
-    modal: 'bridge' | 'settings' | 'daily_report' | 'tradingview' | 'help' | 'phone_pwa'
+    modal: 'bridge' | 'settings' | 'daily_report' | 'tradingview' | 'help' | 'phone_pwa' | 'webhook'
   ) => void;
   onToggleKillSwitchPrompt: () => void;
 }
@@ -136,6 +137,16 @@ export const TerminalUtilitiesBar: React.FC<TerminalUtilitiesBarProps> = React.m
         >
           <Smartphone className="w-4 h-4 text-sky-600 dark:text-sky-400" />
           <span className="lg:hidden">Phone app</span>
+        </button>
+
+        <button
+          onClick={() => onOpenModal('webhook')}
+          className="min-h-11 min-w-11 rounded-lg border bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/20 dark:hover:bg-amber-950/40 border-amber-300 dark:border-amber-800/60 text-amber-600 dark:text-amber-400 transition-colors cursor-pointer flex items-center justify-center text-xs"
+          title="Instant Telegram Push Alerts & External Webhooks"
+          aria-label="Configure Telegram and Webhook Alerts"
+        >
+          <Bell className="w-4 h-4 text-amber-500" />
+          <span className="lg:hidden ml-1 font-bold">Alerts</span>
         </button>
       </div>
     </div>

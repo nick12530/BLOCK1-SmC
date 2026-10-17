@@ -576,6 +576,17 @@ export function evaluateConfluence(
   if (sweep.hasSweep) {
     score += 1.5;
     reasons.push(`${sweep.description} (+1.5)`);
+
+    // Tighten SL to the swept wick invalidation level for precision sniper entry
+    if (sweep.sweptPrice) {
+      const sniperSl = direction === 'BUY'
+        ? Number((sweep.sweptPrice - 0.2 * atrNow).toFixed(2))
+        : Number((sweep.sweptPrice + 0.2 * atrNow).toFixed(2));
+      if (Math.abs(price - sniperSl) < Math.abs(price - sl)) {
+        sl = sniperSl;
+        reasons.push(`🎯 Sniper Stop Loss calibrated strictly to swept liquidity wick ($${sweep.sweptPrice.toFixed(1)})`);
+      }
+    }
   }
 
   if (!sess.tradable) return null;
@@ -616,7 +627,6 @@ export function evaluateConfluence(
     : `${((lowerWick / range) * 100).toFixed(0)}% Lower Wick`;
 
   const patternName = activePattern.name;
-
   const tf = timeframe;
   const explanation = isBear
     ? `${tf} candle at ${lastCandle.timeStr} swept into premium supply at $${lastCandle.high.toFixed(2)}, meeting heavy institutional sell volume and closing down at $${lastCandle.close.toFixed(2)}. ${zone ? `Rejection confirmed off ${zone.kind} Supply (${zone.bottom}-${zone.top}).` : ''}`
@@ -669,7 +679,21 @@ export function evaluateConfluence(
   const validitySeconds = Math.max(0, Math.round((expiryTimestamp - now) / 1000));
 
   // Sniper setup criteria: M15 or M5 timeframe, fresh POI or liquidity sweep, score >= 4.2
-  const isSniper = (timeframe === 'M15' || timeframe === 'M5') && score >= 4.2;
+  const isSniper = (timeframe === 'M15' || timeframe === 'M5') && (score >= 4.2 || (sweep.hasSweep && score >= 3.8));
+  const sniperQualityIndex = Math.min(100, Math.max(50, Math.round((score / 6.0) * 100)));
+  const sniperGrade: 'A+' | 'A' | 'B' = sniperQualityIndex >= 88 ? 'A+' : sniperQualityIndex >= 75 ? 'A' : 'B';
+  const optimalTradeEntry = sweep.hasSweep && sweep.sweptPrice
+    ? direction === 'BUY'
+      ? Number((sweep.sweptPrice + 0.62 * (lastCandle.high - sweep.sweptPrice)).toFixed(2))
+      : Number((sweep.sweptPrice - 0.62 * (sweep.sweptPrice - lastCandle.low)).toFixed(2))
+    : zone
+    ? Number(((zone.bottom + zone.top) / 2).toFixed(2))
+    : Number(price.toFixed(2));
+  const mitigationType = sweep.hasSweep
+    ? 'Liquidity Sweep (SFP)'
+    : zone
+    ? `${zone.kind} (${zone.bullish ? 'Demand' : 'Supply'})`
+    : 'Structural POI Retest';
 
   return {
     direction,
@@ -689,6 +713,10 @@ export function evaluateConfluence(
     expiryTimestamp,
     validitySeconds,
     isSniper,
+    sniperQualityIndex,
+    sniperGrade,
+    optimalTradeEntry,
+    mitigationType,
     reasons,
     atr: Number(atrNow.toFixed(2)),
     timestamp: new Date(Math.min(toMilliseconds(lastCandle.time), Date.now())).toISOString(),

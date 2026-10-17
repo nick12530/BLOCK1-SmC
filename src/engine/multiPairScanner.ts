@@ -25,6 +25,8 @@ import type {
 import { calculateATR, detectFVGs, detectOrderBlocks, MarketStructureEngine } from './smcCore';
 import { INSTRUMENTS, SupportedSymbol, getInstrumentConfig } from './instrumentConfig';
 import { getGlobalSessionStatus, isSessionPreferredForPair, evaluateNewsRisk } from './sessionTimezones';
+import { dispatchSniperAlert } from '../utils/webhookNotifier';
+import { analyzeGoldCandlestickPatterns, CandlestickPatternMatch } from './candlestickPatterns';
 
 export interface LiquidityLevels {
   equalHighs: number[];
@@ -82,7 +84,9 @@ export interface PairAnalysis {
     momentumConfirm: number;   // max 10
     sessionConfirm: number;    // max 5
     spreadAcceptable: number;  // max 5
+    candleConfirm?: number;    // max 10
   };
+  candlestickPattern?: CandlestickPatternMatch;
 
   // Execution Readiness & Risk Sizing
   entryPrice: number;
@@ -99,6 +103,9 @@ export interface PairAnalysis {
   expiryTimestamp?: number;
   validitySeconds?: number;
   isSniper?: boolean;
+  sniperQualityIndex?: number;
+  sniperGrade?: 'A+' | 'A' | 'B';
+  optimalTradeEntry?: number;
   riskRewardRatio: number;
   status: 'READY' | 'WAITING' | 'BLOCKED';
   rejectionReason: string | null;
@@ -447,9 +454,19 @@ export function analyzeInstrument(
     scoreSpread = 2;
   }
 
+  // +10 Candlestick confirmation pattern (pinbar/reversal at POI)
+  const candleAnalysis = analyzeGoldCandlestickPatterns(candlesM5.length >= 4 ? candlesM5 : candlesM15);
+  const candlePattern = candleAnalysis.activePattern;
+  let scoreCandle = 0;
+  if (tentativeBias === 'BUY' && candlePattern.bias === 'BULLISH' && candlePattern.reliability >= 60) {
+    scoreCandle = Math.round((candlePattern.reliability / 100) * 10);
+  } else if (tentativeBias === 'SELL' && candlePattern.bias === 'BEARISH' && candlePattern.reliability >= 60) {
+    scoreCandle = Math.round((candlePattern.reliability / 100) * 10);
+  }
+
   const confluenceScore = Math.min(
     100,
-    scoreHtf + scoreStructure + scoreLiquidity + scoreBosChoch + scoreObFvg + scoreMomentum + scoreSession + scoreSpread
+    scoreHtf + scoreStructure + scoreLiquidity + scoreBosChoch + scoreObFvg + scoreMomentum + scoreSession + scoreSpread + scoreCandle
   );
 
   // 9. Stop Loss & Multi-Target Take Profit (Structure-based for Maximum Pips)
@@ -523,6 +540,17 @@ export function analyzeInstrument(
   const expiryTimestamp = Date.now() + validityDurationMs;
   const validitySeconds = Math.round(validityDurationMs / 1000);
   const isSniper = confluenceScore >= 70 && (scoreLiquidity >= 10 || scoreObFvg >= 5);
+  const sniperQualityIndex = confluenceScore;
+  const sniperGrade: 'A+' | 'A' | 'B' = confluenceScore >= 88 ? 'A+' : confluenceScore >= 75 ? 'A' : 'B';
+  const swingLow = msM5.lastSwingLow?.price || dr.low;
+  const swingHigh = msM5.lastSwingHigh?.price || dr.high;
+  const legSpan = Math.max(config.pipSize * 10, swingHigh - swingLow);
+  const oteBuy = swingLow + 0.382 * legSpan; // 61.8% retracement into discount sweet spot
+  const oteSell = swingLow + 0.618 * legSpan; // 61.8% retracement into premium sweet spot
+  const optimalTradeEntry = tentativeBias === 'BUY'
+    ? Number(oteBuy.toFixed(config.digits))
+    : Number(oteSell.toFixed(config.digits));
+  const mitigationType = scoreLiquidity >= 10 ? 'Liquidity Pool Sweep (SFP)' : scoreObFvg >= 5 ? 'Order Block Mitigation' : 'Structural POI Retest';
 
   // 12. Create Signal object if ready
   let signalObj: Signal | null = null;
@@ -535,6 +563,7 @@ export function analyzeInstrument(
     if (scoreBosChoch >= 10) reasons.push(`BOS/CHoCH Imbalance (+${scoreBosChoch})`);
     if (scoreObFvg >= 5) reasons.push(`Discount/Premium POI Retest (+${scoreObFvg})`);
     if (scoreSession >= 5) reasons.push(`${sessions.activeSessionName} (+${scoreSession})`);
+    if (scoreCandle >= 5) reasons.push(`${candlePattern.name} (${candlePattern.bias}) (+${scoreCandle})`);
 
     signalObj = {
       direction: tentativeBias,
@@ -554,6 +583,10 @@ export function analyzeInstrument(
       expiryTimestamp,
       validitySeconds,
       isSniper,
+      sniperQualityIndex,
+      sniperGrade,
+      optimalTradeEntry,
+      mitigationType,
       recommendedLot: sizingResult.safeVolume || undefined,
       reasons,
       atr,
@@ -561,7 +594,31 @@ export function analyzeInstrument(
       actionReason: `${symbol} ${tentativeBias} (${confluenceScore}/100 Confluence) - 1:${riskRewardRatio} RR · Targets: TP1 (${targetPips1}p), TP2 (${targetPips2}p), TP3 (${targetPips3}p)`,
       perfectEntryReason: `SMC ${signalTimeframe} ${tentativeBias} confluence with ${reasons.slice(0, 2).join(' + ')}`,
       strategy: 'SMC POI Retest',
+      candlestickPattern: candlePattern,
     };
+
+    if (isSniper) {
+      void dispatchSniperAlert({
+        symbol,
+        direction: tentativeBias,
+        timeframe: signalTimeframe,
+        strategy: 'SMC POI Retest',
+        entry: Number(price.toFixed(config.digits)),
+        sl: suggestedSL,
+        tp1: suggestedTP1,
+        tp2: suggestedTP2,
+        tp3: suggestedTP3,
+        slPips,
+        tp1Pips: targetPips1,
+        tp2Pips: targetPips2,
+        tp3Pips: targetPips3,
+        confluenceScore,
+        recommendedLot: sizingResult.safeVolume || undefined,
+        sniperGrade,
+        optimalTradeEntry,
+        triggerPattern: candlePattern.name !== 'Neutral Price Action' ? candlePattern.name : undefined,
+      });
+    }
   }
 
   return {
@@ -602,7 +659,9 @@ export function analyzeInstrument(
       momentumConfirm: scoreMomentum,
       sessionConfirm: scoreSession,
       spreadAcceptable: scoreSpread,
+      candleConfirm: scoreCandle,
     },
+    candlestickPattern: candlePattern,
     entryPrice: Number(price.toFixed(config.digits)),
     suggestedSL,
     suggestedTP,
@@ -617,6 +676,9 @@ export function analyzeInstrument(
     expiryTimestamp,
     validitySeconds,
     isSniper,
+    sniperQualityIndex,
+    sniperGrade,
+    optimalTradeEntry,
     riskRewardRatio,
     status,
     rejectionReason,

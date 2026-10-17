@@ -22,6 +22,7 @@ import {
   History,
   Bot,
   Smartphone,
+  Bell,
 } from 'lucide-react';
 import { signalAudioNotifier } from '../utils/audioNotification';
 import { MarketOpensTimer } from './MarketOpensTimer';
@@ -30,7 +31,7 @@ interface HeaderViewProps {
   isDark: boolean;
   onToggleTheme: () => void;
   onOpenModal: (
-    modal: 'bridge' | 'settings' | 'closed_trades' | 'daily_report' | 'tradingview' | 'help' | 'phone_pwa'
+    modal: 'bridge' | 'settings' | 'closed_trades' | 'daily_report' | 'tradingview' | 'help' | 'phone_pwa' | 'webhook'
   ) => void;
   onToggleKillSwitchPrompt?: () => void;
 }
@@ -189,6 +190,16 @@ export const HeaderView: React.FC<HeaderViewProps> = React.memo(({
               title="Mobile Standalone Web App & Phone Server Hub (PWA / Termux / iSH)"
             >
               <Smartphone className="w-5 h-5" />
+            </button>
+
+            {/* External Webhook & Telegram Alerts */}
+            <button
+              type="button"
+              onClick={() => onOpenModal('webhook')}
+              className="p-2 rounded-lg hover:bg-white dark:hover:bg-zinc-800 text-amber-500 hover:text-amber-400 transition-colors cursor-pointer"
+              title="Telegram Push Alerts & External Webhooks"
+            >
+              <Bell className="w-5 h-5 text-amber-500" />
             </button>
 
             {/* Risk / Safeguards */}

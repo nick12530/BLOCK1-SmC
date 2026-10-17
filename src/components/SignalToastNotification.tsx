@@ -14,6 +14,7 @@ import { useMarket, useTicker, usePositions, useScannerAnalyses } from '../hooks
 import { tradingEngine } from '../engine/tradingEngine';
 import { getInstrumentConfig, SupportedSymbol } from '../engine/instrumentConfig';
 import { Signal } from '../types/smc';
+import { MTFConfluenceRadar } from './MTFConfluenceRadar';
 import {
   Crosshair,
   TrendingUp,
@@ -29,6 +30,9 @@ import {
   ArrowUpRight,
   ArrowDownRight,
   Target,
+  Minus,
+  Plus,
+  RotateCcw,
 } from 'lucide-react';
 
 interface SignalToastNotificationProps {
@@ -147,6 +151,16 @@ export const SignalToastNotification: React.FC<SignalToastNotificationProps> = (
     return calculated || signal.recommendedLot || 0.01;
   }, [signal, ticker.balance, ticker.equity]);
 
+  // Space for adjusting lot size with user overrides
+  const [customLot, setCustomLot] = useState<number>(0.01);
+  const [isLotCustomized, setIsLotCustomized] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (!isLotCustomized && autoLotSize > 0) {
+      setCustomLot(autoLotSize);
+    }
+  }, [autoLotSize, isLotCustomized]);
+
   if (!signal || !isSniper || hasPassed) {
     return null;
   }
@@ -155,6 +169,9 @@ export const SignalToastNotification: React.FC<SignalToastNotificationProps> = (
   const isBuy = activeDirection === 'BUY';
   const activeEntry = signal.entry;
   const activeSL = signal.sl;
+
+  // Active lot: either user-customized or optimal auto risk-sized
+  const activeLot = Math.max(0.01, Math.min(100, Number(customLot) || autoLotSize || 0.01));
 
   // Multi-target TP 1, TP 2, TP 3 values
   const riskDist = Math.abs(activeEntry - activeSL);
@@ -172,10 +189,16 @@ export const SignalToastNotification: React.FC<SignalToastNotificationProps> = (
   const chosenTp = selectedTpTarget === 'tp1' ? activeTP1 : selectedTpTarget === 'tp3' ? activeTP3 : activeTP2;
   const chosenPips = selectedTpTarget === 'tp1' ? tp1Pips : selectedTpTarget === 'tp3' ? tp3Pips : tp2Pips;
 
-  // Dollars at risk and potential reward
-  const pipVal = cfg.pipValuePerMicroLot * (autoLotSize / 0.01);
+  // Dollars at risk and potential reward based on ACTIVE ADJUSTED lot
+  const pipVal = cfg.pipValuePerMicroLot * (activeLot / 0.01);
   const potentialRiskUsd = Number((slPips * pipVal).toFixed(2));
   const potentialRewardUsd = Number((chosenPips * pipVal).toFixed(2));
+
+  // Timer phase calculations
+  const totalDurationSec = signal.timeframe === 'M15' ? 15 * 60 : 5 * 60;
+  const timerProgressPct = Math.max(0, Math.min(100, (remainingSec / totalDurationSec) * 100));
+  const timerPhase: 'optimal' | 'retest' | 'expiring' =
+    remainingSec > totalDurationSec * 0.45 ? 'optimal' : remainingSec > 60 ? 'retest' : 'expiring';
 
   // Simultaneous positions
   const maxSimultaneous = 5;
@@ -210,11 +233,11 @@ export const SignalToastNotification: React.FC<SignalToastNotificationProps> = (
       }
 
       if (onExecuteSignal) {
-        await onExecuteSignal(autoLotSize, 1, orderSignal);
+        await onExecuteSignal(activeLot, 1, orderSignal);
       } else {
         const res = tradingEngine.sendMarket(
           activeDirection,
-          autoLotSize,
+          activeLot,
           activeSL,
           chosenTp,
           `sniper:${signal.timeframe}:${signal.score}`,
@@ -227,7 +250,7 @@ export const SignalToastNotification: React.FC<SignalToastNotificationProps> = (
 
       signalAudioNotifier.playTradeExecutionAlert(activeDirection);
       setFeedback({
-        msg: `🎯 SNIPER FILLED: ${activeDirection} ${autoLotSize}L ${activeSymbol} @ ${activeEntry} | TP: ${chosenTp} (+${chosenPips}p)`,
+        msg: `🎯 SNIPER FILLED: ${activeDirection} ${activeLot}L ${activeSymbol} @ ${activeEntry} | TP: ${chosenTp} (+${chosenPips}p)`,
         type: 'success',
       });
       setTimeout(() => {
@@ -278,10 +301,19 @@ export const SignalToastNotification: React.FC<SignalToastNotificationProps> = (
               </div>
 
               <div className="flex items-center gap-2">
-                {/* Entry Countdown Badge */}
-                <div className="flex items-center gap-1 px-2 py-1 rounded-lg bg-zinc-900 border border-amber-500/40 text-amber-300 text-[11px] font-bold">
-                  <Clock className="w-3 h-3 text-amber-400 animate-pulse" />
-                  <span>{formatTimer(remainingSec)}</span>
+                {/* Entry Countdown Badge with Phase Indicator */}
+                <div
+                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[11px] font-bold ${
+                    timerPhase === 'optimal'
+                      ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300'
+                      : timerPhase === 'retest'
+                      ? 'bg-amber-500/15 border-amber-500/40 text-amber-300'
+                      : 'bg-rose-500/20 border-rose-500/50 text-rose-300 animate-pulse'
+                  }`}
+                  title={`${timerPhase === 'optimal' ? 'Optimal Entry' : timerPhase === 'retest' ? 'Retest Window' : 'Expiring Soon'} · ${formatTimer(remainingSec)} left`}
+                >
+                  <Clock className={`w-3.5 h-3.5 ${timerPhase === 'optimal' ? 'text-emerald-400' : timerPhase === 'retest' ? 'text-amber-400' : 'text-rose-400 animate-pulse'}`} />
+                  <span className="font-mono">{formatTimer(remainingSec)}</span>
                 </div>
 
                 <button
@@ -290,6 +322,30 @@ export const SignalToastNotification: React.FC<SignalToastNotificationProps> = (
                 >
                   <X className="w-4 h-4" />
                 </button>
+              </div>
+            </div>
+
+            {/* Visual Timer Progress Bar */}
+            <div className="space-y-1">
+              <div className="flex items-center justify-between text-[9px] uppercase tracking-wider font-bold">
+                <span className={timerPhase === 'optimal' ? 'text-emerald-400' : timerPhase === 'retest' ? 'text-amber-400' : 'text-rose-400'}>
+                  {timerPhase === 'optimal' ? '● Optimal Entry Window' : timerPhase === 'retest' ? '▲ Institutional POI Retest' : '⚠ Expiring Soon - Last Call'}
+                </span>
+                <span className="text-zinc-500 font-mono">
+                  {Math.round(timerProgressPct)}% window remaining ({signal.timeframe})
+                </span>
+              </div>
+              <div className="w-full bg-zinc-800/80 h-1.5 rounded-full overflow-hidden">
+                <div
+                  className={`h-full transition-all duration-1000 ${
+                    timerPhase === 'optimal'
+                      ? 'bg-emerald-500'
+                      : timerPhase === 'retest'
+                      ? 'bg-amber-500'
+                      : 'bg-rose-500 animate-pulse'
+                  }`}
+                  style={{ width: `${timerProgressPct}%` }}
+                />
               </div>
             </div>
 
@@ -310,6 +366,9 @@ export const SignalToastNotification: React.FC<SignalToastNotificationProps> = (
                 <span className="font-bold">{feedback.msg}</span>
               </div>
             )}
+
+            {/* Top-Down Multi-Timeframe Alignment Radar */}
+            <MTFConfluenceRadar symbol={activeSymbol} signal={signal} direction={activeDirection} compact={true} />
 
             {/* Multi-Target Grid: Entry, SL, TP 1, TP 2, TP 3 */}
             <div className="space-y-2">
@@ -428,30 +487,169 @@ export const SignalToastNotification: React.FC<SignalToastNotificationProps> = (
               </div>
             </div>
 
-            {/* Auto-Calculated Lot Size & Risk Engine Card */}
-            <div className="p-3 rounded-xl bg-zinc-900/90 border border-zinc-800 space-y-2 text-xs">
+            {/* Spacious Lot Size & Sizing Adjustment Section */}
+            <div className="p-3.5 rounded-xl bg-zinc-900/90 border border-zinc-800 space-y-2.5 text-xs">
               <div className="flex items-center justify-between">
-                <span className="text-[11px] text-zinc-400 flex items-center gap-1.5">
-                  <ShieldCheck className="w-3.5 h-3.5 text-amber-400" />
-                  <span>Auto-Calculated Lot:</span>
+                <span className="text-[11px] font-bold uppercase tracking-wider text-zinc-300 flex items-center gap-1.5">
+                  <ShieldCheck className="w-4 h-4 text-amber-400" />
+                  <span>Execution Lot Size</span>
                 </span>
-                <span className="text-xs font-black text-amber-300 font-mono">
-                  {autoLotSize.toFixed(2)} Lots (Auto Risk Sized)
-                </span>
+                {isLotCustomized && customLot !== autoLotSize ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCustomLot(autoLotSize);
+                      setIsLotCustomized(false);
+                    }}
+                    className="text-[10px] text-amber-400 hover:text-amber-300 flex items-center gap-1 underline font-semibold cursor-pointer"
+                  >
+                    <RotateCcw className="w-2.5 h-2.5" />
+                    Reset to Auto ({autoLotSize.toFixed(2)}L)
+                  </button>
+                ) : (
+                  <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20">
+                    Auto-Risk Sized
+                  </span>
+                )}
               </div>
 
-              <div className="flex items-center justify-between text-[11px] text-zinc-400 border-t border-zinc-800/80 pt-1.5">
-                <span>Selected Target Potential:</span>
-                <span className="font-bold text-emerald-400">
-                  +${potentialRewardUsd} USD (+{chosenPips} pips)
-                </span>
+              {/* Stepper Controls and Numeric Input */}
+              <div className="flex items-center justify-between gap-1.5 bg-black/50 p-1.5 rounded-xl border border-zinc-800">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCustomLot((prev) => Math.max(0.01, Number((prev - 0.05).toFixed(2))));
+                    setIsLotCustomized(true);
+                  }}
+                  className="px-2 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-bold transition-colors cursor-pointer"
+                  title="Decrease 0.05 lot"
+                >
+                  -0.05
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCustomLot((prev) => Math.max(0.01, Number((prev - 0.01).toFixed(2))));
+                    setIsLotCustomized(true);
+                  }}
+                  className="p-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-200 transition-colors cursor-pointer"
+                  title="Decrease 0.01 lot"
+                >
+                  <Minus className="w-3.5 h-3.5" />
+                </button>
+
+                <div className="flex-1 flex items-center justify-center">
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0.01"
+                    max="100"
+                    value={customLot}
+                    onChange={(e) => {
+                      const v = parseFloat(e.target.value);
+                      if (!isNaN(v) && v > 0) {
+                        setCustomLot(Number(v.toFixed(2)));
+                        setIsLotCustomized(true);
+                      }
+                    }}
+                    className="w-24 text-center font-black text-sm bg-zinc-900 border border-amber-500/50 rounded-lg py-1 text-amber-300 tabular-nums focus:border-amber-400 focus:outline-none"
+                  />
+                  <span className="text-[10px] font-bold text-zinc-500 ml-1.5">LOTS</span>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCustomLot((prev) => Math.min(100, Number((prev + 0.01).toFixed(2))));
+                    setIsLotCustomized(true);
+                  }}
+                  className="p-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-200 transition-colors cursor-pointer"
+                  title="Increase 0.01 lot"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCustomLot((prev) => Math.min(100, Number((prev + 0.05).toFixed(2))));
+                    setIsLotCustomized(true);
+                  }}
+                  className="px-2 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-bold transition-colors cursor-pointer"
+                  title="Increase 0.05 lot"
+                >
+                  +0.05
+                </button>
               </div>
 
-              <div className="flex items-center justify-between text-[11px] text-zinc-400">
-                <span>Simultaneous Trades:</span>
-                <span className={`font-bold ${canOpenTrade ? 'text-zinc-300' : 'text-rose-400'}`}>
-                  {activePositionsCount} of {maxSimultaneous} slots active
-                </span>
+              {/* Quick Lot Preset Buttons */}
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCustomLot(0.01);
+                    setIsLotCustomized(true);
+                  }}
+                  className={`px-2 py-1 rounded-lg text-[10px] font-bold border transition-colors cursor-pointer ${
+                    activeLot === 0.01
+                      ? 'bg-amber-500/20 text-amber-300 border-amber-500/50'
+                      : 'bg-zinc-800 text-zinc-400 border-zinc-700 hover:text-white'
+                  }`}
+                >
+                  0.01 Min
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCustomLot(autoLotSize);
+                    setIsLotCustomized(false);
+                  }}
+                  className={`px-2 py-1 rounded-lg text-[10px] font-bold border transition-colors cursor-pointer ${
+                    !isLotCustomized || activeLot === autoLotSize
+                      ? 'bg-amber-500/20 text-amber-300 border-amber-500/50'
+                      : 'bg-zinc-800 text-zinc-400 border-zinc-700 hover:text-white'
+                  }`}
+                >
+                  Auto ({autoLotSize.toFixed(2)}L)
+                </button>
+                {[0.05, 0.1, 0.2, 0.5].map((val) => (
+                  <button
+                    key={val}
+                    type="button"
+                    onClick={() => {
+                      setCustomLot(val);
+                      setIsLotCustomized(true);
+                    }}
+                    className={`px-2 py-1 rounded-lg text-[10px] font-bold border transition-colors cursor-pointer ${
+                      activeLot === val && isLotCustomized
+                        ? 'bg-amber-500/20 text-amber-300 border-amber-500/50'
+                        : 'bg-zinc-800 text-zinc-400 border-zinc-700 hover:text-white'
+                    }`}
+                  >
+                    {val.toFixed(2)}L
+                  </button>
+                ))}
+              </div>
+
+              {/* Risk & Reward Readouts dynamically driven by adjusted lot */}
+              <div className="border-t border-zinc-800/80 pt-2 space-y-1.5 text-[11px]">
+                <div className="flex items-center justify-between text-zinc-400">
+                  <span>Selected Potential Reward:</span>
+                  <span className="font-bold text-emerald-400">
+                    +${potentialRewardUsd} USD (+{chosenPips} pips)
+                  </span>
+                </div>
+                <div className="flex items-center justify-between text-zinc-400">
+                  <span>Capital Risk at SL:</span>
+                  <span className="font-bold text-rose-400">
+                    -${potentialRiskUsd} USD (-{slPips} pips)
+                  </span>
+                </div>
+                <div className="flex items-center justify-between text-zinc-400">
+                  <span>Simultaneous Positions:</span>
+                  <span className={`font-bold ${canOpenTrade ? 'text-zinc-300' : 'text-rose-400'}`}>
+                    {activePositionsCount} of {maxSimultaneous} slots active
+                  </span>
+                </div>
               </div>
             </div>
 
@@ -483,7 +681,7 @@ export const SignalToastNotification: React.FC<SignalToastNotificationProps> = (
                     ? 'EXECUTING...'
                     : !canOpenTrade
                     ? 'MAX 5 TRADES REACHED'
-                    : `EXECUTE SNIPER ${activeDirection} (${autoLotSize.toFixed(2)}L · ${selectedTpTarget.toUpperCase()})`}
+                    : `EXECUTE SNIPER ${activeDirection} (${activeLot.toFixed(2)}L · ${selectedTpTarget.toUpperCase()})`}
                 </span>
               </button>
             </div>
@@ -496,7 +694,7 @@ export const SignalToastNotification: React.FC<SignalToastNotificationProps> = (
         <button
           onClick={() => setIsOpen((prev) => !prev)}
           title={`Sniper ${activeDirection} Setup on ${activeSymbol} · ${formatTimer(remainingSec)} remaining`}
-          className="relative flex items-center gap-2.5 px-3.5 py-2.5 rounded-full bg-[#0a0d14] border border-amber-500/70 text-white shadow-[0_10px_30px_rgba(245,158,11,0.25)] hover:border-amber-400 hover:scale-105 active:scale-95 transition-all cursor-pointer ring-1 ring-amber-500/30"
+          className="relative flex items-center gap-2.5 px-3.5 py-2.5 rounded-full bg-[#0a0d14] border border-amber-500/70 text-white shadow-[0_10px_30px_rgba(245,158,11,0.25)] hover:border-amber-400 hover:scale-105 active:scale-95 transition-all cursor-pointer ring-1 ring-amber-500/30 overflow-hidden"
         >
           {/* Target Reticle Icon */}
           <span className="relative flex h-3 w-3 items-center justify-center">
@@ -511,15 +709,35 @@ export const SignalToastNotification: React.FC<SignalToastNotificationProps> = (
           </span>
 
           {/* Entry Countdown Timer Pill */}
-          <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-amber-500/20 text-amber-200 border border-amber-500/40 flex items-center gap-1">
-            <Clock className="w-3 h-3 text-amber-300 animate-pulse" />
+          <span
+            className={`text-[10px] font-bold px-2 py-0.5 rounded-md border flex items-center gap-1 ${
+              timerPhase === 'optimal'
+                ? 'bg-emerald-500/20 text-emerald-200 border-emerald-500/40'
+                : timerPhase === 'retest'
+                ? 'bg-amber-500/20 text-amber-200 border-amber-500/40'
+                : 'bg-rose-500/20 text-rose-200 border-rose-500/40 animate-pulse'
+            }`}
+          >
+            <Clock className="w-3 h-3 text-current animate-pulse" />
             <span>{formatTimer(remainingSec)}</span>
           </span>
 
-          {/* Auto Lot Pill */}
+          {/* Active Lot Pill */}
           <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-300 border border-zinc-700 hidden sm:inline-block">
-            {autoLotSize.toFixed(2)}L
+            {activeLot.toFixed(2)}L
           </span>
+
+          {/* Subtle bottom edge progress bar */}
+          <div
+            className={`absolute bottom-0 left-0 h-0.5 transition-all duration-1000 ${
+              timerPhase === 'optimal'
+                ? 'bg-emerald-400'
+                : timerPhase === 'retest'
+                ? 'bg-amber-400'
+                : 'bg-rose-500'
+            }`}
+            style={{ width: `${timerProgressPct}%` }}
+          />
         </button>
       </div>
     </>

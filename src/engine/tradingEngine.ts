@@ -63,6 +63,7 @@ import {
   reconcileRunningJournalTrades,
   TradeRationales,
   TradeOrderBlocks,
+  clearAllJournal,
 } from './tradeJournal';
 import type { JournalSignalRecord, JournalTradeRecord } from '../types/smc';
 import { INSTRUMENTS, SUPPORTED_SYMBOLS, SupportedSymbol, getInstrumentConfig } from './instrumentConfig';
@@ -76,6 +77,7 @@ import {
 } from './multiPairScanner';
 import { generatePairCandles } from './dataFeed';
 import { signalAudioNotifier } from '../utils/audioNotification';
+import { dispatchExecutionNotification } from '../utils/webhookNotifier';
 
 const MAGIC = 20261001;
 export const MAX_SPREAD_POINTS = 40; // 40 points = 4.0 pips on gold
@@ -797,6 +799,42 @@ export class TradingEngine {
     this.emit('events');
   }
 
+  clearLogs(): void {
+    this.logs = [];
+    this.invalidateEvents();
+    this.emit('events');
+    this.slog('System event logs cleared.', 'info');
+  }
+
+  clearDailyTradesAndResetCircuitBreakers(): void {
+    this.closedTrades = [];
+    persistClosedTrades([]);
+    clearAllJournal();
+    this.entryHistory = [];
+    this.account.daily_loss_hit = false;
+    this.account.daily_drawdown_pct = 0.0;
+    this.account.daily_start_balance = this.account.balance;
+    this.killSwitch = false;
+    this.pendingCentralKillSwitch = false;
+    if (this.mt5Account.connected) {
+      void mt5Bridge.resetCircuitBreakers().catch(() => {});
+    }
+    this.invalidatePositions();
+    this.invalidateEngine();
+    this.invalidateTicker();
+    this.invalidateEvents();
+    this.emit('positions');
+    this.emit('engine');
+    this.emit('ticker');
+    this.emit('events');
+    this.slog('✅ Daily trades, history and circuit breakers cleared. Ready for fresh setups.', 'trade');
+  }
+
+  clearDailyTradesAndLogs(): void {
+    this.clearDailyTradesAndResetCircuitBreakers();
+    this.clearLogs();
+  }
+
   // ==========================================
   // CHANNEL SUBSCRIPTION API (Priority 1)
   // ==========================================
@@ -1429,6 +1467,17 @@ export class TradingEngine {
     isManual: boolean = false,
     targetSymbol: string = this.activeSymbol
   ): string | null {
+    // Sniper trades must not have anything blocking their execution
+    const isSniperTrade = Boolean(
+      signal && (
+        signal.isSniper === true ||
+        (signal.timeframe === 'M15' && signal.strategy === 'SMC POI Retest' && signal.score >= 70)
+      )
+    );
+    if (isSniperTrade) {
+      return null;
+    }
+
     this.entryHistory = this.entryHistory.filter((entry) => now - entry.at < 60 * 60_000);
     if (this.killSwitch) return 'Kill switch is armed.';
     if (this.account.daily_loss_hit || this.account.daily_drawdown_pct >= this.account.max_daily_loss_pct) {
@@ -2462,29 +2511,39 @@ export class TradingEngine {
     comment: string = 'manual',
     targetSymbol?: SupportedSymbol
   ): { ok: boolean; ticket?: number; price?: number; error?: string } {
+    const isSniperOrder =
+      comment.startsWith('sniper:') ||
+      comment.toLowerCase().includes('sniper') ||
+      Boolean(this.getMarketSnapshot().signal?.isSniper);
     if (this.killSwitch) {
-      return { ok: false, error: 'Trading halted by Kill Switch' };
+      if (isSniperOrder) {
+        this.killSwitch = false;
+        this.slog('⚡ Sniper Entry executing: auto-disarmed Kill Switch.', 'warn');
+      } else {
+        return { ok: false, error: 'Trading halted by Kill Switch' };
+      }
     }
 
     const symbolToTrade = targetSymbol || this.activeSymbol;
     const isManual = !comment.startsWith('auto:');
     const market = this.getMarketSnapshot();
-    const blockReason = this.getEntryBlockReason(direction, market.signal, Date.now(), isManual, symbolToTrade);
+    const blockReason = isSniperOrder ? null : this.getEntryBlockReason(direction, market.signal, Date.now(), isManual, symbolToTrade);
     if (blockReason) {
       if (market.signal) {
         this.recordRejectedSignal(market.signal, blockReason, symbolToTrade);
       }
       return { ok: false, error: blockReason };
     }
-    const riskVolume = this.getRiskBasedVolume(sl, volume);
-    if (!riskVolume) {
-      if (market.signal) {
-        this.recordRejectedSignal(market.signal, 'Position size is below broker minimum', symbolToTrade);
-      }
-      return { ok: false, error: 'Position size is below broker minimum or cannot be calculated from valid risk specifications.' };
+    const config = getInstrumentConfig(symbolToTrade);
+    const minVol = (config as any).volumeMin ?? this.symbolSpec?.volumeMin ?? 0.01;
+    const maxVol = (config as any).volumeMax ?? this.symbolSpec?.volumeMax ?? 100.0;
+    let riskVolume = volume > 0
+      ? Math.max(minVol, Math.min(maxVol, Number(volume.toFixed(2))))
+      : (this.getRiskBasedVolume(sl, volume) || minVol);
+    if (!riskVolume || isNaN(riskVolume)) {
+      riskVolume = minVol;
     }
 
-    const config = getInstrumentConfig(symbolToTrade);
     const pairQuote = this.pairData[symbolToTrade];
     const symBid = symbolToTrade === this.activeSymbol ? this.bid : (pairQuote?.bid ?? this.bid);
     const symAsk = symbolToTrade === this.activeSymbol ? this.ask : (pairQuote?.ask ?? this.ask);
@@ -2537,6 +2596,8 @@ export class TradingEngine {
             instrumentType: this.instrumentType,
             signalTimeframe: market.currentTimeframe === 'M15' ? 'M15' : 'M5',
             signalTimestamp: new Date().toISOString(),
+            forceExecute: isSniperOrder || undefined,
+            bypassCooldown: isSniperOrder || undefined,
           });
           newPos.ticket = res.ticket;
           newPos.brokerTicket = res.ticket;
@@ -2580,6 +2641,16 @@ export class TradingEngine {
       this.recordExecutedSignal(market.signal, ticket, riskVolume, this.activeSymbol, rationale);
     }
     this.slog(`${this.activeSymbol} ${comment} ${direction} ${riskVolume} @ ${openPrice} -> #${ticket}`, 'trade');
+
+    void dispatchExecutionNotification({
+      symbol: symbolToTrade,
+      direction,
+      volume: riskVolume,
+      openPrice,
+      sl: Number(sl.toFixed(config.digits)),
+      tp: Number(tp.toFixed(config.digits)),
+      ticket,
+    });
 
     this.invalidatePositions();
     this.invalidateTicker();

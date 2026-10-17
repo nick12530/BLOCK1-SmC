@@ -414,6 +414,8 @@ export class MT5BridgeConnector {
     signalTimeframe: 'M1' | 'M5' | 'M15';
     signalTimestamp: string;
     magic?: number;
+    forceExecute?: boolean;
+    bypassCooldown?: boolean;
   }): Promise<{
     ok: true;
     ticket: number;

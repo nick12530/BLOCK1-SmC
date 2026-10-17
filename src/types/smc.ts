@@ -118,6 +118,10 @@ export interface Signal {
   expiryTimestamp?: number; // Unix timestamp in ms when entry window passes
   validitySeconds?: number; // Countdown seconds remaining for entry
   isSniper?: boolean; // Sniper setup flag (M15/M5 institutional POI + high score)
+  sniperQualityIndex?: number; // 0 - 100% precision rating
+  sniperGrade?: 'A+' | 'A' | 'B'; // Institutional quality grade
+  optimalTradeEntry?: number; // Pinpoint OTE Retest Price (62% fib / POI equilibrium)
+  mitigationType?: string; // Type of institutional mitigation (+OB, -OB, FVG, SFP)
   recommendedLot?: number; // Auto-calculated safe lot size
   reasons: string[];
   atr: number;

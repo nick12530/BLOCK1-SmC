@@ -27,6 +27,7 @@ import {
 } from './SMCInteractiveChart';
 import { OfficialTradingViewEmbed } from './OfficialTradingViewEmbed';
 import { SMCOverlayHUD } from './SMCOverlayHUD';
+import { MTFConfluenceRadar } from './MTFConfluenceRadar';
 import { useEngine, useBestOpportunity, useTicker, useMarket } from '../hooks/useTradingStore';
 import { tradingEngine } from '../engine/tradingEngine';
 import type { SupportedSymbol } from '../engine/instrumentConfig';
@@ -311,6 +312,18 @@ export const TradingViewWidget: React.FC<TradingViewWidgetProps> = memo(({
           >
             <ExternalLink className="w-3.5 h-3.5" />
           </a>
+        </div>
+      </div>
+
+      {/* Top-Down Multi-Timeframe Alignment Radar Ribbon */}
+      <div className="px-3 sm:px-4 py-1.5 bg-slate-900/90 dark:bg-black/80 border-b border-slate-200 dark:border-zinc-800 flex items-center justify-between gap-2 overflow-x-auto text-xs font-mono">
+        <MTFConfluenceRadar
+          symbol={ticker.symbol as SupportedSymbol}
+          signal={market.signal}
+          compact={true}
+        />
+        <div className="hidden sm:flex items-center gap-2 text-[10px] text-zinc-400 font-mono">
+          <span>Dealing Range: <strong className={market.price_pos !== null && market.price_pos < 0.5 ? 'text-emerald-400' : 'text-amber-400'}>{market.price_pos !== null && market.price_pos < 0.5 ? 'Discount (<50%)' : 'Premium (>50%)'}</strong></span>
         </div>
       </div>
 

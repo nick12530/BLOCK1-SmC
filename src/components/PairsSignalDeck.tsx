@@ -48,7 +48,7 @@ export const PairsSignalDeck: React.FC<PairsSignalDeckProps> = React.memo(({
   if (!scannerAnalyses.length) return null;
 
   return (
-    <div className="bg-white dark:bg-[#0c0e12] border border-slate-200 dark:border-zinc-800 rounded-xl sm:rounded-2xl p-2 sm:p-3.5 shadow-xs flex flex-col gap-2.5 font-sans transition-colors">
+    <div className="bg-white dark:bg-[#0c0e12] border border-slate-200 dark:border-zinc-800 rounded-2xl p-3.5 sm:p-5 shadow-xs flex flex-col gap-3.5 sm:gap-4 font-sans transition-colors">
       {/* Top Header: Title, Active Status, Auto-Select Toggle & Collapse Toggle */}
       <div className="flex items-center justify-between gap-2 border-b border-slate-100 dark:border-zinc-800 pb-2 sm:pb-2.5 flex-wrap">
         <div className="flex items-center gap-2">
@@ -131,7 +131,7 @@ export const PairsSignalDeck: React.FC<PairsSignalDeckProps> = React.memo(({
         </div>
       ) : (
         /* Grid: 4 Elegantly Arranged Currency Pair Cards */
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-3.5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5 sm:gap-4.5">
         {scannerAnalyses.map((item) => {
           const isActive = item.symbol === activeSymbol;
           const isBull = item.bias === 'BUY';
@@ -206,12 +206,28 @@ export const PairsSignalDeck: React.FC<PairsSignalDeckProps> = React.memo(({
                 </div>
               </div>
 
-              {/* Row 3: Multi-Timeframe Alignment Ribbon */}
-              <div className="flex items-center justify-between px-2 py-1 rounded-lg bg-slate-100/70 dark:bg-[#0a0d13] border border-slate-200/50 dark:border-zinc-800/60 text-[10px] font-mono min-w-0">
+              {/* Row 3: Key SMC POI & Target Metrics */}
+              <div className="flex items-center justify-between gap-2 p-2 rounded-xl bg-slate-100/70 dark:bg-[#0c0e12] border border-slate-200/60 dark:border-zinc-800 text-xs min-w-0">
+                <div className="min-w-0">
+                  <span className="text-[10px] text-slate-400 block font-medium">Order Block POI</span>
+                  <span className="font-bold text-slate-900 dark:text-slate-100 truncate block">
+                    {obZone ? `${obZone.bullish ? '+OB' : '-OB'} $${obZone.bottom.toFixed(item.symbol === 'XAUUSD' ? 1 : 3)}` : 'Scanning'}
+                  </span>
+                </div>
+                <div className="text-right shrink-0">
+                  <span className="text-[10px] text-slate-400 block font-medium">Target R:R</span>
+                  <span className="font-bold text-emerald-600 dark:text-emerald-400 block">
+                    1:{item.riskRewardRatio}
+                  </span>
+                </div>
+              </div>
+
+              {/* Row 4: Multi-Timeframe Alignment Ribbon */}
+              <div className="flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-slate-100/60 dark:bg-[#0a0d13] border border-slate-200/50 dark:border-zinc-800/60 text-[10px] font-mono min-w-0">
                 <span className="text-slate-400 font-bold shrink-0">MTF:</span>
-                <div className="flex items-center gap-1 shrink-0">
+                <div className="flex items-center gap-1.5 shrink-0">
                   <span
-                    className={`px-1.5 py-0.2 rounded font-bold ${
+                    className={`px-1.5 py-0.5 rounded font-bold ${
                       item.m1Trend === 'bullish'
                         ? 'text-emerald-500 bg-emerald-500/10'
                         : item.m1Trend === 'bearish'
@@ -223,7 +239,7 @@ export const PairsSignalDeck: React.FC<PairsSignalDeckProps> = React.memo(({
                     1m
                   </span>
                   <span
-                    className={`px-1.5 py-0.2 rounded font-bold ${
+                    className={`px-1.5 py-0.5 rounded font-bold ${
                       item.m5Trend === 'bullish'
                         ? 'text-emerald-500 bg-emerald-500/10'
                         : item.m5Trend === 'bearish'
@@ -235,7 +251,7 @@ export const PairsSignalDeck: React.FC<PairsSignalDeckProps> = React.memo(({
                     5m
                   </span>
                   <span
-                    className={`px-1.5 py-0.2 rounded font-bold ${
+                    className={`px-1.5 py-0.5 rounded font-bold ${
                       item.m15Trend === 'bullish'
                         ? 'text-emerald-500 bg-emerald-500/10'
                         : item.m15Trend === 'bearish'
@@ -247,7 +263,7 @@ export const PairsSignalDeck: React.FC<PairsSignalDeckProps> = React.memo(({
                     15m
                   </span>
                   <span
-                    className={`px-1.5 py-0.2 rounded font-bold ${
+                    className={`px-1.5 py-0.5 rounded font-bold ${
                       item.h1Trend === 'bullish'
                         ? 'text-emerald-500 bg-emerald-500/10'
                         : item.h1Trend === 'bearish'
@@ -260,50 +276,14 @@ export const PairsSignalDeck: React.FC<PairsSignalDeckProps> = React.memo(({
                   </span>
                 </div>
                 <span
-                  className={`text-[9px] font-black px-1.5 py-0.2 rounded shrink-0 ${
+                  className={`text-[9px] font-black px-1.5 py-0.5 rounded shrink-0 ${
                     isDiscount
                       ? 'text-emerald-600 dark:text-emerald-400 bg-emerald-500/10'
                       : 'text-rose-600 dark:text-rose-400 bg-rose-500/10'
                   }`}
                 >
-                  {item.premiumDiscountPct}% {isDiscount ? 'Discount' : 'Premium'}
+                  {isDiscount ? 'Discount' : 'Premium'}
                 </span>
-              </div>
-
-              {/* Row 4: Key SMC Order Block, Structure & Target */}
-              <div className="text-[11px] space-y-1 text-slate-600 dark:text-slate-300 bg-slate-100/60 dark:bg-[#0c0e12] p-2 rounded-xl border border-slate-200/60 dark:border-zinc-800/80 min-w-0">
-                <div className="flex items-center justify-between gap-1 min-w-0">
-                  <span className="text-slate-500 dark:text-slate-400 shrink-0 font-medium">Order Block:</span>
-                  <span className="font-bold text-slate-900 dark:text-slate-100 truncate text-right">
-                    {obZone ? `${obZone.bullish ? '+OB' : '-OB'} $${obZone.bottom.toFixed(item.symbol === 'XAUUSD' ? 1 : 3)}` : 'Scanning'}
-                  </span>
-                </div>
-
-                <div className="flex items-center justify-between gap-1 min-w-0">
-                  <span className="text-slate-500 dark:text-slate-400 shrink-0 font-medium">Target RR / Lot:</span>
-                  <span className="font-bold text-emerald-600 dark:text-emerald-400 truncate text-right">
-                    1:{item.riskRewardRatio} {item.safeLotSize ? `(${item.safeLotSize}L)` : ''}
-                  </span>
-                </div>
-
-                {/* Structure / Liquidity Status */}
-                <div className="flex items-center justify-between gap-1 min-w-0 pt-0.5 border-t border-slate-200/40 dark:border-zinc-800/60 text-[10px]">
-                  <span className="text-slate-400 shrink-0">Structure:</span>
-                  <span className="font-semibold text-slate-700 dark:text-zinc-300 truncate text-right">
-                    {item.liquidity?.recentSweep
-                      ? `${item.liquidity.recentSweep === 'high' ? 'High' : 'Low'} Swept (SFP)`
-                      : item.lastBOS
-                      ? `BOS ${item.lastBOS.direction}`
-                      : item.sessionName || 'Interbank'}
-                  </span>
-                </div>
-
-                {item.signal && (
-                  <div className="flex items-center justify-between pt-1 border-t border-slate-200/60 dark:border-slate-800/60 text-sky-600 dark:text-sky-300 min-w-0">
-                    <span className="shrink-0 font-medium">Entry POI:</span>
-                    <span className="font-bold tabular-nums truncate">${item.signal.entry.toFixed(item.symbol === 'XAUUSD' ? 2 : 4)}</span>
-                  </div>
-                )}
               </div>
 
               {/* Row 5: Action Button */}

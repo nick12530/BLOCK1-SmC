@@ -10,18 +10,21 @@ import {
   Terminal,
   TrendingUp,
   TrendingDown,
+  Bell,
 } from 'lucide-react';
 
 interface TopNavProps {
   snapshot: TerminalSnapshot;
   onOpenSettings: () => void;
   onOpenBridge: () => void;
+  onOpenWebhook?: () => void;
 }
 
 export const TopNav: React.FC<TopNavProps> = ({
   snapshot,
   onOpenSettings,
   onOpenBridge,
+  onOpenWebhook,
 }) => {
   const isKill = snapshot.kill_switch;
   const isAuto = snapshot.auto_trade;
@@ -148,6 +151,15 @@ export const TopNav: React.FC<TopNavProps> = ({
           >
             <Sliders className="w-4 h-4" />
           </button>
+          {onOpenWebhook && (
+            <button
+              onClick={onOpenWebhook}
+              title="Instant Telegram Push Alerts & External Webhooks"
+              className="p-2 rounded-lg bg-[#121826] border border-[#1e2a3d] text-amber-400 hover:text-amber-300 transition-colors"
+            >
+              <Bell className="w-4 h-4" />
+            </button>
+          )}
 
           {/* Auto-Trade Switch */}
           <button

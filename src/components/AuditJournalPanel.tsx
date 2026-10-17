@@ -220,8 +220,7 @@ export const AuditJournalPanel: React.FC = () => {
       return;
     }
     if (activeTab === 'trades') {
-      tradingEngine.closeAll('Manual');
-      clearJournalTrades();
+      tradingEngine.clearDailyTradesAndLogs();
     } else {
       clearJournalSignals();
     }

@@ -1,0 +1,263 @@
+/**
+ * webhookNotifier.ts - External Telegram & Webhook Alert Service
+ * Dispatches instant push alerts to Telegram or Webhook endpoints whenever:
+ * - A verified M15/M5 Sniper Signal is discovered on any scanned pair
+ * - A Sniper Trade order is executed or closed
+ */
+
+import { Signal } from '../types/smc';
+import { SupportedSymbol, getInstrumentConfig } from '../engine/instrumentConfig';
+
+export interface WebhookConfig {
+  enabled: boolean;
+  type: 'telegram' | 'webhook' | 'both';
+  telegramBotToken: string;
+  telegramChatId: string;
+  webhookUrl: string;
+  minConfluenceScore: number;
+  onlySniperSignals: boolean;
+  alertOnExecutions: boolean;
+  soundAlerts: boolean;
+}
+
+const STORAGE_KEY = 'mt5_webhook_alert_config_v1';
+
+export const DEFAULT_WEBHOOK_CONFIG: WebhookConfig = {
+  enabled: false,
+  type: 'telegram',
+  telegramBotToken: '',
+  telegramChatId: '',
+  webhookUrl: '',
+  minConfluenceScore: 70,
+  onlySniperSignals: true,
+  alertOnExecutions: true,
+  soundAlerts: true,
+};
+
+export function getWebhookConfig(): WebhookConfig {
+  if (typeof localStorage === 'undefined') return DEFAULT_WEBHOOK_CONFIG;
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return DEFAULT_WEBHOOK_CONFIG;
+    return { ...DEFAULT_WEBHOOK_CONFIG, ...JSON.parse(raw) };
+  } catch {
+    return DEFAULT_WEBHOOK_CONFIG;
+  }
+}
+
+export function saveWebhookConfig(config: WebhookConfig): void {
+  if (typeof localStorage === 'undefined') return;
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(config));
+  } catch {
+    // Ignore storage errors
+  }
+}
+
+// Anti-spam cooldown cache for sent signal IDs (prevents duplicate alerts within 5 minutes)
+const recentlySentSignals = new Map<string, number>();
+
+export async function sendTelegramMessage(
+  botToken: string,
+  chatId: string,
+  htmlText: string
+): Promise<{ ok: boolean; error?: string }> {
+  if (!botToken || !chatId) {
+    return { ok: false, error: 'Telegram Bot Token and Chat ID are required.' };
+  }
+
+  const cleanToken = botToken.trim().replace(/^bot/i, '');
+  const url = `https://api.telegram.org/bot${cleanToken}/sendMessage`;
+
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: chatId.trim(),
+        text: htmlText,
+        parse_mode: 'HTML',
+        disable_web_page_preview: true,
+      }),
+    });
+
+    const data = await res.json();
+    if (!res.ok || !data.ok) {
+      return { ok: false, error: data.description || `HTTP ${res.status}: Failed to dispatch Telegram message` };
+    }
+    return { ok: true };
+  } catch (err: any) {
+    return { ok: false, error: err?.message || 'Network error connecting to Telegram API' };
+  }
+}
+
+export async function sendCustomWebhook(
+  webhookUrl: string,
+  payload: Record<string, any>
+): Promise<{ ok: boolean; error?: string }> {
+  if (!webhookUrl) {
+    return { ok: false, error: 'Webhook URL is required.' };
+  }
+
+  try {
+    const res = await fetch(webhookUrl.trim(), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+
+    if (!res.ok) {
+      return { ok: false, error: `HTTP ${res.status}: Webhook returned error response` };
+    }
+    return { ok: true };
+  } catch (err: any) {
+    return { ok: false, error: err?.message || 'Network error connecting to Webhook endpoint' };
+  }
+}
+
+/**
+ * Dispatches an automated Sniper Signal alert to configured Telegram and Webhook destinations
+ */
+export async function dispatchSniperAlert(params: {
+  symbol: SupportedSymbol;
+  direction: 'BUY' | 'SELL';
+  timeframe: string;
+  strategy: string;
+  entry: number;
+  sl: number;
+  tp1: number;
+  tp2: number;
+  tp3: number;
+  slPips: number;
+  tp1Pips: number;
+  tp2Pips: number;
+  tp3Pips: number;
+  confluenceScore: number;
+  recommendedLot?: number;
+  sniperGrade?: 'A+' | 'A' | 'B';
+  optimalTradeEntry?: number;
+  triggerPattern?: string;
+}): Promise<boolean> {
+  const config = getWebhookConfig();
+  if (!config.enabled) return false;
+
+  // Filter criteria
+  if (params.confluenceScore < config.minConfluenceScore) return false;
+
+  // Deduplication check (cooldown: 5 mins per symbol + direction)
+  const signalKey = `${params.symbol}-${params.direction}-${params.timeframe}`;
+  const now = Date.now();
+  const lastSent = recentlySentSignals.get(signalKey);
+  if (lastSent && now - lastSent < 300_000) {
+    return false; // Skip duplicate notification within 5 mins
+  }
+  recentlySentSignals.set(signalKey, now);
+
+  const cfg = getInstrumentConfig(params.symbol);
+  const isBuy = params.direction === 'BUY';
+  const dirBadge = isBuy ? '🟢 BUY NOW' : '🔴 SELL NOW';
+  const gradeLabel = params.sniperGrade ? ` • <b>Grade ${params.sniperGrade}</b>` : '';
+  const oteLine = params.optimalTradeEntry
+    ? `  • <b>Optimal OTE (62%):</b> <code>${params.optimalTradeEntry.toFixed(cfg.digits)}</code>\n`
+    : '';
+  const triggerLine = params.triggerPattern
+    ? `  • <b>Trigger Pattern:</b> ${params.triggerPattern}\n`
+    : '';
+
+  const telegramHtml = `
+⚡️ <b>INSTITUTIONAL SMC TRADE SIGNAL</b> ⚡️
+━━━━━━━━━━━━━━━━━━━━━━━━
+💎 <b>PAIR:</b> #${params.symbol}
+🎯 <b>ACTION:</b> <b>${dirBadge}</b>
+📊 <b>TIMEFRAME:</b> ${params.timeframe}  |  <b>CONFLUENCE:</b> ${params.confluenceScore}%${gradeLabel}
+
+📍 <b>ENTRY ZONE:</b> <code>${params.entry.toFixed(cfg.digits)}</code>
+${oteLine}🛑 <b>STOP LOSS:</b> <code>${params.sl.toFixed(cfg.digits)}</code> (-${params.slPips} pips)
+
+🎯 <b>TARGET OBJECTIVES:</b>
+  ├ <b>TP 1:</b> <code>${params.tp1.toFixed(cfg.digits)}</code> (+${params.tp1Pips} pips) • 1:1.8 RR
+  ├ <b>TP 2:</b> <code>${params.tp2.toFixed(cfg.digits)}</code> (+${params.tp2Pips} pips) • 1:3.2 RR <i>[Recommended]</i>
+  └ <b>TP 3:</b> <code>${params.tp3.toFixed(cfg.digits)}</code> (+${params.tp3Pips} pips) • 1:5.5 RR <i>[Runner]</i>
+
+🛡 <b>RISK MANAGEMENT:</b>
+  • <b>Setup:</b> ${params.strategy}
+${triggerLine}  • <b>Suggested Sizing:</b> <code>${params.recommendedLot ? `${params.recommendedLot.toFixed(2)} Lots` : '0.01 - 0.05 Lots'}</code>
+  • <b>Trade Rule:</b> Move Stop Loss to Break-Even (BE) once TP1 is secured
+━━━━━━━━━━━━━━━━━━━━━━━━
+🕒 <i>${new Date().toLocaleTimeString()} UTC • SMC Pro Terminal</i>
+`.trim();
+
+  let sent = false;
+
+  if ((config.type === 'telegram' || config.type === 'both') && config.telegramBotToken && config.telegramChatId) {
+    const res = await sendTelegramMessage(config.telegramBotToken, config.telegramChatId, telegramHtml);
+    if (res.ok) sent = true;
+  }
+
+  if ((config.type === 'webhook' || config.type === 'both') && config.webhookUrl) {
+    const payload = {
+      event: 'SNIPER_SIGNAL',
+      symbol: params.symbol,
+      direction: params.direction,
+      strategy: params.strategy,
+      timeframe: params.timeframe,
+      entry: params.entry,
+      sl: params.sl,
+      tp1: params.tp1,
+      tp2: params.tp2,
+      tp3: params.tp3,
+      confluenceScore: params.confluenceScore,
+      timestamp: new Date().toISOString(),
+    };
+    const res = await sendCustomWebhook(config.webhookUrl, payload);
+    if (res.ok) sent = true;
+  }
+
+  return sent;
+}
+
+/**
+ * Dispatches an automated execution fill alert
+ */
+export async function dispatchExecutionNotification(params: {
+  symbol: string;
+  direction: string;
+  volume: number;
+  openPrice: number;
+  sl: number;
+  tp: number;
+  ticket?: number;
+}): Promise<void> {
+  const config = getWebhookConfig();
+  if (!config.enabled || !config.alertOnExecutions) return;
+
+  const isBuy = params.direction.toUpperCase() === 'BUY';
+  const dirBadge = isBuy ? '🟢 BUY' : '🔴 SELL';
+
+  const telegramHtml = `
+✅ <b>TRADE EXECUTION CONFIRMED</b>
+━━━━━━━━━━━━━━━━━━━━
+🎫 <b>TICKET:</b> <code>#${params.ticket || 'DESK'}</code>
+💎 <b>PAIR:</b> #${params.symbol}
+⚡️ <b>DIRECTION:</b> <b>${dirBadge}</b>
+📦 <b>VOLUME:</b> <code>${params.volume} Lots</code>
+💵 <b>FILL PRICE:</b> <code>$${params.openPrice.toFixed(2)}</code>
+
+🛑 <b>SL:</b> <code>$${params.sl.toFixed(2)}</code>
+🎯 <b>TP:</b> <code>$${params.tp.toFixed(2)}</code>
+━━━━━━━━━━━━━━━━━━━━
+🕒 <i>Filled at ${new Date().toLocaleTimeString()} UTC • MT5 Broker Connected</i>
+`.trim();
+
+  if ((config.type === 'telegram' || config.type === 'both') && config.telegramBotToken && config.telegramChatId) {
+    await sendTelegramMessage(config.telegramBotToken, config.telegramChatId, telegramHtml);
+  }
+
+  if ((config.type === 'webhook' || config.type === 'both') && config.webhookUrl) {
+    await sendCustomWebhook(config.webhookUrl, {
+      event: 'ORDER_EXECUTED',
+      ...params,
+      timestamp: new Date().toISOString(),
+    });
+  }
+}

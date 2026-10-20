@@ -269,7 +269,7 @@ export class TradingEngine {
   currentTimeframe: ChartTimeframe = 'M15';
   simulateWeekendMode: boolean = false;
   allowHighConfluenceOverride: boolean = true;
-  autoSelectBestScenario: boolean = false;
+  autoSelectBestScenario: boolean = true;
   instrumentType: InstrumentType = 'standard';
   private hasBrokerMarketData = false;
   private symbolSpec: SymbolTradingSpec | null = null;
@@ -1407,7 +1407,6 @@ export class TradingEngine {
     this.invalidateTicker();
     this.invalidateMarket();
     this.invalidateEngine();
-    this.refreshScanner();
     this.emit('ticker');
     this.emit('market');
     this.emit('engine');
@@ -2377,10 +2376,36 @@ export class TradingEngine {
     }
 
     const market = this.getMarketSnapshot();
-    const minConfluence = this.minScoreThreshold / 20;
-    const sig = market.signals.find((candidate) =>
-      candidate.score >= (candidate.strategy === 'SMC POI Retest' ? minConfluence : 3.8)
-    );
+
+    // High-expectancy institutional filter:
+    // Requires minimum score (>= 6.0/10 or >= 65/100) and positive expectancy RR >= 1.4:1
+    const isQualifyingSignal = (candidate: Signal) => {
+      const risk = Math.abs(candidate.entry - candidate.sl);
+      const reward = Math.abs(candidate.tp - candidate.entry);
+      const rr = risk > 0 ? reward / risk : 0;
+      if (rr < 1.4) return false;
+      const isTenScale = candidate.score <= 10;
+      const minRequired = isTenScale
+        ? Math.max(6.0, this.minScoreThreshold / 10)
+        : Math.max(65, this.minScoreThreshold);
+      return candidate.score >= minRequired;
+    };
+
+    let sig = market.signals.find(isQualifyingSignal);
+
+    // If active symbol has no qualified setup, check if multi-pair scanner has an A+ ready setup on another pair
+    if (!sig && this.autoSelectBestScenario && this.bestOpportunity) {
+      if (
+        this.bestOpportunity.symbol !== this.activeSymbol &&
+        this.bestOpportunity.status === 'READY' &&
+        this.bestOpportunity.confluenceScore >= 70 &&
+        this.bestOpportunity.signal
+      ) {
+        this.switchSymbol(this.bestOpportunity.symbol);
+        const switchedMarket = this.getMarketSnapshot();
+        sig = switchedMarket.signals.find(isQualifyingSignal);
+      }
+    }
     if (sig) {
       if (!market.brokerMarketData && this.mt5Account.connected) {
         this.slog('Auto-trade blocked: live MT5 broker candle feed is unavailable.', 'warn');

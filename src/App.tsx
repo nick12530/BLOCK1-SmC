@@ -16,12 +16,14 @@ import {
   useMarket,
   usePositions,
   useEngine,
+  useScannerAnalyses,
 } from './hooks/useTradingStore';
 import { tradingEngine } from './engine/tradingEngine';
 import { mt5Bridge } from './engine/mt5Bridge';
 import { useAudioNotifications } from './hooks/useAudioNotifications';
 import { SupportedSymbol, INSTRUMENTS } from './engine/instrumentConfig';
 import { Signal, TerminalSnapshot } from './types/smc';
+import type { PairAnalysis } from './engine/multiPairScanner';
 import { localDayKey } from './engine/tradeJournal';
 
 // Layout & Safety Components
@@ -32,8 +34,9 @@ import { FooterView } from './components/FooterView';
 import { ConfirmDialog } from './components/ConfirmDialog';
 import { WorkspaceErrorBoundary } from './components/ErrorBoundary';
 
-// Control Bar
+// Control Bar & Multi-Pair Scanner Deck
 import { TerminalUtilitiesBar } from './components/TerminalUtilitiesBar';
+import { PairsSignalDeck } from './components/PairsSignalDeck';
 
 // Core Charting & Execution
 import { TradingViewWidget } from './components/TradingViewWidget';
@@ -80,6 +83,7 @@ export default function App() {
   const market = useMarket();
   const positionsState = usePositions();
   const engine = useEngine();
+  const scannerAnalyses = useScannerAnalyses();
 
   const activeSymbol = (ticker.symbol || 'XAUUSD') as SupportedSymbol;
   const instrumentCfg = INSTRUMENTS[activeSymbol] || INSTRUMENTS.XAUUSD;
@@ -189,6 +193,18 @@ export default function App() {
   const handleOpenHelp = useCallback(() => setActiveModal('help'), []);
   const handleOpenClosedTrades = useCallback(() => setActiveModal('closed_trades'), []);
 
+  const handleSelectSymbol = useCallback((symbol: SupportedSymbol) => {
+    tradingEngine.switchSymbol(symbol);
+  }, []);
+
+  const handleExecuteAnalysis = useCallback(
+    (analysis: PairAnalysis) => {
+      if (analysis.bias === 'WAITING' || !analysis.signal) return;
+      handleExecuteSignal(analysis.safeLotSize ?? 0.01, 1, analysis.signal);
+    },
+    [handleExecuteSignal]
+  );
+
   // Full snapshot only evaluated when RiskSettingsModal is actively open
   const snapshot: TerminalSnapshot | null = useMemo(() => {
     if (activeModal !== 'settings') return null;
@@ -240,6 +256,14 @@ export default function App() {
           <TerminalUtilitiesBar
             onOpenModal={handleOpenModal}
             onToggleKillSwitchPrompt={handleRequestKillSwitchToggle}
+          />
+
+          {/* Multi-Pair Signals & Confluence Deck (4 Instruments) */}
+          <PairsSignalDeck
+            scannerAnalyses={scannerAnalyses}
+            activeSymbol={activeSymbol}
+            onSelectSymbol={handleSelectSymbol}
+            onExecuteTrade={handleExecuteAnalysis}
           />
 
           {/* Primary Split Trading Desk: Chart (8 cols) + Execution Deck (4 cols) */}

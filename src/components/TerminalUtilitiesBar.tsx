@@ -35,18 +35,11 @@ export const TerminalUtilitiesBar: React.FC<TerminalUtilitiesBarProps> = React.m
 }) => {
   const engine = useEngine();
   const { isMuted, toggleMute, hasNewAlert } = useAudioNotifications();
-  const [bridgeReachable, setBridgeReachable] = useState(mt5Bridge.getStatus().connected);
-
-  useEffect(() => {
-    const refreshStatus = () => setBridgeReachable(mt5Bridge.getStatus().connected);
-    refreshStatus();
-    const timer = window.setInterval(refreshStatus, 1000);
-    return () => window.clearInterval(timer);
-  }, []);
 
   const isAuto = engine.auto_trade;
   const isKill = engine.kill_switch;
-  const canEnableAutoTrade = Boolean(engine.mt5Account?.connected && bridgeReachable);
+  const isBridgeConnected = Boolean(engine.mt5Account?.connected || mt5Bridge.getStatus().connected);
+  const canEnableAutoTrade = isBridgeConnected;
 
   return (
     <div className="w-full bg-white dark:bg-[#0d1823] border border-slate-200/90 dark:border-[#1a3040] rounded-2xl p-3 sm:p-4 shadow-xs font-mono text-xs transition-colors flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">

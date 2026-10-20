@@ -269,7 +269,7 @@ export class TradingEngine {
   currentTimeframe: ChartTimeframe = 'M15';
   simulateWeekendMode: boolean = false;
   allowHighConfluenceOverride: boolean = true;
-  autoSelectBestScenario: boolean = true;
+  autoSelectBestScenario: boolean = false;
   instrumentType: InstrumentType = 'standard';
   private hasBrokerMarketData = false;
   private symbolSpec: SymbolTradingSpec | null = null;

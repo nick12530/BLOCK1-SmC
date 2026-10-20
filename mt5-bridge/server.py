@@ -8,6 +8,7 @@ import re
 import hmac
 import json
 import logging
+import time
 import sqlite3
 import threading
 from functools import wraps
@@ -35,6 +36,8 @@ _order_id_lock = threading.Lock()
 _trade_execution_lock = threading.Lock()
 _inflight_order_requests: set[str] = set()
 _symbol_spec_cache: dict[tuple[int, str, str], dict] = {}
+_closed_trades_cache: dict[str, tuple[float, list[dict]]] = {}
+_closed_trades_cache_ttl = 5.0  # Cache closed trades for 5s to eliminate redundant heavy deal processing
 RISK_CONFIG = json.loads((Path(__file__).resolve().parents[1] / "risk-config.json").read_text(encoding="utf-8"))
 STATE_DIRECTORY = Path(os.environ.get("LOCALAPPDATA", str(Path.home()))) / "SMCBridge"
 STATE_DIRECTORY.mkdir(parents=True, exist_ok=True)
@@ -443,6 +446,16 @@ def _deal_cost(deal: Any) -> float:
 
 
 def read_closed_trades(days: int, symbol: str) -> list[dict]:
+    clean_sym = symbol.strip().upper()
+    cache_key = f"{clean_sym}:{days}"
+    now_ts = time.time()
+
+    # Fast in-memory cache hit (5s TTL) avoids repetitive heavy 180-day deal scans & IPC overhead
+    if cache_key in _closed_trades_cache:
+        cached_ts, cached_trades = _closed_trades_cache[cache_key]
+        if now_ts - cached_ts < _closed_trades_cache_ttl:
+            return cached_trades
+
     require_account()
     now = datetime.now(timezone.utc)
     deals = mt5.history_deals_get(now - timedelta(days=days), now)
@@ -477,21 +490,24 @@ def read_closed_trades(days: int, symbol: str) -> list[dict]:
         position_deals = deals_by_position[position_id]
         entries = [deal for deal in position_deals if deal.entry == mt5.DEAL_ENTRY_IN]
         if not entries:
-            historical_position_deals = mt5.history_deals_get(position=position_id)
-            if historical_position_deals is None:
-                raise HTTPException(
-                    status_code=503,
-                    detail=f"MT5 deal history unavailable for closed position {position_id}: {mt5.last_error()}",
-                )
-            position_deals = [
-                deal for deal in historical_position_deals if str(deal.symbol) == symbol
-            ]
-            entries = [deal for deal in position_deals if deal.entry == mt5.DEAL_ENTRY_IN]
+            try:
+                historical_position_deals = mt5.history_deals_get(position=position_id)
+                if historical_position_deals:
+                    position_deals = [
+                        deal
+                        for deal in historical_position_deals
+                        if str(deal.symbol) == symbol or str(deal.symbol) == resolved_symbol or str(deal.symbol).startswith(symbol)
+                    ]
+                    entries = [deal for deal in position_deals if deal.entry == mt5.DEAL_ENTRY_IN]
+            except Exception as exc:
+                logger.debug("Failed to retrieve extra deals for closed position %s: %s", position_id, exc)
         if not entries:
             continue
 
         entry = min(entries, key=lambda deal: int(deal.time))
         last_exit = max(exits, key=lambda deal: int(deal.time))
+        open_time = _deal_time(entry)
+        close_time = _deal_time(last_exit)
         exit_volume = sum(float(deal.volume) for deal in exits)
         close_price = (
             sum(float(deal.price) * float(deal.volume) for deal in exits) / exit_volume
@@ -542,7 +558,9 @@ def read_closed_trades(days: int, symbol: str) -> list[dict]:
         )
 
     results.sort(key=lambda trade: trade["closedAt"], reverse=True)
-    return results[:1000]
+    final_results = results[:1000]
+    _closed_trades_cache[cache_key] = (now_ts, final_results)
+    return final_results
 
 
 @app.get("/api/health")
@@ -1127,6 +1145,7 @@ def close_position(payload: CloseRequest, request: Request) -> dict:
         logger.error(f"❌ MT5 Close Request Failed for position {payload.ticket}: {reason}")
         raise HTTPException(status_code=400, detail=f"MT5 close request failed: {reason}")
     logger.info(f"✅ MT5 Closed position #{payload.ticket} successfully")
+    _closed_trades_cache.clear()
     return read_snapshot(position.symbol)
 
 

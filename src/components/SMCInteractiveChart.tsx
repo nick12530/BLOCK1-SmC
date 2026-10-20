@@ -41,6 +41,29 @@ interface SMCInteractiveChartProps {
   indicatorConfig?: SMCIndicatorConfig;
 }
 
+const CandleCountdownBadge: React.FC<{ timeframe: ChartTimeframe }> = React.memo(({ timeframe }) => {
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const periodMinutes =
+    timeframe === 'M1' ? 1 : timeframe === 'M5' ? 5 : timeframe === 'M15' ? 15 : timeframe === 'H1' ? 60 : 240;
+  const periodSeconds = periodMinutes * 60;
+  const currentSeconds = Math.floor(now / 1000) % periodSeconds;
+  const secondsToClose = periodSeconds - currentSeconds;
+  const mins = Math.floor(secondsToClose / 60);
+  const secs = secondsToClose % 60;
+
+  return (
+    <span className="text-amber-300 text-[10px] tabular-nums">
+      Closes in {String(mins).padStart(2, '0')}:{String(secs).padStart(2, '0')}
+    </span>
+  );
+});
+
 export const SMCInteractiveChart: React.FC<SMCInteractiveChartProps> = ({
   height = 380,
   timeframe,
@@ -57,7 +80,6 @@ export const SMCInteractiveChart: React.FC<SMCInteractiveChartProps> = ({
   const [chartHeight, setChartHeight] = useState(height - 44);
   const [visibleCount, setVisibleCount] = useState(60);
   const [panOffset, setPanOffset] = useState(0);
-  const [now, setNow] = useState(Date.now());
   const [crosshair, setCrosshair] = useState<{ x: number; y: number; candle: Candle } | null>(null);
   const pointerStart = useRef<{ x: number; offset: number } | null>(null);
 
@@ -102,11 +124,6 @@ export const SMCInteractiveChart: React.FC<SMCInteractiveChartProps> = ({
 
     observer.observe(container);
     return () => observer.disconnect();
-  }, []);
-
-  useEffect(() => {
-    const timer = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(timer);
   }, []);
 
   const rawCandles = useMemo(() => {
@@ -324,15 +341,6 @@ export const SMCInteractiveChart: React.FC<SMCInteractiveChartProps> = ({
   // Dealing range equilibrium level
   const eqPrice = timeframeEqPrice;
 
-  // Calculate timeframe closure countdown
-  const secondsToClose = useMemo(() => {
-    const periodMinutes =
-      timeframe === 'M1' ? 1 : timeframe === 'M5' ? 5 : timeframe === 'M15' ? 15 : timeframe === 'H1' ? 60 : 240;
-    const periodSeconds = periodMinutes * 60;
-    const currentSeconds = Math.floor(now / 1000) % periodSeconds;
-    return periodSeconds - currentSeconds;
-  }, [now, timeframe]);
-
   // Other currency pairs signals linked into SMC Engine
   const otherPairAnalyses = useMemo(() => {
     return scannerAnalyses.filter((item) => item.symbol !== ticker.symbol);
@@ -456,9 +464,7 @@ export const SMCInteractiveChart: React.FC<SMCInteractiveChartProps> = ({
         <div className="flex items-center gap-2 text-xs">
           <span className="text-zinc-400">Bid:</span>
           <strong className="text-white tabular-nums">${ticker.bid.toFixed(2)}</strong>
-          <span className="text-amber-300 text-[10px] tabular-nums">
-            Closes in {String(Math.floor(secondsToClose / 60)).padStart(2, '0')}:{String(secondsToClose % 60).padStart(2, '0')}
-          </span>
+          <CandleCountdownBadge timeframe={timeframe} />
         </div>
       </div>
 

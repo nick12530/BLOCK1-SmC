@@ -112,6 +112,7 @@ export class MT5BridgeConnector {
   private autoReconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private pollingEnabled = false;
   private accountPollInFlight = false;
+  private closedTradesInFlight = false;
   private onDataCallback: ((data: BridgeAccountSnapshot) => void) | null = null;
   private onClosedTradesCallback: ((trades: ClosedTrade[]) => void) | null = null;
   private onConnectionChangeCallback: ((connected: boolean, error?: string) => void) | null = null;
@@ -610,7 +611,8 @@ export class MT5BridgeConnector {
   }
 
   private async refreshClosedTrades() {
-    if (!this.isConnected) return;
+    if (!this.isConnected || this.closedTradesInFlight) return;
+    this.closedTradesInFlight = true;
     try {
       const trades = await this.request<ClosedTrade[]>(
         `/api/history?days=180&symbol=${encodeURIComponent(this.symbol)}`,
@@ -619,6 +621,8 @@ export class MT5BridgeConnector {
       this.onClosedTradesCallback?.(trades);
     } catch (error) {
       console.error('[MT5 Bridge] Closed-trade history refresh failed:', error);
+    } finally {
+      this.closedTradesInFlight = false;
     }
   }
 

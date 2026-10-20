@@ -174,10 +174,26 @@ export default function App() {
     [market.signal, engine.kill_switch, activeSymbol]
   );
 
-  // Full snapshot for modals that require it
-  const snapshot: TerminalSnapshot = useMemo(() => {
+  // Stable modal callbacks to preserve memoization across child components
+  const handleOpenModal = useCallback(
+    (modal: 'bridge' | 'settings' | 'closed_trades' | 'daily_report' | 'tradingview' | 'help' | 'phone_pwa' | 'webhook') => {
+      setActiveModal(modal);
+    },
+    []
+  );
+  const handleCloseModal = useCallback(() => {
+    setActiveModal(null);
+  }, []);
+  const handleOpenBridge = useCallback(() => setActiveModal('bridge'), []);
+  const handleOpenTradingView = useCallback(() => setActiveModal('tradingview'), []);
+  const handleOpenHelp = useCallback(() => setActiveModal('help'), []);
+  const handleOpenClosedTrades = useCallback(() => setActiveModal('closed_trades'), []);
+
+  // Full snapshot only evaluated when RiskSettingsModal is actively open
+  const snapshot: TerminalSnapshot | null = useMemo(() => {
+    if (activeModal !== 'settings') return null;
     return tradingEngine.getSnapshot();
-  }, [ticker, market, positionsState, engine]);
+  }, [activeModal, ticker, market, positionsState, engine]);
 
   // Daily loss circuit breaker condition
   const isDailyLossExceeded =
@@ -207,13 +223,13 @@ export default function App() {
       )}
 
       {/* 3. Weekend Interbank Schedule Banner (only active when market closed) */}
-      <WeekendMarketBanner onOpenMt5Modal={() => setActiveModal('bridge')} />
+      <WeekendMarketBanner onOpenMt5Modal={handleOpenBridge} />
 
       {/* 4. Institutional Top Navigation Header */}
       <HeaderView
         isDark={isDark}
         onToggleTheme={toggleTheme}
-        onOpenModal={(modal) => setActiveModal(modal)}
+        onOpenModal={handleOpenModal}
         onToggleKillSwitchPrompt={handleRequestKillSwitchToggle}
       />
 
@@ -222,7 +238,7 @@ export default function App() {
         <WorkspaceErrorBoundary>
           {/* Utilities Bar (Single row: Auto-Trade, Kill Switch, Audio, Risk, MT5, Alerts) */}
           <TerminalUtilitiesBar
-            onOpenModal={(modal) => setActiveModal(modal)}
+            onOpenModal={handleOpenModal}
             onToggleKillSwitchPrompt={handleRequestKillSwitchToggle}
           />
 
@@ -235,8 +251,8 @@ export default function App() {
                 symbol={instrumentCfg.tvSymbol}
                 interval="1"
                 height={540}
-                onExpand={() => setActiveModal('tradingview')}
-                onOpenHelp={() => setActiveModal('help')}
+                onExpand={handleOpenTradingView}
+                onOpenHelp={handleOpenHelp}
               />
             </div>
 
@@ -249,7 +265,7 @@ export default function App() {
           {/* Live Running Trades & Positions HUD */}
           <div className="min-w-0">
             <RunningTradesHUD
-              onOpenTradeStation={() => setActiveModal('closed_trades')}
+              onOpenTradeStation={handleOpenClosedTrades}
             />
           </div>
         </WorkspaceErrorBoundary>
@@ -278,44 +294,44 @@ export default function App() {
       {/* 9. Lazy-loaded Modals */}
       <Suspense fallback={null}>
         {activeModal === 'bridge' && (
-          <Mt5BridgeModal isOpen={true} onClose={() => setActiveModal(null)} />
+          <Mt5BridgeModal isOpen={true} onClose={handleCloseModal} />
         )}
-        {activeModal === 'settings' && (
+        {activeModal === 'settings' && snapshot && (
           <RiskSettingsModal
             isOpen={true}
-            onClose={() => setActiveModal(null)}
+            onClose={handleCloseModal}
             snapshot={snapshot}
           />
         )}
         {activeModal === 'closed_trades' && (
-          <ClosedTradesModal isOpen={true} onClose={() => setActiveModal(null)} />
+          <ClosedTradesModal isOpen={true} onClose={handleCloseModal} />
         )}
         {activeModal === 'daily_report' && (
           <DailyReportModal
             isOpen={true}
-            onClose={() => setActiveModal(null)}
+            onClose={handleCloseModal}
             selectedDate={reportDate}
           />
         )}
         {activeModal === 'tradingview' && (
           <TradingViewModal
             isOpen={true}
-            onClose={() => setActiveModal(null)}
+            onClose={handleCloseModal}
             isDark={isDark}
           />
         )}
         {activeModal === 'help' && (
           <HelpCenterModal
             isOpen={true}
-            onClose={() => setActiveModal(null)}
-            onOpenBridge={() => setActiveModal('bridge')}
+            onClose={handleCloseModal}
+            onOpenBridge={handleOpenBridge}
           />
         )}
         {activeModal === 'phone_pwa' && (
-          <MobileServerModal isOpen={true} onClose={() => setActiveModal(null)} />
+          <MobileServerModal isOpen={true} onClose={handleCloseModal} />
         )}
         {activeModal === 'webhook' && (
-          <WebhookSettingsModal isOpen={true} onClose={() => setActiveModal(null)} />
+          <WebhookSettingsModal isOpen={true} onClose={handleCloseModal} />
         )}
       </Suspense>
     </div>

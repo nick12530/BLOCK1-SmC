@@ -39,23 +39,23 @@ export const BestOpportunityCard: React.FC<BestOpportunityCardProps> = ({
   };
 
   return (
-    <div className="bg-slate-900 dark:bg-[#111216] text-slate-100 rounded-xl p-3 sm:p-3.5 border border-slate-800 dark:border-zinc-800 shadow-xs flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 font-sans">
+    <div className="bg-slate-900 dark:bg-[#111216] text-slate-100 rounded-xl p-3 sm:p-3.5 border border-slate-800 dark:border-zinc-800 shadow-xs flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 font-sans min-w-0 overflow-hidden">
       {/* Left: Ranked Setup Summary */}
-      <div className="flex-1 flex items-start sm:items-center gap-3">
+      <div className="flex-1 flex items-start sm:items-center gap-3 min-w-0">
         <div className="p-2 rounded-lg bg-slate-800 border border-slate-700 text-sky-400 shrink-0">
           <Crosshair className="w-4 h-4" />
         </div>
 
-        <div className="space-y-0.5">
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-[10px] font-mono font-bold uppercase px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">
+        <div className="space-y-0.5 min-w-0 flex-1">
+          <div className="flex items-center gap-2 flex-wrap min-w-0">
+            <span className="text-[10px] font-mono font-bold uppercase px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700 shrink-0">
               #1 Ranked
             </span>
-            <span className="text-sm font-black font-mono tracking-tight text-white">
+            <span className="text-sm font-black font-mono tracking-tight text-white truncate">
               {best.symbol} · {best.displayName}
             </span>
             <span
-              className={`text-[11px] font-bold px-1.5 py-0.5 rounded font-mono ${
+              className={`text-[11px] font-bold px-1.5 py-0.5 rounded font-mono shrink-0 ${
                 best.bias === 'BUY'
                   ? 'bg-emerald-950/60 text-emerald-400 border border-emerald-800/40'
                   : best.bias === 'SELL'
@@ -69,7 +69,7 @@ export const BestOpportunityCard: React.FC<BestOpportunityCardProps> = ({
             {/* Auto-Select Scenario in Chart Toggle */}
             <button
               onClick={handleToggleAutoSelect}
-              className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded border transition-colors cursor-pointer flex items-center gap-1 ${
+              className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded border transition-colors cursor-pointer flex items-center gap-1 shrink-0 ${
                 autoSelectEnabled
                   ? 'bg-sky-500/10 text-sky-300 border-sky-500/30'
                   : 'bg-slate-800/50 text-slate-400 border-slate-700 hover:text-white'
@@ -86,7 +86,7 @@ export const BestOpportunityCard: React.FC<BestOpportunityCardProps> = ({
             <span>·</span>
             <span>Target RR: <strong className="text-white">1:{best.riskRewardRatio}</strong></span>
             <span>·</span>
-            <span>Spread: <strong className="text-white">{best.spreadPips} pips</strong></span>
+            <span>Spread: <strong className="text-white">{best.spreadPips}p</strong></span>
             <span>·</span>
             <span className="text-slate-300">{best.sessionName}</span>
           </p>
@@ -94,7 +94,7 @@ export const BestOpportunityCard: React.FC<BestOpportunityCardProps> = ({
       </div>
 
       {/* Center: Other Scenarios Pills (#2, #3, #4) */}
-      <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5">
+      <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5 shrink-0">
         {others.map((item, idx) => (
           <button
             key={item.symbol}

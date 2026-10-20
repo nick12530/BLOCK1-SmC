@@ -269,12 +269,12 @@ export const SignalToastNotification: React.FC<SignalToastNotificationProps> = (
 
   return (
     <>
-      {/* SNIPER ENTRY FLYOUT COCKPIT */}
+      {/* SNIPER ENTRY FLYOUT COCKPIT - Top-Right Minimal */}
       {isOpen && (
-        <div className="fixed inset-0 sm:inset-auto sm:bottom-20 sm:right-6 z-[160] font-mono select-none flex items-end sm:items-center justify-center p-3 sm:p-0 bg-black/70 sm:bg-transparent backdrop-blur-xs sm:backdrop-blur-none animate-in fade-in duration-150">
+        <div className="fixed inset-0 sm:inset-auto sm:top-24 sm:right-4 z-[100] font-mono select-none flex items-start justify-center sm:justify-end p-3 sm:p-0 bg-black/70 sm:bg-transparent backdrop-blur-xs sm:backdrop-blur-none animate-in fade-in duration-150">
           <div
             ref={popoverRef}
-            className="w-full max-w-md sm:w-[420px] rounded-2xl bg-[#0b0e14] text-zinc-100 border border-amber-500/40 shadow-[0_20px_60px_rgba(0,0,0,0.95)] p-4 sm:p-5 space-y-3.5 max-h-[92dvh] overflow-y-auto ring-1 ring-amber-500/20"
+            className="w-full max-w-md sm:w-[400px] rounded-xl bg-[#0b0e14] text-zinc-100 border border-white/[0.1] shadow-[0_20px_60px_rgba(0,0,0,0.95)] p-4 space-y-3 max-h-[85vh] overflow-y-auto ring-1 ring-white/[0.05]"
           >
             {/* Header: Sniper Badge, Countdown Timer & Close */}
             <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
@@ -689,12 +689,12 @@ export const SignalToastNotification: React.FC<SignalToastNotificationProps> = (
         </div>
       )}
 
-      {/* FLOATING SNIPER ENTRY TRIGGER BUTTON */}
-      <div className="fixed bottom-5 right-4 sm:bottom-6 sm:right-6 z-[150] select-none font-mono">
+      {/* FLOATING SNIPER ENTRY TRIGGER BUTTON - Top-Right */}
+      <div className="fixed top-14 right-4 z-[90] select-none font-mono">
         <button
           onClick={() => setIsOpen((prev) => !prev)}
           title={`Sniper ${activeDirection} Setup on ${activeSymbol} · ${formatTimer(remainingSec)} remaining`}
-          className="relative flex items-center gap-2.5 px-3.5 py-2.5 rounded-full bg-[#0a0d14] border border-amber-500/70 text-white shadow-[0_10px_30px_rgba(245,158,11,0.25)] hover:border-amber-400 hover:scale-105 active:scale-95 transition-all cursor-pointer ring-1 ring-amber-500/30 overflow-hidden"
+          className="relative flex items-center gap-2.5 px-3 py-1.5 rounded-full bg-[#10141D] border border-[#2979FF]/50 text-white shadow-lg hover:border-[#2979FF] active:scale-95 transition-all cursor-pointer ring-1 ring-[#2979FF]/20 overflow-hidden"
         >
           {/* Target Reticle Icon */}
           <span className="relative flex h-3 w-3 items-center justify-center">

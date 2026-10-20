@@ -85,11 +85,11 @@ export const StartupLoadingScreen: React.FC<StartupLoadingScreenProps> = ({
 
         {/* Minimal Typography */}
         <div className="space-y-1.5">
-          <h1 className="text-xl sm:text-2xl font-black tracking-wider text-white uppercase font-sans">
-            SMC Pro Terminal
+          <h1 className="text-2xl sm:text-3xl font-black tracking-widest text-white uppercase font-sans">
+            NIFTY
           </h1>
-          <p className="text-xs text-slate-400 font-mono">
-            Institutional Order Flow &amp; Execution
+          <p className="text-xs text-sky-400 font-mono tracking-wider">
+            INSTITUTIONAL SMC TRADING TERMINAL
           </p>
         </div>
 

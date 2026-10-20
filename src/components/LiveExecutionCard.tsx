@@ -1,43 +1,36 @@
 /**
- * LiveExecutionCard.tsx - Unified Multi-Trade Live Execution & Margin Monitor
- * Consolidates running positions, account margin metrics, and ledger links:
- * - Single source of truth for active orders (eliminates duplicate card)
- * - Real-time floating basket P&L, lot exposure, and individual trade controls
- * - Built-in Cash Balance, Live Equity, and Free Margin telemetry
+ * LiveExecutionCard.tsx - NIFTY Master Active Positions & Execution Ledger
+ * Clean, minimalistic operational station:
+ * - Direct visibility into active running positions with live floating P&L
+ * - 1-Click trade actions: Scale-Out 50%, Lock Break-Even, Close Trade, Close All
+ * - Pending Limit orders with holding timers and cancel action
  * - Direct links to Closed Trades History and Daily Journal
+ * - Zero duplicated telemetry or crowded nested boxes
  */
 
-import React, { useMemo } from 'react';
-import { usePositions, useTicker, useEngine } from '../hooks/useTradingStore';
+import React from 'react';
+import { usePositions, useTicker } from '../hooks/useTradingStore';
 import { tradingEngine } from '../engine/tradingEngine';
 import {
   TrendingUp,
   TrendingDown,
   Shield,
   X,
-  Layers,
   History,
   FileText,
   Activity,
-  Crosshair,
-  Clock,
-  Timer,
-  Bot,
   Scissors,
   CheckCircle2,
+  Clock,
+  Timer,
 } from 'lucide-react';
+import { getInstrumentConfig, SupportedSymbol } from '../engine/instrumentConfig';
 
 interface LiveExecutionCardProps {
   onOpenClosedTradesModal?: () => void;
   onOpenDailyReportModal?: () => void;
   onFocusChart?: () => void;
 }
-
-const formatMT5 = (val: number | string) => {
-  const num = typeof val === 'string' ? parseFloat(val) : val;
-  if (isNaN(num)) return '0.00';
-  return num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-};
 
 export const LiveExecutionCard: React.FC<LiveExecutionCardProps> = React.memo(({
   onOpenClosedTradesModal,
@@ -46,44 +39,26 @@ export const LiveExecutionCard: React.FC<LiveExecutionCardProps> = React.memo(({
 }) => {
   const { positions, selectedTicket, pendingOrders = [] } = usePositions();
   const ticker = useTicker();
-  const engine = useEngine();
 
   const totalPositions = positions.length;
   const totalVolume = Number(positions.reduce((sum, p) => sum + p.volume, 0).toFixed(2));
   const totalFloatingPnl = Number(positions.reduce((sum, p) => sum + p.profit, 0).toFixed(2));
-
-  // Margin & Leverage metrics
-  const marginMetrics = useMemo(() => {
-    const leverage = engine.leverage || engine.mt5Account?.leverage || 2000;
-    const notionalValue = totalVolume * 100 * ticker.bid;
-    const marginUsed = notionalValue / leverage;
-    const equity = ticker.balance + totalFloatingPnl;
-    const freeMargin = Math.max(0, equity - marginUsed);
-    const marginLevelPct = marginUsed > 0 ? `${((equity / marginUsed) * 100).toFixed(2)}%` : '0.00%';
-
-    return {
-      leverage: `1:${leverage}`,
-      marginUsed: marginUsed.toFixed(2),
-      freeMargin: freeMargin.toFixed(2),
-      marginLevelPct,
-    };
-  }, [totalVolume, ticker.bid, ticker.balance, totalFloatingPnl, engine.leverage, engine.mt5Account?.leverage]);
+  const isOverallProfit = totalFloatingPnl >= 0;
 
   const handleLockBE = (ticket: number) => {
     const pos = positions.find((p) => p.ticket === ticket);
     if (!pos) return;
+    const cfg = getInstrumentConfig((pos.symbol || ticker.symbol) as SupportedSymbol);
     const bePrice = Number(
-      (pos.type === 'BUY' ? pos.price_open + 0.3 : pos.price_open - 0.3).toFixed(2)
+      (pos.type === 'BUY' ? pos.price_open + cfg.pipSize * 3 : pos.price_open - cfg.pipSize * 3).toFixed(cfg.digits)
     );
     tradingEngine.modifyPositionStops(ticket, bePrice, pos.tp);
+    tradingEngine.slog(`Break-Even locked for trade #${ticket} at $${bePrice}`, 'trade');
   };
 
   const handleLockAllBE = () => {
     positions.forEach((pos) => {
-      const bePrice = Number(
-        (pos.type === 'BUY' ? pos.price_open + 0.3 : pos.price_open - 0.3).toFixed(2)
-      );
-      tradingEngine.modifyPositionStops(pos.ticket, bePrice, pos.tp);
+      handleLockBE(pos.ticket);
     });
   };
 
@@ -100,103 +75,65 @@ export const LiveExecutionCard: React.FC<LiveExecutionCardProps> = React.memo(({
   };
 
   return (
-    <div className="bg-white dark:bg-[#0c0e12] border border-slate-200 dark:border-zinc-800 rounded-2xl p-4 sm:p-6 flex flex-col justify-between shadow-xs space-y-4 sm:space-y-5 font-mono text-xs transition-colors">
-      {/* Top Header: Title, Active Orders Counter & Bulk Actions */}
-      <div className="flex items-center justify-between border-b border-slate-100 dark:border-zinc-800/80 pb-3 flex-wrap gap-2">
-        <div className="flex items-center gap-2 flex-wrap">
-          <Layers className="w-4 h-4 text-zinc-600 dark:text-zinc-400" />
-          <h3 className="font-extrabold text-sm text-slate-900 dark:text-zinc-100 uppercase tracking-wider">
-            Live Execution Monitor
+    <div className="w-full bg-white dark:bg-[#0c0d12] border border-slate-200 dark:border-zinc-800 rounded-xl p-4 sm:p-5 shadow-xs font-mono text-xs flex flex-col gap-4 transition-colors">
+      {/* Header: Title, Total Position Stats & Bulk Controls */}
+      <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-zinc-800 flex-wrap gap-2">
+        <div className="flex items-center gap-2">
+          <div className="w-2 h-2 rounded-full bg-sky-500" />
+          <h3 className="font-bold text-slate-900 dark:text-white uppercase tracking-wider text-xs sm:text-sm font-sans">
+            Active Positions &amp; Orders
           </h3>
-          <span className="text-[11px] px-2 py-0.5 rounded-full bg-slate-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 font-bold border border-slate-200 dark:border-zinc-700">
-            {totalPositions} {totalPositions === 1 ? 'Trade' : 'Trades'} · {totalVolume}L
+          <span className="text-[11px] text-slate-400 dark:text-zinc-500 font-mono">
+            ({totalPositions} {totalPositions === 1 ? 'Trade' : 'Trades'} · {totalVolume}L)
           </span>
-          {pendingOrders.length > 0 && (
-            <span className="text-[11px] px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 font-bold border border-amber-500/20">
-              {pendingOrders.length} Limit {pendingOrders.length === 1 ? 'Order' : 'Orders'}
-            </span>
-          )}
-
-          {/* Dedicated Auto-Trader Toggle Button */}
-          <button
-            type="button"
-            onClick={() => tradingEngine.toggleAutoTrade()}
-            aria-pressed={engine.auto_trade}
-            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-bold transition-all cursor-pointer ${
-              engine.auto_trade
-                ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-600 dark:text-emerald-400'
-                : 'bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 border-slate-200 dark:border-zinc-700 text-slate-700 dark:text-zinc-300'
-            }`}
-            title={
-              engine.auto_trade
-                ? 'Auto-Trader is ACTIVE (Automatically executes verified institutional setups). Click to turn OFF.'
-                : 'Auto-Trader is OFF (Manual orders only). Click to turn ON.'
-            }
-          >
-            <span
-              className={`w-2 h-2 rounded-full ${
-                engine.auto_trade ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400 dark:bg-zinc-500'
-              }`}
-            />
-            <Bot className="w-3.5 h-3.5" />
-            <span>Auto-Trader: {engine.auto_trade ? 'ON' : 'OFF'}</span>
-          </button>
         </div>
 
         {totalPositions > 0 && (
-          <div className="flex items-center gap-2">
-            <span
-              className={`text-sm font-black px-2.5 py-1.5 rounded-lg tabular-nums border ${
-                totalFloatingPnl >= 0
-                  ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30'
-                  : 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/30'
-              }`}
-            >
-              Net: {totalFloatingPnl >= 0 ? '+' : ''}${totalFloatingPnl.toFixed(2)} USD
-            </span>
+          <div className="flex items-center gap-2.5">
+            <div className="flex items-baseline gap-1">
+              <span className="text-[10px] text-slate-400 dark:text-zinc-500 uppercase">Floating P&amp;L:</span>
+              <strong
+                className={`font-black text-sm sm:text-base tabular-nums ${
+                  isOverallProfit ? 'text-emerald-500' : 'text-rose-500'
+                }`}
+              >
+                {isOverallProfit ? '+' : ''}${totalFloatingPnl.toFixed(2)} USD
+              </strong>
+            </div>
 
-            {totalPositions > 1 && (
-              <div className="flex items-center gap-1.5">
-                <button
-                  onClick={handleLockAllBE}
-                  className="min-h-10 px-3 rounded-md text-xs font-bold bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 border border-slate-200 dark:border-zinc-700 transition-colors cursor-pointer"
-                  title="Lock Break-Even for all positions"
-                >
-                  Lock BE
-                </button>
-                <button
-                  onClick={handleCloseAll}
-                  className="min-h-10 px-3 rounded-md text-xs font-bold bg-rose-600 hover:bg-rose-500 text-white transition-colors cursor-pointer"
-                  title="Close all positions"
-                >
-                  Close All
-                </button>
-              </div>
-            )}
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={handleLockAllBE}
+                className="px-2.5 py-1 rounded-md bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-slate-700 dark:text-zinc-200 font-bold transition-colors cursor-pointer"
+                title="Move Stop Loss to Break-Even on all trades"
+              >
+                Lock All BE
+              </button>
+              <button
+                type="button"
+                onClick={handleCloseAll}
+                className="px-2.5 py-1 rounded-md bg-rose-600 hover:bg-rose-500 text-white font-bold transition-colors cursor-pointer"
+                title="Immediately close all open positions"
+              >
+                Close All
+              </button>
+            </div>
           </div>
         )}
       </div>
 
-      {/* 1. Pending Limit Orders Strip with Minimalistic Countdown Timer */}
+      {/* Pending Limit Orders Section (if any) */}
       {pendingOrders.length > 0 && (
-        <div className="space-y-2 border-b border-slate-100 dark:border-zinc-800/80 pb-3">
-          <div className="flex items-center justify-between text-[11px] text-slate-500 dark:text-zinc-400">
-            <div className="flex items-center gap-1.5 font-bold uppercase tracking-wider text-sky-600 dark:text-sky-400">
-              <Clock className="w-3.5 h-3.5 animate-pulse" />
-              <span>Pending Limit Orders ({pendingOrders.length})</span>
-            </div>
-            <span className="text-[10px] text-zinc-400 hidden sm:inline">
-              Engine holds entry before cancelling if price drifts away
-            </span>
+        <div className="space-y-2 pb-2 border-b border-slate-100 dark:border-zinc-800">
+          <div className="flex items-center gap-1.5 text-sky-600 dark:text-sky-400 font-bold">
+            <Clock className="w-3.5 h-3.5 animate-pulse" />
+            <span>Pending Orders ({pendingOrders.length})</span>
           </div>
 
           <div className="space-y-2">
             {pendingOrders.map((order) => {
               const isBuy = order.direction === 'BUY';
-              const progressPct = Math.max(
-                0,
-                Math.min(100, Math.round((order.remainingSeconds / order.ttlSeconds) * 100))
-              );
               const minutes = Math.floor(order.remainingSeconds / 60);
               const seconds = order.remainingSeconds % 60;
               const timeDisplay = `${minutes}:${seconds < 10 ? '0' : ''}${seconds}`;
@@ -204,67 +141,35 @@ export const LiveExecutionCard: React.FC<LiveExecutionCardProps> = React.memo(({
               return (
                 <div
                   key={order.ticket}
-                  className="p-3 rounded-xl border border-sky-200/90 dark:border-sky-900/60 bg-sky-50/40 dark:bg-[#091522]/60 space-y-2 font-mono"
+                  className="p-3 rounded-lg border border-slate-200 dark:border-zinc-800 bg-slate-50/60 dark:bg-zinc-900/40 flex items-center justify-between gap-3 flex-wrap"
                 >
-                  <div className="flex items-center justify-between flex-wrap gap-2">
-                    <div className="flex items-center gap-2">
-                      <span
-                        className={`px-2 py-0.5 rounded text-[10px] font-black uppercase flex items-center gap-1 border ${
-                          isBuy
-                            ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30'
-                            : 'bg-rose-500/15 text-rose-600 dark:text-rose-400 border-rose-500/30'
-                        }`}
-                      >
-                        {isBuy ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
-                        <span>{order.type.replace('_', ' ')}</span>
-                      </span>
-
-                      <span className="font-bold text-slate-900 dark:text-white text-xs">
-                        {order.symbol} · {order.volume}L @ ${order.entry.toFixed(order.symbol === 'XAUUSD' || order.symbol === 'USDJPY' ? 2 : 4)}
-                      </span>
-
-                      <span className="text-slate-400 text-[10px]">#{order.ticket}</span>
-                    </div>
-
-                    {/* Minimalist Visual Countdown Timer */}
-                    <div className="flex items-center gap-2">
-                      <div
-                        className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-amber-500/10 border border-amber-500/30 text-amber-600 dark:text-amber-400 text-xs font-bold"
-                        title={`Holding entry for ${order.remainingSeconds}s before auto-cancelling if price drifts > ${order.maxDriftPips} pips`}
-                      >
-                        <Timer className="w-3.5 h-3.5 text-amber-500 animate-pulse" />
-                        <span className="tabular-nums font-mono">{timeDisplay}</span>
-                        <span className="text-[10px] text-amber-500/80">hold</span>
-                      </div>
-
-                      <button
-                        type="button"
-                        onClick={() => tradingEngine.cancelPendingOrder(order.ticket)}
-                        className="px-2 py-1 rounded-md text-[11px] font-bold text-slate-500 hover:text-rose-500 hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer flex items-center gap-1"
-                        title="Cancel pending order"
-                      >
-                        <X className="w-3.5 h-3.5" />
-                        <span>Cancel</span>
-                      </button>
-                    </div>
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={`font-black uppercase text-xs ${
+                        isBuy ? 'text-emerald-500' : 'text-rose-500'
+                      }`}
+                    >
+                      {order.direction} LIMIT
+                    </span>
+                    <span className="font-bold text-slate-900 dark:text-white">
+                      {order.symbol} · {order.volume}L @ ${order.entry.toFixed(2)}
+                    </span>
+                    <span className="text-slate-400 text-[10px]">#{order.ticket}</span>
                   </div>
 
-                  {/* Drift & holding metrics */}
-                  <div className="flex items-center justify-between text-[10px] text-slate-500 dark:text-zinc-400 pt-0.5">
-                    <span>
-                      Current Drift: <strong className="text-slate-800 dark:text-zinc-200 tabular-nums">{order.currentDriftPips} pips</strong> (Auto-cancels if &gt; {order.maxDriftPips} pips)
+                  <div className="flex items-center gap-3">
+                    <span className="flex items-center gap-1 text-amber-500 font-bold text-xs">
+                      <Timer className="w-3.5 h-3.5" />
+                      <span>{timeDisplay} left</span>
                     </span>
-                    <span>
-                      SL: ${order.sl.toFixed(2)} · TP: ${order.tp.toFixed(2)}
-                    </span>
-                  </div>
 
-                  {/* Minimalist countdown progress bar */}
-                  <div className="w-full h-1 bg-slate-200 dark:bg-zinc-800 rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-amber-500 transition-all duration-500"
-                      style={{ width: `${progressPct}%` }}
-                    />
+                    <button
+                      type="button"
+                      onClick={() => tradingEngine.cancelPendingOrder(order.ticket)}
+                      className="px-2 py-1 rounded bg-slate-200 dark:bg-zinc-800 hover:text-rose-500 font-bold text-[11px] transition-colors cursor-pointer"
+                    >
+                      Cancel
+                    </button>
                   </div>
                 </div>
               );
@@ -273,145 +178,154 @@ export const LiveExecutionCard: React.FC<LiveExecutionCardProps> = React.memo(({
         </div>
       )}
 
-      {/* Body: Active Running Positions Summary or Clean Standby State */}
+      {/* Active Running Positions List */}
       {totalPositions > 0 ? (
-        <div className="space-y-2">
-          <div className="flex items-center justify-between text-[11px] font-bold text-slate-500 dark:text-zinc-400 pb-1">
-            <span>ACTIVE BROKER POSITIONS ({totalPositions})</span>
-            <span className="text-[10px]">Managed in Running Trades HUD above</span>
-          </div>
-          <div className="space-y-1.5 max-h-[220px] overflow-y-auto pr-1">
-            {positions.map((pos) => {
-              const isBuy = pos.type === 'BUY';
-              const isSelected = selectedTicket === pos.ticket;
+        <div className="space-y-2.5">
+          {positions.map((pos) => {
+            const isBuy = pos.type === 'BUY';
+            const isProfit = pos.profit >= 0;
+            const sym = (pos.symbol || ticker.symbol) as SupportedSymbol;
+            const cfg = getInstrumentConfig(sym);
+            const isSelected = selectedTicket === pos.ticket;
 
-              return (
-                <div
-                  key={pos.ticket}
-                  onClick={() => {
-                    tradingEngine.setSelectedTicket(pos.ticket);
-                    onFocusChart?.();
-                  }}
-                  className={`p-2.5 rounded-xl border flex items-center justify-between gap-2 text-xs transition-colors cursor-pointer ${
-                    isSelected
-                      ? 'bg-sky-50 dark:bg-sky-950/20 border-sky-400 dark:border-sky-800'
-                      : 'bg-slate-50/70 dark:bg-zinc-900/50 border-slate-200 dark:border-zinc-800 hover:border-slate-300 dark:hover:border-zinc-700'
-                  }`}
-                  title="Click to view position on chart"
-                >
-                  <div className="flex items-center gap-2 min-w-0">
-                    <span
-                      className={`px-2 py-0.5 rounded text-[10px] font-black uppercase flex items-center gap-0.5 shrink-0 ${
-                        isBuy
-                          ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
-                          : 'bg-rose-500/15 text-rose-600 dark:text-rose-400'
-                      }`}
-                    >
-                      {isBuy ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
-                      <span>{pos.type}</span>
-                    </span>
+            return (
+              <div
+                key={pos.ticket}
+                className={`p-3.5 rounded-lg border transition-colors flex items-center justify-between gap-3 flex-wrap ${
+                  isSelected
+                    ? 'border-sky-500 bg-sky-500/5'
+                    : 'border-slate-200 dark:border-zinc-800/90 bg-slate-50/70 dark:bg-[#0f1117] hover:border-slate-300 dark:hover:border-zinc-700'
+                }`}
+              >
+                {/* Trade Details */}
+                <div className="flex items-center gap-3 min-w-0">
+                  <span
+                    className={`font-black text-xs uppercase flex items-center gap-1 shrink-0 ${
+                      isBuy ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'
+                    }`}
+                  >
+                    {isBuy ? <TrendingUp className="w-3.5 h-3.5" /> : <TrendingDown className="w-3.5 h-3.5" />}
+                    <span>{pos.type}</span>
+                  </span>
 
-                    <span className="font-bold text-slate-900 dark:text-white truncate">
-                      {pos.symbol || ticker.symbol} · {pos.volume}L @ ${pos.price_open.toFixed(2)}
-                    </span>
-                    <span className="text-slate-400 text-[10px] shrink-0">#{pos.ticket}</span>
-                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-black text-slate-900 dark:text-white font-sans text-sm">
+                        {sym}
+                      </span>
+                      <span className="text-slate-500 font-mono text-xs">
+                        {pos.volume}L @ ${pos.price_open.toFixed(cfg.digits)}
+                      </span>
+                      <span className="text-[10px] text-slate-400">#{pos.ticket}</span>
+                    </div>
 
-                  <div className="flex items-center gap-2 shrink-0">
-                    <span
-                      className={`font-black tabular-nums text-xs ${
-                        pos.profit >= 0
-                          ? 'text-emerald-600 dark:text-emerald-400'
-                          : 'text-rose-600 dark:text-rose-400'
-                      }`}
-                    >
-                      {pos.profit >= 0 ? '+' : ''}${pos.profit.toFixed(2)}
-                    </span>
-                    <span className="text-[10px] text-sky-600 dark:text-sky-400 font-bold hidden sm:inline">
-                      {isSelected ? 'Chart Focused' : 'View Chart →'}
-                    </span>
+                    <div className="text-[11px] text-slate-400 dark:text-zinc-500 flex items-center gap-2 mt-0.5">
+                      <span>SL: ${pos.sl > 0 ? pos.sl.toFixed(cfg.digits) : 'None'}</span>
+                      <span>·</span>
+                      <span>TP: ${pos.tp > 0 ? pos.tp.toFixed(cfg.digits) : 'None'}</span>
+                      {pos.beLocked && (
+                        <>
+                          <span>·</span>
+                          <span className="text-sky-500 font-bold flex items-center gap-0.5">
+                            <CheckCircle2 className="w-3 h-3" /> BE Secured
+                          </span>
+                        </>
+                      )}
+                    </div>
                   </div>
                 </div>
-              );
-            })}
-          </div>
+
+                {/* Live P&L & Individual Action Buttons */}
+                <div className="flex items-center gap-3 shrink-0">
+                  <div className="text-right">
+                    <span
+                      className={`text-sm sm:text-base font-black tabular-nums block ${
+                        isProfit ? 'text-emerald-500' : 'text-rose-500'
+                      }`}
+                    >
+                      {isProfit ? '+' : ''}${pos.profit.toFixed(2)}
+                    </span>
+                    <span className="text-[10px] text-slate-400">Floating USD</span>
+                  </div>
+
+                  <div className="flex items-center gap-1">
+                    {/* Scale-Out 50% */}
+                    <button
+                      type="button"
+                      onClick={() => handleScaleOut(pos.ticket)}
+                      className="px-2 py-1 rounded bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-slate-700 dark:text-zinc-300 font-bold text-[11px] transition-colors cursor-pointer flex items-center gap-1"
+                      title="Close 50% volume to secure partial profit"
+                    >
+                      <Scissors className="w-3 h-3" />
+                      <span>Scale 50%</span>
+                    </button>
+
+                    {/* Lock BE */}
+                    {!pos.beLocked && (
+                      <button
+                        type="button"
+                        onClick={() => handleLockBE(pos.ticket)}
+                        className="px-2 py-1 rounded bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-slate-700 dark:text-zinc-300 font-bold text-[11px] transition-colors cursor-pointer flex items-center gap-1"
+                        title="Move Stop Loss to Break-Even"
+                      >
+                        <Shield className="w-3 h-3 text-sky-500" />
+                        <span>BE</span>
+                      </button>
+                    )}
+
+                    {/* Close Position */}
+                    <button
+                      type="button"
+                      onClick={() => handleClose(pos.ticket)}
+                      className="px-2 py-1 rounded bg-rose-500/10 hover:bg-rose-500/20 text-rose-500 font-bold text-[11px] transition-colors cursor-pointer flex items-center gap-1"
+                      title="Immediately close this position"
+                    >
+                      <X className="w-3 h-3" />
+                      <span>Close</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
         </div>
       ) : pendingOrders.length === 0 ? (
-        <div className="py-5 px-4 rounded-xl border border-dashed border-slate-200 dark:border-zinc-800 text-center space-y-2">
-          <Activity className="w-5 h-5 text-zinc-400 dark:text-zinc-600 mx-auto" />
+        /* Standby State (Clean, non-crowded) */
+        <div className="py-6 px-4 rounded-lg border border-dashed border-slate-200 dark:border-zinc-800 text-center space-y-1.5">
+          <Activity className="w-4 h-4 text-slate-400 dark:text-zinc-600 mx-auto" />
           <h4 className="font-bold text-xs uppercase tracking-wider text-slate-700 dark:text-zinc-300">
-            Awaiting Next Trade Execution
+            No Active Positions
           </h4>
-          <p className="text-[11px] text-zinc-400 font-sans max-w-xs mx-auto">
-            Execute orders from the deck or enable Auto-Trade for automated entries.
+          <p className="text-[11px] text-slate-400 dark:text-zinc-500 font-sans max-w-sm mx-auto">
+            Terminal is listening for institutional setups. Orders execute automatically via Auto-Trader or with 1-click execution above.
           </p>
-          <div className="pt-1">
-            <button
-              type="button"
-              onClick={() => tradingEngine.toggleAutoTrade()}
-              aria-pressed={engine.auto_trade}
-              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-bold transition-all cursor-pointer ${
-                engine.auto_trade
-                  ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-600 dark:text-emerald-400'
-                  : 'bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 border-slate-200 dark:border-zinc-700 text-slate-700 dark:text-zinc-300'
-              }`}
-            >
-              <span
-                className={`w-2 h-2 rounded-full ${
-                  engine.auto_trade ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400 dark:bg-zinc-500'
-                }`}
-              />
-              <Bot className="w-3.5 h-3.5" />
-              <span>Auto-Trader: {engine.auto_trade ? 'ACTIVE (Click to Pause)' : 'TURN ON'}</span>
-            </button>
-          </div>
         </div>
       ) : null}
 
-      {/* Account Margin & Journal Navigation Strip (Exact MT5 layout) */}
-      <div className="pt-2.5 border-t border-slate-100 dark:border-zinc-800/80 flex items-center justify-between flex-wrap gap-2 text-[11px]">
-        {/* Margin State (MT5 standard telemetry layout) */}
-        <div className="flex items-center gap-2 sm:gap-3 text-zinc-500 dark:text-zinc-400 overflow-x-auto no-scrollbar font-mono text-[10px] sm:text-[11px]">
-          <span>
-            Balance: <strong className="text-slate-900 dark:text-white font-bold">{formatMT5(ticker.balance)} USD</strong>
-          </span>
-          <span className="text-zinc-300 dark:text-zinc-700">|</span>
-          <span>
-            Equity: <strong className="text-slate-900 dark:text-white font-bold">{formatMT5(ticker.equity)}</strong>
-          </span>
-          <span className="text-zinc-300 dark:text-zinc-700">|</span>
-          <span>
-            Margin: <strong className="text-slate-900 dark:text-white font-bold">{formatMT5(marginMetrics.marginUsed)}</strong>
-          </span>
-          <span className="text-zinc-300 dark:text-zinc-700">|</span>
-          <span>
-            Free Margin: <strong className="text-slate-900 dark:text-white font-bold">{formatMT5(marginMetrics.freeMargin)}</strong>
-          </span>
-          <span className="text-zinc-300 dark:text-zinc-700">|</span>
-          <span>
-            Margin Level: <strong className="text-emerald-500 font-bold">{marginMetrics.marginLevelPct}</strong>
-          </span>
-        </div>
+      {/* Footer Strip: Quick Links to Trade History & Audit Journal */}
+      <div className="pt-2 border-t border-slate-100 dark:border-zinc-800 flex items-center justify-between text-[11px] text-slate-400 dark:text-zinc-500">
+        <span className="font-sans">
+          Broker Stop Loss &amp; Take Profit synced automatically
+        </span>
 
-        {/* Ledger Links */}
         <div className="flex items-center gap-3">
           {onOpenClosedTradesModal && (
             <button
               onClick={onOpenClosedTradesModal}
-              className="flex items-center gap-1 text-zinc-500 hover:text-slate-900 dark:hover:text-white transition-colors cursor-pointer"
+              className="flex items-center gap-1 text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white transition-colors cursor-pointer"
             >
-              <History className="w-3.5 h-3.5 text-zinc-400" />
-              <span>History</span>
+              <History className="w-3.5 h-3.5" />
+              <span>Closed Trades</span>
             </button>
           )}
 
           {onOpenDailyReportModal && (
             <button
               onClick={onOpenDailyReportModal}
-              className="flex items-center gap-1 text-zinc-500 hover:text-slate-900 dark:hover:text-white transition-colors cursor-pointer"
+              className="flex items-center gap-1 text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white transition-colors cursor-pointer"
             >
-              <FileText className="w-3.5 h-3.5 text-zinc-400" />
-              <span>Journal</span>
+              <FileText className="w-3.5 h-3.5" />
+              <span>Daily Report</span>
             </button>
           )}
         </div>

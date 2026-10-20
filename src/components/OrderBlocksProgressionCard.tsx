@@ -126,24 +126,24 @@ export const OrderBlocksProgressionCard: React.FC = React.memo(() => {
   return (
     <div className="w-full min-w-0 bg-white dark:bg-[#111216] border border-slate-200/90 dark:border-zinc-800 rounded-2xl p-4 sm:p-5 flex flex-col justify-between shadow-xs dark:shadow-none space-y-4 font-mono text-xs transition-colors">
       {/* Top Header: Title, Order Block Type, and Status */}
-      <div className="flex items-center justify-between border-b border-slate-100 dark:border-zinc-800/80 pb-3 flex-wrap gap-2">
-        <div className="flex items-center gap-2">
-          <Layers className="w-4 h-4 text-emerald-500" />
-          <h3 className="font-extrabold text-xs sm:text-sm text-slate-900 dark:text-zinc-100 uppercase tracking-wider">
-            Active Order Block Progression
+      <div className="flex items-center justify-between border-b border-slate-100 dark:border-zinc-800/80 pb-2.5 flex-wrap gap-2 min-w-0">
+        <div className="flex items-center gap-2 min-w-0 flex-1">
+          <Layers className="w-4 h-4 text-emerald-500 shrink-0" />
+          <h3 className="font-extrabold text-xs sm:text-sm text-slate-900 dark:text-zinc-100 uppercase tracking-wider truncate">
+            Order Block Progression
           </h3>
           <span
-            className={`text-[11px] font-bold px-2 py-0.5 rounded-full border ${
+            className={`text-[10px] font-bold px-2 py-0.5 rounded-full border shrink-0 ${
               isBuy
                 ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20'
                 : 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/20'
             }`}
           >
-            {ob.type}
+            {isBuy ? '+OB Demand' : '-OB Supply'}
           </span>
         </div>
 
-        <div className="flex items-center gap-1.5 text-xs text-zinc-500 dark:text-zinc-400">
+        <div className="flex items-center gap-1.5 text-xs text-zinc-500 dark:text-zinc-400 shrink-0">
           <Activity className="w-3.5 h-3.5 text-emerald-500" />
           <span>Status: <strong className="text-slate-900 dark:text-white font-bold">{ob.status}</strong></span>
         </div>
@@ -152,41 +152,41 @@ export const OrderBlocksProgressionCard: React.FC = React.memo(() => {
       {/* Institutional Boundary Levels Matrix */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 text-center text-xs">
         {/* Upper Boundary */}
-        <div className="p-3 rounded-xl bg-slate-50 dark:bg-zinc-900/80 border border-slate-200 dark:border-zinc-800">
-          <span className="text-[10px] text-zinc-400 block uppercase font-bold">
+        <div className="p-2.5 sm:p-3 rounded-xl bg-slate-50 dark:bg-zinc-900/80 border border-slate-200 dark:border-zinc-800 min-w-0 overflow-hidden">
+          <span className="text-[10px] text-zinc-400 block uppercase font-bold truncate">
             {isBuy ? 'Upper Threshold (High)' : 'Supply Ceiling (High)'}
           </span>
-          <span className="text-sm sm:text-base font-black text-slate-900 dark:text-white tabular-nums block mt-0.5">
+          <span className="text-sm sm:text-base font-black text-slate-900 dark:text-white tabular-nums block mt-0.5 truncate">
             ${ob.high.toFixed(2)}
           </span>
-          <span className="text-[10px] text-zinc-500 block">
-            {isBuy ? 'Institutional Demand Open' : 'Extreme Wick Level'}
+          <span className="text-[10px] text-zinc-500 block truncate">
+            {isBuy ? 'Demand Open' : 'Extreme Wick'}
           </span>
         </div>
 
         {/* 50% Mean Threshold (MT) - Institutional Retest Point */}
-        <div className="p-3 rounded-xl bg-amber-500/5 dark:bg-amber-500/10 border border-amber-500/30">
-          <span className="text-[10px] text-amber-600 dark:text-amber-400 block uppercase font-bold">
+        <div className="p-2.5 sm:p-3 rounded-xl bg-amber-500/5 dark:bg-amber-500/10 border border-amber-500/30 min-w-0 overflow-hidden">
+          <span className="text-[10px] text-amber-600 dark:text-amber-400 block uppercase font-bold truncate">
             50% Mean Threshold (MT)
           </span>
-          <span className="text-sm sm:text-base font-black text-amber-600 dark:text-amber-400 tabular-nums block mt-0.5">
+          <span className="text-sm sm:text-base font-black text-amber-600 dark:text-amber-400 tabular-nums block mt-0.5 truncate">
             ${ob.mt.toFixed(2)}
           </span>
-          <span className="text-[10px] text-zinc-500 dark:text-zinc-400 block">
-            Spot: {ob.distFromMT >= 0 ? '+' : ''}{ob.distFromMT} pts from MT
+          <span className="text-[10px] text-zinc-500 dark:text-zinc-400 block truncate">
+            {ob.distFromMT >= 0 ? '+' : ''}{ob.distFromMT} pts to MT
           </span>
         </div>
 
         {/* Lower Boundary */}
-        <div className="p-3 rounded-xl bg-slate-50 dark:bg-zinc-900/80 border border-slate-200 dark:border-zinc-800">
-          <span className="text-[10px] text-zinc-400 block uppercase font-bold">
+        <div className="p-2.5 sm:p-3 rounded-xl bg-slate-50 dark:bg-zinc-900/80 border border-slate-200 dark:border-zinc-800 min-w-0 overflow-hidden">
+          <span className="text-[10px] text-zinc-400 block uppercase font-bold truncate">
             {isBuy ? 'Demand Floor (Low)' : 'Lower Threshold (Low)'}
           </span>
-          <span className="text-sm sm:text-base font-black text-slate-900 dark:text-white tabular-nums block mt-0.5">
+          <span className="text-sm sm:text-base font-black text-slate-900 dark:text-white tabular-nums block mt-0.5 truncate">
             ${ob.low.toFixed(2)}
           </span>
-          <span className="text-[10px] text-zinc-500 block">
-            {isBuy ? 'Structure Invalidation Low' : 'Institutional Supply Open'}
+          <span className="text-[10px] text-zinc-500 block truncate">
+            {isBuy ? 'Invalidation Low' : 'Supply Open'}
           </span>
         </div>
       </div>

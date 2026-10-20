@@ -450,10 +450,15 @@ export function evaluateConfluence(
   minScoreThreshold: number = 5.0,
   timeframe: 'M1' | 'M5' | 'M15' = 'M5'
 ): Signal | null {
-  if (dfExec.length < 25 || dfHtf.length < 20) return null;
+  if (dfExec.length < 26 || dfHtf.length < 21) return null;
 
-  const aExec = calculateATR(dfExec);
-  const lastCandle = dfExec[dfExec.length - 1];
+  // SAFETY-FIX: evaluate signals strictly on closed candles to eliminate repainting
+  const closed = dfExec.slice(0, -1);
+  const closedHtf = dfHtf.slice(0, -1);
+
+  const aExec = calculateATR(closed);
+  const formingCandle = dfExec[dfExec.length - 1];
+  const lastCandle = closed[closed.length - 1];
   const price = lastCandle.close;
   const atrNow = aExec[aExec.length - 1];
 
@@ -463,7 +468,7 @@ export function evaluateConfluence(
   const timeframeMs = { M1: 60_000, M5: 5 * 60_000, M15: 15 * 60_000 }[timeframe];
   const htfTimeframeMs = timeframe === 'M1' ? 5 * 60_000 : timeframe === 'M5' ? 15 * 60_000 : 60 * 60_000;
   if (
-    now - toMilliseconds(lastCandle.time) > timeframeMs * 3 ||
+    now - toMilliseconds(formingCandle.time) > timeframeMs * 3 ||
     now - toMilliseconds(dfHtf[dfHtf.length - 1].time) > htfTimeframeMs * 3 ||
     hasRecentCandleGap(dfExec, timeframeMs) ||
     hasRecentCandleGap(dfHtf, htfTimeframeMs)
@@ -472,11 +477,11 @@ export function evaluateConfluence(
   }
 
   const ms = new MarketStructureEngine(3);
-  ms.update(dfHtf);
+  ms.update(closedHtf);
 
-  // Unmitigated recent zones from execution timeframe
-  const fvgs = detectFVGs(dfExec, aExec).filter((z) => !z.filled).slice(-8);
-  const obs = detectOrderBlocks(dfExec, aExec).filter((z) => !z.filled).slice(-8);
+  // Unmitigated recent zones from execution timeframe (analyzed on closed candles)
+  const fvgs = detectFVGs(closed, aExec).filter((z) => !z.filled).slice(-8);
+  const obs = detectOrderBlocks(closed, aExec).filter((z) => !z.filled).slice(-8);
   const zones = [...fvgs, ...obs];
 
   const sess = sessionFilter(lastCandle.time);
@@ -571,8 +576,8 @@ export function evaluateConfluence(
     }
   }
 
-  // Liquidity Sweep / Swing Failure Pattern (SFP) Gate Engine
-  const sweep = detectLiquiditySweep(dfExec, ms.swings, direction);
+  // Liquidity Sweep / Swing Failure Pattern (SFP) Gate Engine (analyzed on closed candles)
+  const sweep = detectLiquiditySweep(closed, ms.swings, direction);
   if (sweep.hasSweep) {
     score += 1.5;
     reasons.push(`${sweep.description} (+1.5)`);
@@ -604,8 +609,8 @@ export function evaluateConfluence(
     reasons.push('⭐ High-Profit Exception: Out-of-session institutional setup approved during Asian consolidation');
   }
 
-  // Mastered Gold Candlestick Pattern Engine
-  const csAnalysis = analyzeGoldCandlestickPatterns(dfExec);
+  // Mastered Gold Candlestick Pattern Engine (analyzed on closed candles)
+  const csAnalysis = analyzeGoldCandlestickPatterns(closed);
   const activePattern = csAnalysis.activePattern;
   const targetBias = direction === 'BUY' ? 'BULLISH' : 'BEARISH';
   if (activePattern.bias !== targetBias || activePattern.reliability < 80) return null;

@@ -472,8 +472,9 @@ export class MT5BridgeConnector {
         poiKey: trade.poiKey,
         expectedLogin: this.expectedAccount.login,
         expectedServer: this.expectedAccount.server,
-        bypassCooldown: true,
-        forceExecute: true,
+        // SAFETY-FIX: Pass through caller's actual flags instead of hardcoded true bypasses
+        bypassCooldown: trade.bypassCooldown ?? false,
+        forceExecute: trade.forceExecute ?? false,
       }),
     });
     this.lastPing = Date.now();

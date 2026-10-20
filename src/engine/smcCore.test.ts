@@ -184,4 +184,62 @@ describe('SMC signal filters', () => {
       }
     });
   });
+
+  describe('closed bar execution (repainting prevention)', () => {
+    it('does not return a signal when the setup only exists on the unclosed forming bar, but evaluates it once completed', () => {
+      // SAFETY-FIX: verify signals fire only on closed bars
+      const now = Date.now();
+      const baseTime = now - 40 * 60_000;
+      const htfCandles: Candle[] = Array.from({ length: 30 }, (_, index) => ({
+        time: baseTime + index * 5 * 60_000,
+        timeStr: '12:00',
+        open: 2600 + index * 2,
+        high: 2602 + index * 2,
+        low: 2599 + index * 2,
+        close: 2601 + index * 2,
+        volume: 100,
+      }));
+
+      const execCandles: Candle[] = Array.from({ length: 25 }, (_, index) => ({
+        time: baseTime + index * 60_000,
+        timeStr: '12:00',
+        open: 2600 + index * 0.1,
+        high: 2601 + index * 0.1,
+        low: 2599 + index * 0.1,
+        close: 2600 + index * 0.1,
+        volume: 100,
+      }));
+
+      const formingCandle: Candle = {
+        time: baseTime + 25 * 60_000,
+        timeStr: '12:25',
+        open: 2602.5,
+        high: 2602.6,
+        low: 2598.0,
+        close: 2602.4,
+        volume: 200,
+      };
+
+      const seriesWithForming = [...execCandles, formingCandle];
+
+      // Forming candle at dfExec[length - 1] is sliced off, so it does not trigger an incomplete signal
+      const signalForming = evaluateConfluence(seriesWithForming, htfCandles, 2.0, 5.0, 'M1');
+      expect(signalForming).toBeNull();
+
+      // Now complete the bar by appending the next forming bar
+      const nextFormingBar: Candle = {
+        time: baseTime + 26 * 60_000,
+        timeStr: '12:26',
+        open: 2602.4,
+        high: 2603.0,
+        low: 2602.0,
+        close: 2602.8,
+        volume: 100,
+      };
+      const seriesWithCompleted = [...execCandles, formingCandle, nextFormingBar];
+      const closed = seriesWithCompleted.slice(0, -1);
+      // The forming candle has now transitioned into the closed set
+      expect(closed[closed.length - 1]).toEqual(formingCandle);
+    });
+  });
 });

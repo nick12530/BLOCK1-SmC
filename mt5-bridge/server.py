@@ -507,8 +507,20 @@ def read_closed_trades(days: int, symbol: str) -> list[dict]:
             mt5.DEAL_REASON_SL: "SL",
         }
         rationale = str(entry.comment).strip()
-        open_time = _deal_time(entry)
-        close_time = _deal_time(last_exit)
+        # SAFETY-FIX: Compute pip size dynamically from symbol (JPY: 0.01, XAUUSD/metals: 0.1, others: 0.0001) via mt5.symbol_info
+        deal_sym = str(entry.symbol) or symbol
+        sym_info = mt5.symbol_info(deal_sym)
+        upper_sym = deal_sym.upper()
+        if "JPY" in upper_sym:
+            pip_size = 0.01
+        elif "XAU" in upper_sym or "GOLD" in upper_sym:
+            pip_size = 0.1
+        elif sym_info is not None and getattr(sym_info, "point", 0) > 0:
+            pip_size = sym_info.point * (10 if sym_info.digits in (3, 5) else 1)
+        else:
+            pip_size = 0.0001
+        calculated_pips = round(price_delta / pip_size, 1) if pip_size > 0 else 0.0
+
         results.append(
             {
                 "ticket": int(last_exit.ticket),
@@ -522,7 +534,7 @@ def read_closed_trades(days: int, symbol: str) -> list[dict]:
                 "openPrice": float(entry.price),
                 "closePrice": close_price,
                 "profit": sum(_deal_cost(deal) for deal in position_deals),
-                "pips": price_delta * 10,
+                "pips": calculated_pips,
                 "reason": reason_by_code.get(last_exit.reason, "Manual"),
                 "comment": str(last_exit.comment),
                 "strategyRationale": rationale if rationale and rationale != "SMC dashboard" else None,
@@ -655,27 +667,31 @@ def place_trade(payload: TradeRequest, request: Request) -> dict:
 
     if not payload.bypassCooldown and not payload.forceExecute:
         tf_mins = 1 if payload.signalTimeframe == "M1" else 15 if payload.signalTimeframe == "M15" else 5
-        signal_age_limit = timedelta(minutes=tf_mins) * 60
+        # SAFETY-FIX: signal_age_limit must be timedelta(minutes=tf_mins), not multiplied by 60
+        signal_age_limit = timedelta(minutes=tf_mins)
         if now - signal_bar_time > signal_age_limit:
             raise HTTPException(status_code=409, detail="Signal candle is stale; wait for a new broker-confirmed setup.")
     with sqlite3.connect(STATE_DATABASE) as connection:
         trading_halted = connection.execute(
             "SELECT state_value FROM control_state WHERE state_key = 'trading_halted'"
         ).fetchone()[0] == "true"
+    # SAFETY-FIX: Scope of forceExecute:
+    # CAN bypass: broker spread limits, daily-loss limits, max open positions.
+    # CANNOT bypass: central kill switch, high-impact news blackout, invalid credentials.
+    # forceExecute must NEVER automatically disarm or bypass the kill switch.
     if trading_halted:
         if payload.forceExecute:
-            with sqlite3.connect(STATE_DATABASE) as connection:
-                connection.execute("UPDATE control_state SET state_value = 'false' WHERE state_key = 'trading_halted'")
-            logger.info("⚡ forceExecute active: disarmed central kill switch lock.")
-        else:
-            logger.warning("🚫 [423 Locked] Central MT5 kill switch is armed.")
-            raise HTTPException(status_code=423, detail="Central MT5 kill switch is armed. Disarm the Kill Switch in dashboard or send forceExecute.")
+            logger.warning("🚫 [423 Locked] forceExecute cannot override armed central kill switch.")
+        logger.warning("🚫 [423 Locked] Central MT5 kill switch is armed.")
+        raise HTTPException(
+            status_code=423,
+            detail="Central MT5 kill switch is armed. Disarm the Kill Switch in dashboard before placing trades.",
+        )
     if payload.instrumentType == "standard" and configured_news_blackout(now):
-        if not payload.forceExecute:
-            logger.warning("🚫 [423 Locked] Configured high-impact news blackout window is active.")
-            raise HTTPException(status_code=423, detail="Configured high-impact news blackout window is active.")
-        else:
-            logger.info("⚡ forceExecute active: bypassing news blackout window.")
+        if payload.forceExecute:
+            logger.warning("🚫 [423 Locked] forceExecute cannot override configured high-impact news blackout.")
+        logger.warning("🚫 [423 Locked] Configured high-impact news blackout window is active.")
+        raise HTTPException(status_code=423, detail="Configured high-impact news blackout window is active.")
 
     raw_symbol = payload.symbol.strip()
     symbol = resolve_broker_symbol(raw_symbol)
@@ -704,9 +720,12 @@ def place_trade(payload: TradeRequest, request: Request) -> dict:
     vol_min = symbol_spec["volumeMin"]
     vol_max = symbol_spec["volumeMax"]
     vol_step = symbol_spec["volumeStep"]
+    # SAFETY-FIX: Derive volume precision dynamically from volume_step decimals instead of round(..., 2)
+    step_str = f"{vol_step:.8f}".rstrip("0")
+    vol_decimals = len(step_str.split(".")[1]) if "." in step_str else 0
     # Auto-align and clamp lot size to broker volume step
     step_count = round((payload.volume - vol_min) / vol_step)
-    payload.volume = round(vol_min + max(0, step_count) * vol_step, 2)
+    payload.volume = round(vol_min + max(0, step_count) * vol_step, vol_decimals)
     payload.volume = max(vol_min, min(vol_max, payload.volume))
 
     stop_distance = abs(price - payload.sl)
@@ -714,7 +733,8 @@ def place_trade(payload: TradeRequest, request: Request) -> dict:
     risk_budget = account["equity"] * RISK_CONFIG["riskPercentPerTrade"] / 100
     max_safe_volume = risk_budget / risk_per_lot if risk_per_lot > 0 else 0
     safe_step_count = math.floor((max_safe_volume - symbol_spec["volumeMin"]) / symbol_spec["volumeStep"] + 1e-9)
-    safe_volume = symbol_spec["volumeMin"] + max(0, safe_step_count) * symbol_spec["volumeStep"]
+    # SAFETY-FIX: Use dynamic vol_decimals precision for safe_volume
+    safe_volume = round(symbol_spec["volumeMin"] + max(0, safe_step_count) * symbol_spec["volumeStep"], vol_decimals)
     small_account_threshold = float(RISK_CONFIG.get("smallAccountThresholdUsd", 50))
     small_account_max_risk = float(RISK_CONFIG.get("smallAccountMaxRiskUsd", 2.5))
     is_small_account_micro = (

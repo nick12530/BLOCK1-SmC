@@ -1,15 +1,16 @@
 /**
- * HeaderView.tsx - Institutional Header & Telemetry Top Bar
- * Re-architected for pristine responsive distribution:
- * - Tier 1: Brand, Symbol Pills, Auto-Trader, MT5 & Action Tools cleanly distributed
- * - Tier 2: Dedicated Financial Status Ribbon with Dual Clocks & MT5 Account Telemetry
- * - Zero awkward wrapping or unbalanced whitespace on mobile or desktop
+ * HeaderView.tsx - NIFTY Institutional Trading Terminal Header
+ * Minimalist, highly operational top bar:
+ * - Brand: NIFTY with clean live market status
+ * - Segmented instrument selector (XAUUSD, EURUSD, USDJPY, GBPUSD)
+ * - Clean telemetry metrics (Balance, Equity, Floating PnL, Margin Level)
+ * - Instant operational controls: Auto-Trader toggle, MT5 Bridge, Telegram Alerts, Risk, History, Theme
  */
 
 import React, { useMemo } from 'react';
 import { useTicker, useEngine, usePositions } from '../hooks/useTradingStore';
 import { tradingEngine } from '../engine/tradingEngine';
-import { SUPPORTED_SYMBOLS, SupportedSymbol } from '../engine/instrumentConfig';
+import { SUPPORTED_SYMBOLS } from '../engine/instrumentConfig';
 import {
   Sun,
   Moon,
@@ -18,14 +19,12 @@ import {
   Shield,
   Volume2,
   VolumeX,
-  BookOpen,
   History,
   Bot,
-  Smartphone,
   Bell,
+  BookOpen,
 } from 'lucide-react';
 import { signalAudioNotifier } from '../utils/audioNotification';
-import { MarketOpensTimer } from './MarketOpensTimer';
 
 interface HeaderViewProps {
   isDark: boolean;
@@ -36,7 +35,7 @@ interface HeaderViewProps {
   onToggleKillSwitchPrompt?: () => void;
 }
 
-const formatMT5 = (val: number | string) => {
+const formatCurrency = (val: number | string) => {
   const num = typeof val === 'string' ? parseFloat(val) : val;
   if (isNaN(num)) return '0.00';
   return num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -50,10 +49,9 @@ export const HeaderView: React.FC<HeaderViewProps> = React.memo(({
   const ticker = useTicker();
   const engine = useEngine();
   const { positions } = usePositions();
-
   const mt5 = engine.mt5Account;
 
-  // Margin telemetry calculation
+  // Margin calculation
   const marginMetrics = useMemo(() => {
     const totalVolume = positions.reduce((sum, p) => sum + p.volume, 0);
     const totalFloatingPnl = positions.reduce((sum, p) => sum + p.profit, 0);
@@ -62,327 +60,232 @@ export const HeaderView: React.FC<HeaderViewProps> = React.memo(({
     const marginUsed = notionalValue / leverage;
     const equity = ticker.balance + totalFloatingPnl;
     const freeMargin = Math.max(0, equity - marginUsed);
-    const marginLevelPct = marginUsed > 0 ? `${((equity / marginUsed) * 100).toFixed(2)}%` : '0.00%';
+    const marginLevelPct = marginUsed > 0 ? `${((equity / marginUsed) * 100).toFixed(1)}%` : '—';
 
     return {
-      leverage: `1:${leverage}`,
       marginUsed: marginUsed.toFixed(2),
       freeMargin: freeMargin.toFixed(2),
       marginLevelPct,
     };
   }, [positions, ticker.bid, ticker.balance, engine.leverage, mt5?.leverage]);
 
-  const isProfit = ticker.equity >= ticker.balance;
-  const floatingPnl = ticker.equity - ticker.balance;
+  const floatingPnl = Number((ticker.equity - ticker.balance).toFixed(2));
+  const isProfit = floatingPnl >= 0;
 
   const cleanBrokerTime = useMemo(() => {
-    if (!ticker.brokerTimeStr) return '00:00 Server';
-    const trimmed = ticker.brokerTimeStr.replace(/^\d{4}[.-]\d{2}[.-]\d{2}\s*/, '');
-    return trimmed || ticker.brokerTimeStr;
+    if (!ticker.brokerTimeStr) return '00:00 UTC';
+    return ticker.brokerTimeStr.replace(/^\d{4}[.-]\d{2}[.-]\d{2}\s*/, '');
   }, [ticker.brokerTimeStr]);
 
   return (
-    <header className="relative w-full border-b border-slate-200 dark:border-zinc-800/80 bg-white/95 dark:bg-[#0d0e13]/95 backdrop-blur-md font-mono text-xs transition-colors shadow-xs z-30 pt-2 sm:pt-1.5 overflow-hidden">
-      {/* Tier 1: Primary Navigation Bar */}
-      <div className="w-full max-w-[1920px] mx-auto px-2.5 sm:px-6 lg:px-8 py-2 sm:py-2.5 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 sm:gap-4">
-        {/* Row 1 on mobile / Left on desktop: Brand Identity & Symbol Switcher */}
-        <div className="flex items-center justify-between sm:justify-start gap-2 sm:gap-3 flex-wrap">
-          <div className="flex items-center gap-1.5 shrink-0">
-            <span className="font-black text-base sm:text-lg tracking-tight text-slate-900 dark:text-white uppercase font-sans">
-              SMC PRO
-            </span>
-            <span className="text-xs font-extrabold px-1.5 py-0.5 rounded bg-slate-100 dark:bg-zinc-800 text-slate-700 dark:text-zinc-200 border border-slate-200 dark:border-zinc-700">
-              TERMINAL
-            </span>
+    <header className="w-full border-b border-slate-200 dark:border-zinc-800 bg-white/95 dark:bg-[#090b10]/95 backdrop-blur-md z-30 transition-colors">
+      {/* Primary Tier: Brand, Currency Switcher, Auto-Trade, MT5, and Utilities */}
+      <div className="max-w-[1600px] mx-auto px-3 sm:px-6 py-2.5 flex items-center justify-between gap-3 flex-wrap">
+        {/* Left: Brand & Currency Switcher */}
+        <div className="flex items-center gap-3 sm:gap-4 flex-wrap">
+          {/* NIFTY Brand Identity */}
+          <div className="flex items-center gap-2 select-none">
+            <div className="w-8 h-8 rounded-lg bg-slate-900 dark:bg-white text-white dark:text-black flex items-center justify-center font-black text-sm tracking-widest shadow-sm">
+              N
+            </div>
+            <div>
+              <div className="flex items-center gap-1.5 leading-none">
+                <span className="font-black text-base tracking-wider text-slate-900 dark:text-white uppercase font-sans">
+                  NIFTY
+                </span>
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+              </div>
+              <span className="text-[10px] text-slate-400 dark:text-zinc-500 font-mono tracking-tight font-medium">
+                SMC Terminal
+              </span>
+            </div>
           </div>
 
-          <div className="hidden sm:block h-4 w-px bg-slate-200 dark:bg-zinc-800" />
+          <div className="hidden sm:block h-5 w-px bg-slate-200 dark:border-zinc-800" />
 
-          {/* Quick Symbol Switcher Pills */}
-          <div className="flex items-center bg-slate-100 dark:bg-zinc-900 p-1 rounded-xl border border-slate-200 dark:border-zinc-800 gap-1">
+          {/* Clean Segmented Currency Switcher */}
+          <div className="flex items-center bg-slate-100 dark:bg-zinc-900 p-0.5 rounded-lg border border-slate-200 dark:border-zinc-800 font-mono text-xs">
             {SUPPORTED_SYMBOLS.map((sym) => {
               const isActive = sym === ticker.symbol;
+              const label = sym === 'XAUUSD' ? 'GOLD' : sym.replace('USD', '');
               return (
                 <button
                   key={sym}
                   type="button"
                   onClick={() => tradingEngine.switchSymbol(sym)}
-                  className={`px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer ${
+                  className={`px-2.5 py-1 rounded-md font-bold transition-all cursor-pointer text-xs ${
                     isActive
-                      ? 'bg-sky-600 text-white dark:bg-zinc-200 dark:text-zinc-950 shadow-xs'
+                      ? 'bg-slate-900 text-white dark:bg-white dark:text-black shadow-xs'
                       : 'text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white'
                   }`}
-                  title={`Switch active instrument to ${sym}`}
+                  title={`Focus ${sym}`}
                 >
-                  {sym === 'XAUUSD' ? 'GOLD' : sym.replace('USD', '')}
+                  {label}
                 </button>
               );
             })}
           </div>
         </div>
 
-        {/* Row 2 on mobile / Right on desktop: Auto-Trader Toggle, MT5 Status & Action Tools Hub */}
-        <div className="flex items-center justify-between sm:justify-end gap-2 flex-wrap">
-          <div className="flex items-center gap-1.5 sm:gap-2">
-            {/* Auto-Trader Toggle Button */}
-            <button
-              type="button"
-              onClick={() => tradingEngine.toggleAutoTrade()}
-              aria-pressed={engine.auto_trade}
-              className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-xs font-black transition-all cursor-pointer ${
-                engine.auto_trade
-                  ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-600 dark:text-emerald-400'
-                  : 'bg-slate-100 hover:bg-slate-200 dark:bg-zinc-900 dark:hover:bg-zinc-800 border-slate-200 dark:border-zinc-800 text-slate-800 dark:text-zinc-200'
-              }`}
-              title={
-                engine.auto_trade
-                  ? 'Auto-Trader is ACTIVE (Automatically executes verified institutional setups). Click to disable.'
-                  : 'Auto-Trader is OFF (Manual orders only). Click to enable Auto-Trader.'
-              }
-            >
-              <span
-                className={`w-2.5 h-2.5 rounded-full ${
-                  engine.auto_trade ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400 dark:bg-zinc-600'
-                }`}
-              />
-              <Bot className="w-4.5 h-4.5 shrink-0" />
-              <span className="font-mono text-xs whitespace-nowrap">
-                <span>Auto: </span>
-                <strong>{engine.auto_trade ? 'ON' : 'OFF'}</strong>
-              </span>
-            </button>
-
-            {/* MT5 Connection Link */}
-            <button
-              type="button"
-              onClick={() => onOpenModal('bridge')}
-              title="MetaTrader 5 Bridge Status & Terminal Linking"
-              className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-xs font-black transition-all cursor-pointer min-w-0 shrink-0 ${
-                mt5?.connected
-                  ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-600 dark:text-emerald-400'
-                  : 'bg-slate-100 hover:bg-slate-200 dark:bg-zinc-900 dark:hover:bg-zinc-800 border-slate-200 dark:border-zinc-800 text-slate-800 dark:text-zinc-200'
-              }`}
-            >
-              <Server className={`w-4 h-4 shrink-0 ${mt5?.connected ? 'text-emerald-500' : 'text-slate-400'}`} />
-              <span className="font-mono text-xs max-w-[130px] truncate">
-                {mt5?.connected ? (
-                  <>
-                    <span className="hidden sm:inline">MT5 </span>
-                    <span>#{mt5.login}</span>
-                  </>
-                ) : (
-                  <span>MT5 Bridge</span>
-                )}
-              </span>
-            </button>
-
-            {/* Real-Time Market Opens Timer */}
-            <MarketOpensTimer />
+        {/* Center/Right: Account Telemetry (Inline, clean typography, zero pills) */}
+        <div className="hidden md:flex items-center gap-4 text-xs font-mono text-slate-600 dark:text-zinc-400 border-x border-slate-200/80 dark:border-zinc-800 px-4">
+          <div className="flex items-center gap-1.5">
+            <span className="text-slate-400 dark:text-zinc-500">Balance:</span>
+            <strong className="text-slate-900 dark:text-white tabular-nums font-bold">
+              ${formatCurrency(ticker.balance)}
+            </strong>
           </div>
 
-          {/* Action Tools Cluster with enlarged icon sizes and touch padding */}
-          <div className="flex items-center gap-1 p-1 rounded-xl bg-slate-100/90 dark:bg-zinc-900/90 border border-slate-200/80 dark:border-zinc-800/80 shrink-0">
-            {/* Mobile PWA & Phone Server Hub */}
-            <button
-              type="button"
-              onClick={() => onOpenModal('phone_pwa')}
-              className="p-2 rounded-lg hover:bg-white dark:hover:bg-zinc-800 text-sky-600 dark:text-sky-400 hover:text-sky-500 transition-colors cursor-pointer"
-              title="Mobile Standalone Web App & Phone Server Hub (PWA / Termux / iSH)"
-            >
-              <Smartphone className="w-5 h-5" />
-            </button>
+          <span className="text-slate-300 dark:text-zinc-700">·</span>
 
-            {/* External Webhook & Telegram Alerts */}
+          <div className="flex items-center gap-1.5">
+            <span className="text-slate-400 dark:text-zinc-500">Equity:</span>
+            <strong
+              className={`tabular-nums font-bold ${
+                isProfit ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'
+              }`}
+            >
+              ${formatCurrency(ticker.equity)}
+            </strong>
+            {floatingPnl !== 0 && (
+              <span className={`text-[10px] font-bold ${isProfit ? 'text-emerald-500' : 'text-rose-500'}`}>
+                ({isProfit ? `+${formatCurrency(floatingPnl)}` : formatCurrency(floatingPnl)})
+              </span>
+            )}
+          </div>
+
+          <span className="text-slate-300 dark:text-zinc-700">·</span>
+
+          <div className="flex items-center gap-1.5">
+            <Clock className="w-3.5 h-3.5 text-sky-500 shrink-0" />
+            <span className="tabular-nums">{cleanBrokerTime}</span>
+          </div>
+        </div>
+
+        {/* Right: Operational Controls & Utilities */}
+        <div className="flex items-center gap-2">
+          {/* Auto-Trader Toggle */}
+          <button
+            type="button"
+            onClick={() => tradingEngine.toggleAutoTrade()}
+            aria-pressed={engine.auto_trade}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-bold font-mono transition-all cursor-pointer ${
+              engine.auto_trade
+                ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-600 dark:text-emerald-400'
+                : 'bg-slate-100 hover:bg-slate-200 dark:bg-zinc-900 dark:hover:bg-zinc-800 border-slate-200 dark:border-zinc-800 text-slate-700 dark:text-zinc-300'
+            }`}
+            title={engine.auto_trade ? 'Auto-Trader is active. Click to pause.' : 'Auto-Trader is off. Click to activate.'}
+          >
+            <Bot className="w-4 h-4 shrink-0" />
+            <span>Auto: {engine.auto_trade ? 'ON' : 'OFF'}</span>
+          </button>
+
+          {/* MT5 Bridge Link */}
+          <button
+            type="button"
+            onClick={() => onOpenModal('bridge')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-bold font-mono transition-all cursor-pointer ${
+              mt5?.connected
+                ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-600 dark:text-emerald-400'
+                : 'bg-slate-100 hover:bg-slate-200 dark:bg-zinc-900 dark:hover:bg-zinc-800 border-slate-200 dark:border-zinc-800 text-slate-700 dark:text-zinc-300'
+            }`}
+            title="MT5 Bridge Status & Account Link"
+          >
+            <Server className={`w-3.5 h-3.5 ${mt5?.connected ? 'text-emerald-500' : 'text-slate-400'}`} />
+            <span className="hidden sm:inline">{mt5?.connected ? `MT5 #${mt5.login}` : 'MT5 Bridge'}</span>
+          </button>
+
+          {/* Quick Utility Icon Dock */}
+          <div className="flex items-center gap-0.5 bg-slate-100 dark:bg-zinc-900 p-0.5 rounded-lg border border-slate-200 dark:border-zinc-800">
+            {/* Telegram Alerts */}
             <button
               type="button"
               onClick={() => onOpenModal('webhook')}
-              className="p-2 rounded-lg hover:bg-white dark:hover:bg-zinc-800 text-amber-500 hover:text-amber-400 transition-colors cursor-pointer"
-              title="Telegram Push Alerts & External Webhooks"
+              className="p-1.5 rounded-md hover:bg-white dark:hover:bg-zinc-800 text-amber-500 transition-colors cursor-pointer"
+              title="Telegram Push Alerts & Webhook Config"
             >
-              <Bell className="w-5 h-5 text-amber-500" />
+              <Bell className="w-4 h-4" />
             </button>
 
-            {/* Risk / Safeguards */}
+            {/* Risk Settings */}
             <button
               type="button"
               onClick={() => onOpenModal('settings')}
-              className="p-2 rounded-lg hover:bg-white dark:hover:bg-zinc-800 text-slate-700 dark:text-zinc-300 transition-colors cursor-pointer"
-              title="Risk & Small Account Safeguards"
+              className="p-1.5 rounded-md hover:bg-white dark:hover:bg-zinc-800 text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white transition-colors cursor-pointer"
+              title="Prop Firm Risk & Drawdown Settings"
             >
-              <Shield className="w-5 h-5 text-sky-500" />
+              <Shield className="w-4 h-4" />
             </button>
 
-            {/* User Manual / Help Center */}
-            <button
-              type="button"
-              onClick={() => onOpenModal('help')}
-              className="p-2 rounded-lg hover:bg-white dark:hover:bg-zinc-800 text-slate-700 dark:text-zinc-300 transition-colors cursor-pointer"
-              title="Institutional User Manual & Trading Guide"
-            >
-              <BookOpen className="w-5 h-5 text-slate-600 dark:text-zinc-400 hover:text-white" />
-            </button>
-
-            {/* Trade Ledger History */}
+            {/* Trade Journal / Closed Trades */}
             <button
               type="button"
               onClick={() => onOpenModal('closed_trades')}
-              className="p-2 rounded-lg hover:bg-white dark:hover:bg-zinc-800 text-slate-700 dark:text-zinc-300 transition-colors cursor-pointer"
-              title="Closed Trades History & Ledger"
+              className="p-1.5 rounded-md hover:bg-white dark:hover:bg-zinc-800 text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white transition-colors cursor-pointer"
+              title="Closed Trades History"
             >
-              <History className="w-5 h-5 text-slate-600 dark:text-zinc-400 hover:text-white" />
+              <History className="w-4 h-4" />
             </button>
 
-            {/* Audio Alert Toggle */}
+            {/* Help / Guide */}
+            <button
+              type="button"
+              onClick={() => onOpenModal('help')}
+              className="p-1.5 rounded-md hover:bg-white dark:hover:bg-zinc-800 text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white transition-colors cursor-pointer"
+              title="Institutional User Manual"
+            >
+              <BookOpen className="w-4 h-4" />
+            </button>
+
+            {/* Sound Toggle */}
             <button
               type="button"
               onClick={() => {
                 const nextMuted = !signalAudioNotifier.getMuted();
                 signalAudioNotifier.setMuted(nextMuted);
-                tradingEngine.slog(`System Audio Alerts: ${nextMuted ? 'MUTED' : 'ACTIVE'}`, 'info');
               }}
-              className="p-2 rounded-lg hover:bg-white dark:hover:bg-zinc-800 text-slate-700 dark:text-zinc-300 transition-colors cursor-pointer"
+              className="p-1.5 rounded-md hover:bg-white dark:hover:bg-zinc-800 text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white transition-colors cursor-pointer"
               title={signalAudioNotifier.getMuted() ? 'Audio Muted' : 'Audio Active'}
             >
               {signalAudioNotifier.getMuted() ? (
-                <VolumeX className="w-5 h-5 text-zinc-400" />
+                <VolumeX className="w-4 h-4 text-zinc-400" />
               ) : (
-                <Volume2 className="w-5 h-5 text-emerald-500" />
+                <Volume2 className="w-4 h-4 text-emerald-500" />
               )}
             </button>
 
-            {/* Theme Switcher */}
+            {/* Theme Toggle */}
             <button
               type="button"
               onClick={onToggleTheme}
-              aria-label="Toggle light or dark theme"
-              className="p-2 rounded-lg hover:bg-white dark:hover:bg-zinc-800 text-slate-700 dark:text-zinc-300 transition-colors cursor-pointer"
+              className="p-1.5 rounded-md hover:bg-white dark:hover:bg-zinc-800 text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white transition-colors cursor-pointer"
+              title="Toggle Light / Dark Mode"
             >
-              {isDark ? <Sun className="w-5 h-5 text-amber-400" /> : <Moon className="w-5 h-5 text-slate-600" />}
+              {isDark ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4 text-slate-600" />}
             </button>
           </div>
         </div>
       </div>
 
-      {/* Tier 2: Dedicated Financial Status Ribbon - Responsive with NO Mobile Slider */}
-      <div className="w-full border-t border-slate-100 dark:border-zinc-800/80 bg-slate-50/70 dark:bg-[#0e0f14]/80 px-2.5 sm:px-6 lg:px-8 py-2 font-mono text-xs">
-        {/* Mobile View (<sm): Clean 2-Row Stack with Clear, Bold Typography and 3-Metric Pills (NO Slider) */}
-        <div className="flex sm:hidden flex-col gap-2 w-full">
-          {/* Row 1: Clocks and Margin Level */}
-          <div className="flex items-center justify-between text-slate-700 dark:text-zinc-200 text-xs font-bold min-w-0">
-            <div className="flex items-center gap-1.5 min-w-0">
-              <Clock className="w-4 h-4 text-sky-500 shrink-0" />
-              <span className="tabular-nums font-bold truncate">{cleanBrokerTime}</span>
-              <span className="text-zinc-400 shrink-0">·</span>
-              <span className="text-emerald-600 dark:text-emerald-400 font-black tabular-nums shrink-0">
-                {ticker.kenyaTimeStr || '00:00 EAT'}
-              </span>
-            </div>
-            <div className="flex items-center gap-1 shrink-0">
-              <span className="text-slate-500 dark:text-slate-400 font-medium">Margin:</span>
-              <strong className="text-emerald-600 dark:text-emerald-400 font-black tabular-nums">
-                {marginMetrics.marginLevelPct}
-              </strong>
-            </div>
-          </div>
-
-          {/* Row 2: 3 Balance / Equity / Free Margin Metric Cards */}
-          <div className="grid grid-cols-3 gap-1.5 border-t border-slate-200/60 dark:border-zinc-800/60 pt-2 text-center">
-            <div className="p-1.5 rounded-lg bg-slate-100/70 dark:bg-zinc-900/70 border border-slate-200/50 dark:border-zinc-800/50 min-w-0 overflow-hidden">
-              <div className="text-xs text-slate-500 dark:text-slate-400 font-bold uppercase tracking-tight truncate">Balance</div>
-              <div className="font-black text-slate-900 dark:text-white tabular-nums text-sm sm:text-base mt-0.5 truncate">
-                ${formatMT5(ticker.balance)}
-              </div>
-            </div>
-            <div className="p-1.5 rounded-lg bg-slate-100/70 dark:bg-zinc-900/70 border border-slate-200/50 dark:border-zinc-800/50 min-w-0 overflow-hidden">
-              <div className="text-xs text-slate-500 dark:text-slate-400 font-bold uppercase tracking-tight truncate">Equity</div>
-              <div className={`font-black tabular-nums text-sm sm:text-base mt-0.5 truncate ${isProfit ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
-                ${formatMT5(ticker.equity)}
-              </div>
-            </div>
-            <div className="p-1.5 rounded-lg bg-slate-100/70 dark:bg-zinc-900/70 border border-slate-200/50 dark:border-zinc-800/50 min-w-0 overflow-hidden">
-              <div className="text-xs text-slate-500 dark:text-slate-400 font-bold uppercase tracking-tight truncate">Free Margin</div>
-              <div className="font-bold text-slate-800 dark:text-slate-200 tabular-nums text-sm sm:text-base mt-0.5 truncate">
-                ${formatMT5(marginMetrics.freeMargin)}
-              </div>
-            </div>
-          </div>
+      {/* Mobile Telemetry Ribbon (<md only): Clean, non-crowded single row */}
+      <div className="flex md:hidden items-center justify-between px-3 py-1.5 border-t border-slate-100 dark:border-zinc-800/80 text-xs font-mono text-slate-600 dark:text-zinc-400 bg-slate-50 dark:bg-black/40">
+        <div className="flex items-center gap-1.5">
+          <span>Bal:</span>
+          <strong className="text-slate-900 dark:text-white font-bold">${formatCurrency(ticker.balance)}</strong>
         </div>
-
-        {/* Desktop/Tablet View (sm+): Full Linear Ribbon */}
-        <div className="hidden sm:flex items-center justify-between gap-2 sm:gap-3 flex-wrap min-w-0">
-          {/* Dual Clocks (Server & EAT) */}
-          <div className="flex items-center gap-1.5 shrink-0 text-slate-600 dark:text-zinc-300 pr-2 sm:border-r border-slate-200 dark:border-zinc-800">
-            <Clock className="w-3.5 h-3.5 text-sky-500 shrink-0" />
-            <span className="tabular-nums font-semibold">{cleanBrokerTime}</span>
-            <span className="text-zinc-400">·</span>
-            <span className="text-emerald-600 dark:text-emerald-400 font-bold tabular-nums">
-              {ticker.kenyaTimeStr || '00:00 EAT'}
-            </span>
-          </div>
-
-          {/* MT5 Telemetry Metrics */}
-          <div className="flex items-center gap-2 sm:gap-3 flex-wrap min-w-0">
-            {/* Balance */}
-            <div className="flex items-baseline gap-1 whitespace-nowrap">
-              <span className="text-slate-500 dark:text-slate-400 font-medium">Balance:</span>
-              <strong className="font-bold text-slate-900 dark:text-white tabular-nums">
-                {formatMT5(ticker.balance)} USD
-              </strong>
-            </div>
-
-            <span className="text-slate-300 dark:text-slate-700">|</span>
-
-            {/* Equity */}
-            <div className="flex items-baseline gap-1 whitespace-nowrap">
-              <span className="text-slate-500 dark:text-slate-400 font-medium">Equity:</span>
-              <strong
-                className={`font-bold tabular-nums ${
-                  isProfit ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'
-                }`}
-              >
-                {formatMT5(ticker.equity)}
-              </strong>
-              {floatingPnl !== 0 && (
-                <span
-                  className={`text-[9px] font-bold ${
-                    floatingPnl > 0 ? 'text-emerald-500' : 'text-rose-500'
-                  }`}
-                >
-                  ({floatingPnl > 0 ? `+${formatMT5(floatingPnl)}` : formatMT5(floatingPnl)})
-                </span>
-              )}
-            </div>
-
-            <span className="text-slate-300 dark:text-slate-700">|</span>
-
-            {/* Margin */}
-            <div className="flex items-baseline gap-1 whitespace-nowrap">
-              <span className="text-slate-500 dark:text-slate-400 font-medium">Margin:</span>
-              <strong className="font-bold text-slate-800 dark:text-slate-200 tabular-nums">
-                {formatMT5(marginMetrics.marginUsed)}
-              </strong>
-            </div>
-
-            <span className="text-slate-300 dark:text-slate-700">|</span>
-
-            {/* Free Margin */}
-            <div className="flex items-baseline gap-1 whitespace-nowrap">
-              <span className="text-slate-500 dark:text-slate-400 font-medium">Free Margin:</span>
-              <strong className="font-bold text-slate-800 dark:text-slate-200 tabular-nums">
-                {formatMT5(marginMetrics.freeMargin)}
-              </strong>
-            </div>
-
-            <span className="text-slate-300 dark:text-slate-700">|</span>
-
-            {/* Margin Level */}
-            <div className="flex items-baseline gap-1 whitespace-nowrap">
-              <span className="text-slate-500 dark:text-slate-400 font-medium">Margin Level:</span>
-              <strong className="font-bold text-emerald-600 dark:text-emerald-400 tabular-nums">
-                {marginMetrics.marginLevelPct}
-              </strong>
-            </div>
-          </div>
+        <div className="flex items-center gap-1.5">
+          <span>Eq:</span>
+          <strong className={`font-bold ${isProfit ? 'text-emerald-500' : 'text-rose-500'}`}>
+            ${formatCurrency(ticker.equity)}
+          </strong>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <span>Margin:</span>
+          <strong className="font-bold text-slate-800 dark:text-zinc-200">{marginMetrics.marginLevelPct}</strong>
+        </div>
+        <div className="flex items-center gap-1 text-[11px] text-sky-500">
+          <Clock className="w-3 h-3" />
+          <span>{cleanBrokerTime}</span>
         </div>
       </div>
     </header>

@@ -370,37 +370,35 @@ export const LiveSignalsStream: React.FC<LiveSignalsStreamProps> = ({ onExecuteT
   ).filter((s) => !s.expiryTimestamp || s.expiryTimestamp > currentTime);
 
   return (
-    <div className="w-full bg-white dark:bg-[#0d1117] border border-slate-200 dark:border-zinc-800/80 rounded-2xl p-4 sm:p-6 shadow-xs font-mono text-xs flex flex-col gap-4 sm:gap-5">
+    <div className="w-full bg-white dark:bg-[#0c0d12] border border-slate-200 dark:border-zinc-800 rounded-xl p-4 sm:p-5 shadow-xs font-mono text-xs flex flex-col gap-4">
       {/* Header & Filter Controls */}
-      <div className="flex items-center justify-between flex-wrap gap-2 pb-2.5 border-b border-slate-200 dark:border-zinc-800/80">
+      <div className="flex items-center justify-between flex-wrap gap-2 pb-2.5 border-b border-slate-100 dark:border-zinc-800">
         <div className="flex items-center gap-2">
-          <div className="p-1.5 rounded-lg bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">
-            <Zap className="w-4 h-4 fill-current" />
-          </div>
+          <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
           <div>
-            <h3 className="font-bold text-slate-950 dark:text-white uppercase tracking-wider text-xs sm:text-sm">
-              Live Signals Execution Queue
+            <h3 className="font-bold text-slate-900 dark:text-white uppercase tracking-wider text-xs sm:text-sm font-sans">
+              Live Signals Queue
             </h3>
-            <p className="text-[11px] text-slate-500 dark:text-zinc-400">
-              Institutional setups lined up across 4 pairs • Multi-Target TP 1, TP 2, TP 3, SL • 1-Click instant execution (0.01L)
+            <p className="text-[11px] text-slate-400 dark:text-zinc-500 font-sans">
+              Verified institutional setups with multi-target objectives &amp; 1-click execution
             </p>
           </div>
         </div>
 
         {/* Filter Pills */}
-        <div className="flex items-center gap-1 bg-slate-100 dark:bg-zinc-900 p-1 rounded-xl border border-slate-200 dark:border-zinc-800">
+        <div className="flex items-center gap-1 bg-slate-100 dark:bg-zinc-900 p-0.5 rounded-lg border border-slate-200 dark:border-zinc-800">
           {['ALL', ...SUPPORTED_SYMBOLS].map((sym) => (
             <button
               key={sym}
               type="button"
               onClick={() => setActiveFilter(sym)}
-              className={`px-2.5 py-1 rounded-lg font-bold text-xs transition-colors cursor-pointer ${
+              className={`px-2.5 py-1 rounded-md font-bold text-xs transition-colors cursor-pointer ${
                 activeFilter === sym
                   ? 'bg-slate-900 text-white dark:bg-white dark:text-black shadow-xs'
                   : 'text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white'
               }`}
             >
-              {sym}
+              {sym === 'XAUUSD' ? 'GOLD' : sym.replace('USD', '')}
             </button>
           ))}
         </div>
@@ -409,7 +407,7 @@ export const LiveSignalsStream: React.FC<LiveSignalsStreamProps> = ({ onExecuteT
       {/* Global Feedback Banner */}
       {feedback && (
         <div
-          className={`p-2.5 rounded-xl border text-[11px] flex items-center gap-2 ${
+          className={`p-2.5 rounded-lg border text-xs flex items-center gap-2 ${
             feedback.type === 'success'
               ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-600 dark:text-emerald-400'
               : 'bg-rose-500/10 border-rose-500/20 text-rose-600 dark:text-rose-400'
@@ -425,7 +423,7 @@ export const LiveSignalsStream: React.FC<LiveSignalsStreamProps> = ({ onExecuteT
       )}
 
       {/* Signals Queue List */}
-      <div className="space-y-4">
+      <div className="space-y-3">
         {filteredSignals.length > 0 ? (
           filteredSignals.map((sig) => {
             const isBuy = sig.direction === 'BUY';
@@ -439,16 +437,12 @@ export const LiveSignalsStream: React.FC<LiveSignalsStreamProps> = ({ onExecuteT
               ? Math.max(0, Math.floor((sig.expiryTimestamp - currentTime) / 1000))
               : 0;
 
-            const hasOpenTradeOnSymbol = positions.some(
-              (p) => (p.symbol || ticker.symbol) === sig.symbol
-            );
-
             return (
               <div
                 key={sig.id}
-                className="bg-slate-50 dark:bg-[#10141d] border border-slate-200/90 dark:border-zinc-800/80 rounded-2xl p-4 sm:p-5 flex flex-col gap-3.5 transition-all hover:border-slate-300 dark:hover:border-zinc-700 shadow-xs"
+                className="bg-slate-50/70 dark:bg-[#0f1117] border border-slate-200 dark:border-zinc-800/90 rounded-xl p-3.5 sm:p-4 flex flex-col gap-3 transition-colors hover:border-slate-300 dark:hover:border-zinc-700"
               >
-                {/* Tier 1: Header - Pair, Direction, Strategy, Score & Validity Timer */}
+                {/* Row 1: Header - Pair, Direction, Strategy, Confluence & Validity Timer */}
                 <div className="flex items-center justify-between gap-2.5 flex-wrap">
                   <div className="flex items-center gap-2.5 flex-wrap">
                     <span className="font-black text-slate-900 dark:text-white text-base tracking-tight font-sans">
@@ -456,127 +450,99 @@ export const LiveSignalsStream: React.FC<LiveSignalsStreamProps> = ({ onExecuteT
                     </span>
 
                     <span
-                      className={`px-2.5 py-0.5 rounded-lg text-xs font-black flex items-center gap-1 uppercase tracking-wider ${
-                        isBuy
-                          ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30'
-                          : 'bg-rose-500/15 text-rose-600 dark:text-rose-400 border border-rose-500/30'
+                      className={`font-black text-xs uppercase flex items-center gap-1 ${
+                        isBuy ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'
                       }`}
                     >
-                      {isBuy ? <ArrowUpRight className="w-3.5 h-3.5" /> : <ArrowDownRight className="w-3.5 h-3.5" />}
+                      {isBuy ? <ArrowUpRight className="w-4 h-4" /> : <ArrowDownRight className="w-4 h-4" />}
                       <span>{sig.direction}</span>
                     </span>
 
-                    <span className="text-xs text-slate-600 dark:text-slate-300 font-bold bg-white dark:bg-zinc-800/80 px-2.5 py-0.5 rounded-lg border border-slate-200 dark:border-zinc-700">
-                      {sig.strategy} • {sig.timeframe}
+                    <span className="text-slate-300 dark:text-zinc-700">·</span>
+
+                    <span className="text-xs text-slate-500 dark:text-zinc-400">
+                      {sig.strategy} ({sig.timeframe})
                     </span>
                   </div>
 
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span
-                      className={`text-xs font-black px-2.5 py-0.5 rounded-lg border ${
-                        sig.quality === 'PRIME'
-                          ? 'bg-amber-500/15 text-amber-500 border-amber-500/30'
-                          : 'bg-sky-500/15 text-sky-400 border-sky-500/30'
-                      }`}
-                    >
+                  <div className="flex items-center gap-2.5">
+                    <span className="text-xs font-bold text-slate-700 dark:text-zinc-300">
                       {sig.confluenceScore}% Confluence
                     </span>
 
                     {secondsRemaining > 0 && (
-                      <span className="text-xs font-bold px-2 py-0.5 rounded-lg bg-slate-200/60 dark:bg-zinc-800/80 text-amber-500 dark:text-amber-300 border border-amber-500/30 flex items-center gap-1.5">
-                        <Clock className="w-3.5 h-3.5 animate-pulse" />
+                      <span className="text-xs font-bold text-amber-500 flex items-center gap-1">
+                        <Clock className="w-3.5 h-3.5" />
                         <span>{formatCountdown(secondsRemaining)}</span>
                       </span>
                     )}
                   </div>
                 </div>
 
-                {/* Tier 2: Key Trade Levels Strip - Spacious & High-Contrast */}
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 sm:gap-3 font-mono text-xs">
-                  {/* Entry */}
-                  <div className="p-3 rounded-xl bg-white dark:bg-[#151b26] border border-slate-200/80 dark:border-zinc-800">
-                    <span className="text-[10px] uppercase font-bold text-slate-400 dark:text-zinc-500 block">
+                {/* Row 2: Clean Linear Data Grid (Entry, SL, TP, Action) */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2 border-t border-slate-200/60 dark:border-zinc-800/60 items-center">
+                  <div>
+                    <span className="text-[10px] text-slate-400 dark:text-zinc-500 block uppercase font-medium">
                       Entry Price
                     </span>
-                    <span className="font-black text-slate-900 dark:text-white text-sm block mt-0.5 tabular-nums">
+                    <span className="font-bold text-slate-900 dark:text-white text-sm tabular-nums">
                       ${sig.entry.toFixed(cfg.digits)}
                     </span>
-                    <span className="text-[10px] text-slate-500 dark:text-zinc-400">Live POI Tapped</span>
                   </div>
 
-                  {/* Stop Loss */}
-                  <div className="p-3 rounded-xl bg-rose-500/5 dark:bg-rose-950/20 border border-rose-500/20">
-                    <span className="text-[10px] uppercase font-bold text-rose-500 block">
-                      Stop Loss (SL)
+                  <div>
+                    <span className="text-[10px] text-rose-500 block uppercase font-medium">
+                      Stop Loss
                     </span>
-                    <span className="font-black text-rose-500 text-sm block mt-0.5 tabular-nums">
-                      ${sig.sl.toFixed(cfg.digits)}
-                    </span>
-                    <span className="text-[10px] text-rose-500/80 font-bold">-{sig.stopPips} pips</span>
-                  </div>
-
-                  {/* Take Profit Target */}
-                  <div className="p-3 rounded-xl bg-emerald-500/5 dark:bg-emerald-950/20 border border-emerald-500/20">
-                    <span className="text-[10px] uppercase font-bold text-emerald-500 block">
-                      Target (TP)
-                    </span>
-                    <span className="font-black text-emerald-500 text-sm block mt-0.5 tabular-nums">
-                      ${tpVal.toFixed(cfg.digits)}
-                    </span>
-                    <span className="text-[10px] text-emerald-500/80 font-bold">+{tpPips} pips ({sig.rrRatio})</span>
-                  </div>
-
-                  {/* Risk & Execution */}
-                  <div className="p-3 rounded-xl bg-white dark:bg-[#151b26] border border-slate-200/80 dark:border-zinc-800 flex flex-col justify-between">
-                    <div>
-                      <span className="text-[10px] uppercase font-bold text-slate-400 dark:text-zinc-500 block">
-                        Micro Sizing
+                    <div className="flex items-baseline gap-1.5">
+                      <span className="font-bold text-rose-600 dark:text-rose-400 text-sm tabular-nums">
+                        ${sig.sl.toFixed(cfg.digits)}
                       </span>
-                      <span className="font-black text-slate-900 dark:text-white text-sm block mt-0.5">
-                        0.01 Lots
-                      </span>
+                      <span className="text-[10px] text-rose-500/80">(-{sig.stopPips}p)</span>
                     </div>
-                    <span className="text-[10px] text-sky-500 dark:text-sky-400 font-bold">
-                      {hasOpenTradeOnSymbol ? 'Active Basket' : 'Unblocked'}
+                  </div>
+
+                  <div>
+                    <span className="text-[10px] text-emerald-500 block uppercase font-medium">
+                      Take Profit
                     </span>
+                    <div className="flex items-baseline gap-1.5">
+                      <span className="font-bold text-emerald-600 dark:text-emerald-400 text-sm tabular-nums">
+                        ${tpVal.toFixed(cfg.digits)}
+                      </span>
+                      <span className="text-[10px] text-emerald-500/80">(+{tpPips}p · {sig.rrRatio}R)</span>
+                    </div>
                   </div>
-                </div>
 
-                {/* Tier 3: Action Button */}
-                <div className="flex items-center justify-between gap-3 pt-1 border-t border-slate-200/60 dark:border-zinc-800/60 flex-wrap">
-                  <div className="text-xs text-slate-500 dark:text-zinc-400 font-medium hidden sm:block">
-                    Verified SMC Liquidity Setup • 1-Click Instant Execution
+                  <div className="col-span-2 sm:col-span-1 flex justify-end">
+                    <button
+                      type="button"
+                      disabled={isExecuting}
+                      onClick={() => handleExecute(sig)}
+                      className={`w-full sm:w-auto px-4 py-2 rounded-lg font-bold text-xs uppercase tracking-wider text-white shadow-xs transition-all cursor-pointer flex items-center justify-center gap-1.5 active:scale-95 ${
+                        isBuy ? 'bg-emerald-600 hover:bg-emerald-500' : 'bg-rose-600 hover:bg-rose-500'
+                      }`}
+                    >
+                      {isExecuting ? (
+                        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <Zap className="w-3.5 h-3.5 fill-current" />
+                      )}
+                      <span>Execute {sig.direction}</span>
+                    </button>
                   </div>
-
-                  <button
-                    type="button"
-                    disabled={isExecuting}
-                    onClick={() => handleExecute(sig)}
-                    className={`w-full sm:w-auto px-5 py-2.5 rounded-xl font-black text-xs uppercase tracking-wider text-white shadow-xs transition-all cursor-pointer flex items-center justify-center gap-2 active:scale-95 ${
-                      isBuy
-                        ? 'bg-emerald-600 hover:bg-emerald-500'
-                        : 'bg-rose-600 hover:bg-rose-500'
-                    }`}
-                  >
-                    {isExecuting ? (
-                      <RefreshCw className="w-4 h-4 animate-spin" />
-                    ) : (
-                      <Zap className="w-4 h-4 fill-current" />
-                    )}
-                    <span>Execute {sig.direction} (0.01L)</span>
-                  </button>
                 </div>
               </div>
             );
           })
         ) : (
-          <div className="text-center py-8 border border-dashed border-slate-200 dark:border-zinc-800 rounded-xl space-y-2">
-            <Sparkles className="w-5 h-5 text-slate-400 mx-auto animate-pulse" />
+          <div className="text-center py-8 border border-dashed border-slate-200 dark:border-zinc-800 rounded-xl space-y-1.5">
+            <Sparkles className="w-5 h-5 text-slate-400 mx-auto" />
             <div className="font-bold text-slate-700 dark:text-slate-300">
-              Scanning 4 Pairs for Qualified Setups...
+              Scanning Market for Qualified SMC Setups...
             </div>
-            <p className="text-[11px] text-slate-500 dark:text-slate-400 max-w-md mx-auto font-sans">
-              USDJPY, XAUUSD, EURUSD, and GBPUSD are being continuously analyzed for liquidity sweeps and order block structure. Signals will appear here as soon as criteria align.
+            <p className="text-[11px] text-slate-400 dark:text-zinc-500 max-w-md mx-auto font-sans">
+              Monitoring USDJPY, XAUUSD, EURUSD, and GBPUSD for order block tapping and liquidity sweeps.
             </p>
           </div>
         )}

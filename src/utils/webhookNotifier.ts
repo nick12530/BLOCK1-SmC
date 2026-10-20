@@ -184,7 +184,7 @@ ${oteLine}🛑 <b>STOP LOSS:</b> <code>${params.sl.toFixed(cfg.digits)}</code> (
 ${triggerLine}  • <b>Suggested Sizing:</b> <code>${params.recommendedLot ? `${params.recommendedLot.toFixed(2)} Lots` : '0.01 - 0.05 Lots'}</code>
   • <b>Trade Rule:</b> Move Stop Loss to Break-Even (BE) once TP1 is secured
 ━━━━━━━━━━━━━━━━━━━━━━━━
-🕒 <i>${new Date().toLocaleTimeString()} UTC • SMC Pro Terminal</i>
+🕒 <i>${new Date().toLocaleTimeString()} UTC • NIFTY Terminal</i>
 `.trim();
 
   let sent = false;

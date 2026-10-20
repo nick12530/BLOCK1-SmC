@@ -139,67 +139,58 @@ export const SignalEngineCard: React.FC<SignalEngineCardProps> = React.memo(({ o
   };
 
   return (
-    <div className="bg-white dark:bg-[#0d1823] border border-slate-200/90 dark:border-[#1a3040] rounded-xl sm:rounded-2xl p-2.5 sm:p-4.5 flex flex-col justify-between shadow-xs space-y-2.5 sm:space-y-4 font-mono text-xs transition-colors">
+    <div className="bg-white dark:bg-[#0d1823] border border-slate-200/90 dark:border-[#1a3040] rounded-xl sm:rounded-2xl p-3 sm:p-4 flex flex-col justify-between shadow-xs space-y-3 font-mono text-xs transition-colors min-w-0 overflow-hidden">
       {/* Header: Title, Status Badge, Auto-Trader Toggle & Copy Action */}
-      <div className="flex items-center justify-between border-b border-slate-100 dark:border-zinc-800/80 pb-3 flex-wrap gap-2">
-        <div className="flex items-center gap-2 flex-wrap">
-          <Zap className="w-4 h-4 text-emerald-500" />
-          <h2 className="font-extrabold text-sm text-slate-900 dark:text-zinc-100 uppercase tracking-wider">
-            Multi-Strategy Signal Deck
+      <div className="flex items-center justify-between border-b border-slate-100 dark:border-zinc-800/80 pb-2.5 gap-2 min-w-0">
+        <div className="flex items-center gap-1.5 min-w-0 flex-1">
+          <Zap className="w-4 h-4 text-emerald-500 shrink-0" />
+          <h2 className="font-extrabold text-xs sm:text-sm text-slate-900 dark:text-zinc-100 uppercase tracking-wider truncate">
+            Signal Deck
           </h2>
-          <span className={`text-xs font-bold px-2.5 py-1 rounded-full border ${
+          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border truncate shrink-0 ${
             rawSig
               ? 'bg-sky-500/10 text-sky-700 dark:text-sky-300 border-sky-500/30'
               : 'bg-slate-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 border-slate-200 dark:border-zinc-700'
           }`}>
             {rawSig
-              ? `${rawSig.direction} · ${rawSig.strategy} · ${ticker.spread} PTS`
+              ? `${rawSig.direction} · ${ticker.spread} PTS`
               : market.brokerMarketData
                 ? `SCANNING · ${ticker.spread} PTS`
-                : `WAITING FOR VERIFIED MT5 DATA · ${ticker.spread} PTS`}
+                : `CONNECT MT5 · ${ticker.spread} PTS`}
           </span>
+        </div>
 
+        <div className="flex items-center gap-1.5 shrink-0">
           {/* Dedicated Auto-Trader Toggle Button */}
           <button
             type="button"
             onClick={() => tradingEngine.toggleAutoTrade()}
             aria-pressed={engine.auto_trade}
-            className={`flex items-center gap-1.5 px-3 py-1 rounded-lg border text-xs font-bold transition-all cursor-pointer ${
+            className={`flex items-center gap-1 px-2 py-1 rounded-md border text-[11px] font-bold transition-all cursor-pointer ${
               engine.auto_trade
                 ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-600 dark:text-emerald-400'
                 : 'bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 border-slate-200 dark:border-zinc-700 text-slate-700 dark:text-zinc-300'
             }`}
-            title={
-              engine.auto_trade
-                ? 'Auto-Trader is ACTIVE (Automatically executes verified institutional setups). Click to turn OFF.'
-                : 'Auto-Trader is OFF (Manual orders only). Click to turn ON.'
-            }
+            title={engine.auto_trade ? 'Auto-Trader is ON. Click to pause.' : 'Auto-Trader is OFF. Click to activate.'}
           >
-            <span
-              className={`w-2 h-2 rounded-full ${
-                engine.auto_trade ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400 dark:bg-zinc-500'
-              }`}
-            />
-            <Bot className="w-3.5 h-3.5" />
-            <span>Auto-Trader: {engine.auto_trade ? 'ON' : 'OFF'}</span>
+            <Bot className="w-3.5 h-3.5 shrink-0" />
+            <span>Auto: {engine.auto_trade ? 'ON' : 'OFF'}</span>
           </button>
-        </div>
 
-        <div className="flex items-center gap-2">
           <button
             onClick={handleCopy}
             title="Copy signal parameters"
             disabled={!rawSig}
-            className="p-1.5 rounded-lg text-zinc-400 hover:text-zinc-900 dark:hover:text-white hover:bg-slate-200 dark:hover:bg-zinc-800 transition-colors cursor-pointer ml-0.5 disabled:opacity-40"
+            className="p-1 rounded-md text-zinc-400 hover:text-zinc-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer disabled:opacity-40"
           >
             {copied ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
           </button>
         </div>
       </div>
 
-      {/* Ranked Strategy Signals Grid (Dedicated Row) */}
-      <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3" aria-label="Ranked strategy signals">
-        {market.signals.map((signal, index) => {
+      {/* Ranked Strategy Signals Grid (Clean single column or 2-col in wide view) */}
+      <div className="grid gap-1.5 grid-cols-1" aria-label="Ranked strategy signals">
+        {market.signals.slice(0, 3).map((signal, index) => {
           const id = `${signal.strategy}:${signal.direction}:${signal.timeframe}:${signal.timestamp}`;
           const isSelected = rawSig === signal;
           return (
@@ -208,143 +199,132 @@ export const SignalEngineCard: React.FC<SignalEngineCardProps> = React.memo(({ o
               type="button"
               onClick={() => setSelectedSignalId(id)}
               aria-pressed={isSelected}
-              className={`rounded-xl border p-3 text-left transition-colors cursor-pointer ${
+              className={`rounded-xl border p-2.5 text-left transition-colors cursor-pointer min-w-0 overflow-hidden ${
                 isSelected
                   ? 'border-slate-900 bg-slate-100 dark:border-zinc-400 dark:bg-zinc-800/80 shadow-xs'
                   : 'border-slate-200 bg-slate-50 hover:border-slate-400 dark:border-zinc-800 dark:bg-zinc-900/60 dark:hover:border-zinc-600'
               }`}
             >
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-[10px] font-bold uppercase tracking-wide text-slate-500 dark:text-zinc-400">
+              <div className="flex items-center justify-between gap-1.5 min-w-0">
+                <span className="text-[10px] font-bold uppercase tracking-wide text-slate-500 dark:text-zinc-400 truncate">
                   #{index + 1} · {signal.strategy}
                 </span>
-                <span className={`font-bold ${signal.direction === 'BUY' ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
-                  {signal.direction} · {signal.score.toFixed(1)}
+                <span className={`font-bold text-xs shrink-0 ${signal.direction === 'BUY' ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
+                  {signal.direction} ({signal.score.toFixed(1)})
                 </span>
               </div>
-              <div className="mt-1 text-[11px] text-slate-600 dark:text-zinc-300">
-                {signal.timeframe} · Entry {signal.entry} · SL {signal.sl} · TP {signal.tp}
+              <div className="mt-1 text-[11px] text-slate-600 dark:text-zinc-300 font-mono truncate">
+                {signal.timeframe} · E: ${signal.entry.toFixed(2)} · SL: ${signal.sl.toFixed(2)} · TP: ${signal.tp.toFixed(2)}
               </div>
             </button>
           );
         })}
         {market.signals.length === 0 && (
-          <div className="rounded-xl border border-dashed border-slate-300 p-3 text-[11px] text-slate-500 dark:border-zinc-700 dark:text-zinc-400 sm:col-span-2 xl:col-span-3">
-            Scanning SMC, trend-pullback, and volatility-breakout setups from closed broker candles.
+          <div className="rounded-xl border border-dashed border-slate-300 p-2.5 text-[11px] text-slate-500 dark:border-zinc-700 dark:text-zinc-400">
+            Scanning closed broker candles for verified setups.
           </div>
         )}
       </div>
 
+      {/* Signal Rationale Summary */}
       <div
         role="status"
         aria-live="polite"
-        className="rounded-xl border border-sky-200 bg-sky-50/70 p-3 dark:border-sky-900/70 dark:bg-sky-950/20"
+        className="rounded-xl border border-sky-200 bg-sky-50/70 p-2.5 dark:border-sky-900/70 dark:bg-sky-950/20 min-w-0 overflow-hidden"
       >
-        <div className="flex items-start gap-2.5">
+        <div className="flex items-start gap-2">
           <span
-            className={`mt-1 h-2.5 w-2.5 shrink-0 rounded-full ${
+            className={`mt-1 h-2 w-2 shrink-0 rounded-full ${
               rawSig ? 'bg-sky-500' : 'bg-slate-400 dark:bg-zinc-600'
             }`}
           />
-          <div className="min-w-0">
-            <p className="text-sm font-bold leading-relaxed text-slate-800 dark:text-zinc-100">
+          <div className="min-w-0 flex-1">
+            <p className="text-xs font-bold leading-snug text-slate-800 dark:text-zinc-100 truncate">
               {rawSig
                 ? rawSig.humanExplanation?.simpleSummary || buildSignalRationale(rawSig)
-                : 'No broker-confirmed setup currently meets the enabled strategy filters. Execution remains disabled until a valid signal forms.'}
+                : 'No setup currently meets active strategy confluence filters.'}
             </p>
             {rawSig?.reasons.length ? (
-              <ul className="mt-2 grid gap-1 text-xs leading-relaxed text-slate-600 dark:text-zinc-300 sm:grid-cols-2">
-                {rawSig.reasons.map((reason, index) => (
-                  <li key={`${reason}-${index}`} className="flex gap-2">
-                    <span className="text-sky-600 dark:text-sky-400">•</span>
-                    <span>{reason}</span>
-                  </li>
-                ))}
-              </ul>
+              <p className="text-[10px] text-slate-600 dark:text-zinc-400 mt-1 truncate">
+                {rawSig.reasons.slice(0, 2).join(' · ')}
+              </p>
             ) : null}
           </div>
         </div>
       </div>
 
       {/* Target Price Levels Matrix */}
-      <div className="grid grid-cols-3 gap-2.5 sm:gap-3 text-center text-xs">
+      <div className="grid grid-cols-3 gap-2 text-center text-xs">
         {/* Entry Price */}
-        <div className="p-3 sm:p-3.5 rounded-xl bg-slate-50 dark:bg-zinc-900/80 border border-slate-200 dark:border-zinc-800">
-          <span className="text-xs text-zinc-500 block uppercase font-bold">Signal Entry</span>
-          <span className="text-sm sm:text-base font-black text-slate-900 dark:text-white tabular-nums block mt-0.5">
+        <div className="p-2 sm:p-2.5 rounded-xl bg-slate-50 dark:bg-zinc-900/80 border border-slate-200 dark:border-zinc-800 min-w-0 overflow-hidden">
+          <span className="text-[10px] text-zinc-500 block uppercase font-bold truncate">Entry</span>
+          <span className="text-xs sm:text-sm font-black text-slate-900 dark:text-white tabular-nums block mt-0.5 truncate">
             {signalEntry === null ? '—' : `$${signalEntry.toFixed(2)}`}
           </span>
-          <span className="text-xs text-zinc-500 block mt-0.5">
-            {rawSig ? `Confirmed ${rawSig.timeframe}` : 'Waiting for entry'}
+          <span className="text-[10px] text-zinc-400 block mt-0.5 truncate">
+            {rawSig ? rawSig.timeframe : 'Pending'}
           </span>
         </div>
 
         {/* Stop Loss */}
-        <div className="p-3 sm:p-3.5 rounded-xl bg-slate-50 dark:bg-zinc-900/80 border border-slate-200 dark:border-zinc-800">
-          <span className="text-xs text-rose-500 block uppercase font-bold">Stop Loss (SL)</span>
-          <span className="text-sm sm:text-base font-black text-rose-600 dark:text-rose-400 tabular-nums block mt-0.5">
+        <div className="p-2 sm:p-2.5 rounded-xl bg-slate-50 dark:bg-zinc-900/80 border border-slate-200 dark:border-zinc-800 min-w-0 overflow-hidden">
+          <span className="text-[10px] text-rose-500 block uppercase font-bold truncate">Stop Loss</span>
+          <span className="text-xs sm:text-sm font-black text-rose-600 dark:text-rose-400 tabular-nums block mt-0.5 truncate">
             {slPrice === null ? '—' : `$${slPrice.toFixed(2)}`}
           </span>
-          <span className="text-xs text-zinc-500 block mt-0.5">
-            {rawSig ? `-${riskPts.toFixed(1)} pts (-$${tradeMetrics.riskDollar})` : 'SL pending'}
+          <span className="text-[10px] text-zinc-400 block mt-0.5 truncate">
+            {rawSig ? `-${riskPts.toFixed(1)}p ($${tradeMetrics.riskDollar})` : 'Pending'}
           </span>
         </div>
 
         {/* Take Profit */}
-        <div className="p-3 sm:p-3.5 rounded-xl bg-slate-50 dark:bg-zinc-900/80 border border-slate-200 dark:border-zinc-800">
-          <span className="text-xs text-emerald-500 block uppercase font-bold">Take Profit (TP)</span>
-          <span className="text-sm sm:text-base font-black text-emerald-600 dark:text-emerald-400 tabular-nums block mt-0.5">
+        <div className="p-2 sm:p-2.5 rounded-xl bg-slate-50 dark:bg-zinc-900/80 border border-slate-200 dark:border-zinc-800 min-w-0 overflow-hidden">
+          <span className="text-[10px] text-emerald-500 block uppercase font-bold truncate">Take Profit</span>
+          <span className="text-xs sm:text-sm font-black text-emerald-600 dark:text-emerald-400 tabular-nums block mt-0.5 truncate">
             {tpPrice === null ? '—' : `$${tpPrice.toFixed(2)}`}
           </span>
-          <span className="text-xs text-zinc-500 block mt-0.5">
-            {rawSig ? `+${rewardPts.toFixed(1)} pts (+$${tradeMetrics.rewardDollar})` : 'TP pending'}
+          <span className="text-[10px] text-zinc-400 block mt-0.5 truncate">
+            {rawSig ? `+${rewardPts.toFixed(1)}p (+$${tradeMetrics.rewardDollar})` : 'Pending'}
           </span>
         </div>
       </div>
 
-      {/* Order Sizing & Position Stacking Matrix */}
-      <div className="p-3.5 rounded-xl border border-slate-200 dark:border-zinc-800 bg-slate-50/50 dark:bg-zinc-900/50 space-y-3">
-        <div className="flex items-center justify-between text-xs">
-          <span className="text-zinc-500 dark:text-zinc-400 font-bold uppercase tracking-wider text-[11px] flex items-center gap-1.5">
-            <Layers className="w-3.5 h-3.5 text-zinc-400" />
-            <span>Risk-limited single entry:</span>
+      {/* Order Sizing & Position Sizing Control */}
+      <div className="p-2.5 rounded-xl border border-slate-200 dark:border-zinc-800 bg-slate-50/50 dark:bg-zinc-900/50 flex items-center justify-between gap-2 min-w-0">
+        <div className="min-w-0">
+          <span className="text-[10px] text-zinc-500 dark:text-zinc-400 font-bold uppercase block truncate">
+            Risk-Sized Volume
           </span>
-
-          <span className="font-bold text-slate-900 dark:text-white">
-            1:{tradeMetrics.rrRatio} RR · Total Exposure: {tradeMetrics.totalLots} Lots
+          <span className="font-bold text-xs text-slate-900 dark:text-white">
+            1:{tradeMetrics.rrRatio} RR · {tradeMetrics.totalLots}L
           </span>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-          {/* Volume Lot Adjuster */}
-          <div className="flex items-center justify-between px-3 py-1 rounded-lg bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700">
-            <span className="text-[11px] text-zinc-500 dark:text-zinc-400 font-bold">Max requested lots:</span>
-            <div className="flex items-center gap-1.5">
-              <button
-                type="button"
-                onClick={() => handleAdjustLot(-0.01)}
-                className="w-6 h-6 rounded bg-slate-100 hover:bg-slate-200 dark:bg-zinc-700 dark:hover:bg-zinc-600 flex items-center justify-center text-zinc-700 dark:text-zinc-200 transition-colors cursor-pointer"
-              >
-                <Minus className="w-3 h-3" />
-              </button>
-              <span className="font-black text-xs sm:text-sm text-slate-900 dark:text-white tabular-nums w-12 text-center">
-                {riskLimitedLotSize === null ? '—' : riskLimitedLotSize.toFixed(2)}
-              </span>
-              <button
-                type="button"
-                onClick={() => handleAdjustLot(0.01)}
-                className="w-6 h-6 rounded bg-slate-100 hover:bg-slate-200 dark:bg-zinc-700 dark:hover:bg-zinc-600 flex items-center justify-center text-zinc-700 dark:text-zinc-200 transition-colors cursor-pointer"
-              >
-                <Plus className="w-3 h-3" />
-              </button>
-            </div>
-          </div>
+        {/* Volume Lot Adjuster */}
+        <div className="flex items-center gap-1 bg-white dark:bg-zinc-800 px-2 py-1 rounded-lg border border-slate-200 dark:border-zinc-700 shrink-0">
+          <button
+            type="button"
+            onClick={() => handleAdjustLot(-0.01)}
+            className="w-5 h-5 rounded bg-slate-100 hover:bg-slate-200 dark:bg-zinc-700 dark:hover:bg-zinc-600 flex items-center justify-center text-zinc-700 dark:text-zinc-200 cursor-pointer"
+          >
+            <Minus className="w-3 h-3" />
+          </button>
+          <span className="font-black text-xs text-slate-900 dark:text-white tabular-nums w-10 text-center">
+            {riskLimitedLotSize === null ? '—' : riskLimitedLotSize.toFixed(2)}
+          </span>
+          <button
+            type="button"
+            onClick={() => handleAdjustLot(0.01)}
+            className="w-5 h-5 rounded bg-slate-100 hover:bg-slate-200 dark:bg-zinc-700 dark:hover:bg-zinc-600 flex items-center justify-center text-zinc-700 dark:text-zinc-200 cursor-pointer"
+          >
+            <Plus className="w-3 h-3" />
+          </button>
         </div>
       </div>
 
       {/* Execution Feedback Banner */}
       {executedFeedback && (
-        <div className="p-2.5 rounded-lg bg-emerald-500/15 border border-emerald-500/30 text-emerald-600 dark:text-emerald-400 text-xs font-bold text-center">
+        <div className="p-2 rounded-lg bg-emerald-500/15 border border-emerald-500/30 text-emerald-600 dark:text-emerald-400 text-xs font-bold text-center truncate">
           ✓ {executedFeedback}
         </div>
       )}
@@ -353,7 +333,7 @@ export const SignalEngineCard: React.FC<SignalEngineCardProps> = React.memo(({ o
       <button
         onClick={handleExecute}
         disabled={isWideSpread || !rawSig || riskLimitedLotSize === null || riskLimitedLotSize <= 0}
-        className={`w-full py-3.5 rounded-xl font-black text-xs sm:text-sm tracking-wider uppercase transition-all flex items-center justify-center gap-2 cursor-pointer ${
+        className={`w-full py-3 px-3 rounded-xl font-black text-xs sm:text-sm tracking-wider uppercase transition-all flex items-center justify-center gap-2 cursor-pointer min-w-0 ${
           isWideSpread || !rawSig
             ? 'bg-zinc-200 text-zinc-400 dark:bg-zinc-900 dark:text-zinc-500 cursor-not-allowed border border-zinc-300 dark:border-zinc-800'
             : activeDirection === 'SELL'
@@ -361,16 +341,16 @@ export const SignalEngineCard: React.FC<SignalEngineCardProps> = React.memo(({ o
               : 'bg-emerald-700 hover:bg-emerald-600 text-white shadow-xs border border-emerald-600/40 active:scale-[0.99]'
         }`}
       >
-        <span className="font-medium">
+        <span className="truncate">
           {!rawSig
             ? 'WAITING FOR CONFIRMED SETUP'
             : isWideSpread
               ? `SPREAD TOO WIDE (${ticker.spread} PTS)`
               : !riskLimitedLotSize
-                ? 'BROKER RISK SIZE UNAVAILABLE'
-                : `EXECUTE SIGNAL · ${activeDirection} ${riskLimitedLotSize.toFixed(2)} RISK-SIZED LOTS @ $${entryPrice.toFixed(2)}`}
+                ? 'RISK SIZING UNAVAILABLE'
+                : `${activeDirection} ${riskLimitedLotSize.toFixed(2)} LOTS @ $${entryPrice.toFixed(2)}`}
         </span>
-        <ArrowRight className="w-4 h-4" />
+        <ArrowRight className="w-4 h-4 shrink-0" />
       </button>
     </div>
   );

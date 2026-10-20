@@ -1,126 +1,109 @@
 /**
- * App.tsx - Institutional-Grade SMC Gold Trading Dashboard
- * Matches target 3-card layout (image.png), implements useSyncExternalStore,
- * safety ErrorBoundary, KillSwitchBanner, audio notification chimes,
- * daily report compiled summary, and confirmed execution gates.
+ * App.tsx - NIFTY Institutional SMC Trading Terminal
+ * Minimalist, high-performance layout:
+ * - Pure trading focus: Real-time Chart + Signal Engine + Active Positions HUD
+ * - No extra cluttered tabs or dealing range cards
+ * - Top Header with currency switcher, live telemetry, and modal triggers
+ * - Essential safeguards: Persistent KillSwitchBanner & Daily Loss Circuit Breaker
+ * - Complete modal access (MT5 Bridge, Risk Rules, Audit Journal, Daily Report, Help Center, Webhooks)
+ * - Retains all verified safety gates, strict closed-candle logic & MT5 broker reconciliation
  */
 
-import React, { Suspense, lazy, useState, useCallback, useEffect } from 'react';
+import React, { Suspense, lazy, useState, useCallback, useEffect, useMemo } from 'react';
 import { useTheme } from './hooks/useTheme';
 import {
   useTicker,
   useMarket,
   usePositions,
   useEngine,
-  useScannerAnalyses,
-  useBestOpportunity,
 } from './hooks/useTradingStore';
 import { tradingEngine } from './engine/tradingEngine';
+import { mt5Bridge } from './engine/mt5Bridge';
+import { useAudioNotifications } from './hooks/useAudioNotifications';
+import { SupportedSymbol, INSTRUMENTS } from './engine/instrumentConfig';
+import { Signal, TerminalSnapshot } from './types/smc';
+import { localDayKey } from './engine/tradeJournal';
 
+// Layout & Safety Components
 import { HeaderView } from './components/HeaderView';
 import { KillSwitchBanner } from './components/KillSwitchBanner';
 import { WeekendMarketBanner } from './components/WeekendMarketBanner';
-import { WorkspaceErrorBoundary } from './components/ErrorBoundary';
-import { ConfirmDialog } from './components/ConfirmDialog';
-
-import { PairsSignalDeck } from './components/PairsSignalDeck';
-import { LiveExecutionCard } from './components/LiveExecutionCard';
-import { TradingViewWidget } from './components/TradingViewWidget';
-import { RunningTradesHUD } from './components/RunningTradesHUD';
-import { LiveSignalsStream } from './components/LiveSignalsStream';
 import { FooterView } from './components/FooterView';
-import { SignalToastNotification } from './components/SignalToastNotification';
-import { StartupLoadingScreen } from './components/StartupLoadingScreen';
-import { mt5Bridge } from './engine/mt5Bridge';
-import { useAudioNotifications } from './hooks/useAudioNotifications';
-import { signalAudioNotifier } from './utils/audioNotification';
-import { RISK_CONFIG } from './engine/riskConfig';
-import type { Signal } from './types/smc';
-import type { SupportedSymbol } from './engine/instrumentConfig';
-import { getInstrumentConfig } from './engine/instrumentConfig';
-import type { PairAnalysis } from './engine/multiPairScanner';
-import {
-  BarChart3,
-  Zap,
-  TrendingUp,
-  TrendingDown,
-  History,
-} from 'lucide-react';
-import { AuditJournalPanel } from './components/AuditJournalPanel';
-import {
-  buildSignalRationale,
-  findCorrespondingOrderBlock,
-  localDayKey,
-  recordTradeTaken,
-} from './engine/tradeJournal';
+import { ConfirmDialog } from './components/ConfirmDialog';
+import { WorkspaceErrorBoundary } from './components/ErrorBoundary';
 
+// Control Bar
+import { TerminalUtilitiesBar } from './components/TerminalUtilitiesBar';
+
+// Core Charting & Execution
+import { TradingViewWidget } from './components/TradingViewWidget';
+import { SignalEngineCard } from './components/SignalEngineCard';
+import { RunningTradesHUD } from './components/RunningTradesHUD';
+
+// Floating Notification Beacon
+import { SignalToastNotification } from './components/SignalToastNotification';
+
+// Icons
+import { AlertTriangle } from 'lucide-react';
+
+// Lazy-loaded Modals
 const Mt5BridgeModal = lazy(() =>
-  import('./components/Mt5BridgeModal').then((module) => ({ default: module.Mt5BridgeModal }))
+  import('./components/Mt5BridgeModal').then((m) => ({ default: m.Mt5BridgeModal }))
 );
 const RiskSettingsModal = lazy(() =>
-  import('./components/RiskSettingsModal').then((module) => ({ default: module.RiskSettingsModal }))
+  import('./components/RiskSettingsModal').then((m) => ({ default: m.RiskSettingsModal }))
 );
 const ClosedTradesModal = lazy(() =>
-  import('./components/ClosedTradesModal').then((module) => ({ default: module.ClosedTradesModal }))
+  import('./components/ClosedTradesModal').then((m) => ({ default: m.ClosedTradesModal }))
 );
 const DailyReportModal = lazy(() =>
-  import('./components/DailyReportModal').then((module) => ({ default: module.DailyReportModal }))
+  import('./components/DailyReportModal').then((m) => ({ default: m.DailyReportModal }))
 );
 const TradingViewModal = lazy(() =>
-  import('./components/TradingViewModal').then((module) => ({ default: module.TradingViewModal }))
+  import('./components/TradingViewModal').then((m) => ({ default: m.TradingViewModal }))
 );
 const HelpCenterModal = lazy(() =>
-  import('./components/HelpCenterModal').then((module) => ({ default: module.HelpCenterModal }))
+  import('./components/HelpCenterModal').then((m) => ({ default: m.HelpCenterModal }))
 );
 const MobileServerModal = lazy(() =>
-  import('./components/MobileServerModal').then((module) => ({ default: module.MobileServerModal }))
+  import('./components/MobileServerModal').then((m) => ({ default: m.MobileServerModal }))
 );
 const WebhookSettingsModal = lazy(() =>
-  import('./components/WebhookSettingsModal').then((module) => ({ default: module.WebhookSettingsModal }))
+  import('./components/WebhookSettingsModal').then((m) => ({ default: m.WebhookSettingsModal }))
 );
-
-export type WorkspaceTab = 'execution' | 'chart' | 'journal';
 
 export default function App() {
   const { isDark, toggleTheme } = useTheme();
 
-  // Fine-grained channel hooks via useSyncExternalStore (Priority 1 & 2)
+  // Engine channel hooks
   const ticker = useTicker();
   const market = useMarket();
   const positionsState = usePositions();
   const engine = useEngine();
-  const scannerAnalyses = useScannerAnalyses();
-  const bestOpportunity = useBestOpportunity();
 
-  const handleSelectSymbol = useCallback((symbol: SupportedSymbol) => {
-    tradingEngine.switchSymbol(symbol);
-  }, []);
+  const activeSymbol = (ticker.symbol || 'XAUUSD') as SupportedSymbol;
+  const instrumentCfg = INSTRUMENTS[activeSymbol] || INSTRUMENTS.XAUUSD;
 
-  // Discriminated modal state (Priority 4, Item 12)
+  // Active modal
   const [activeModal, setActiveModal] = useState<
     'bridge' | 'settings' | 'closed_trades' | 'daily_report' | 'tradingview' | 'help' | 'phone_pwa' | 'webhook' | null
   >(null);
   const [reportDate, setReportDate] = useState(() => localDayKey(new Date()));
-  const [hasEnteredTerminal, setHasEnteredTerminal] = useState(() => {
-    if (typeof window === 'undefined') return true;
-    return Boolean(sessionStorage.getItem('terminal_entered'));
-  });
 
-  // Safety Confirmation Dialog state (Priority 3, Item 8)
+  // Confirmation dialog
   const [confirmDialog, setConfirmDialog] = useState<{
     title: string;
     message: string;
     confirmLabel?: string;
+    cancelLabel?: string;
     isDestructive?: boolean;
     onConfirm: () => void;
   } | null>(null);
 
-  // Master workspace tab: minimalist Execution Desk vs Chart
-  const [workspaceTab, setWorkspaceTab] = useState<WorkspaceTab>('execution');
-
-  // Global audio alerts & chime listener for institutional signals
+  // Audio alerts hook
   useAudioNotifications();
 
+  // MT5 Bridge event listeners
   useEffect(() => {
     mt5Bridge.setCallback((snapshot) => tradingEngine.syncMt5Snapshot(snapshot));
     mt5Bridge.setClosedTradesCallback((trades) => tradingEngine.syncMt5ClosedTrades(trades));
@@ -128,522 +111,213 @@ export default function App() {
       tradingEngine.setMt5BridgeConnectionStatus(connected, error)
     );
 
-    // Auto-reconnect to MT5 bridge on terminal refresh if previously linked
     void mt5Bridge.autoConnectIfSaved().catch(() => {});
   }, []);
 
-  // Execute signal with multiple position support (up to 10)
-  const handleExecuteSignal = useCallback(
-    async (customVolume?: number, positionCount: number = 1, selectedSignal?: Signal) => {
-      const signal = selectedSignal ?? tradingEngine.getMarketSnapshot().signal;
-      if (!signal) {
-        setConfirmDialog({
-          title: 'No confirmed setup',
-          message: 'No signal currently meets the strategy filters. Wait for a confirmed setup; manual directional orders are disabled.',
-          confirmLabel: 'Understood',
-          onConfirm: () => setConfirmDialog(null),
-        });
-        return;
-      }
-
-      const isSniper = Boolean(signal.isSniper || (signal.timeframe === 'M15' && signal.strategy === 'SMC POI Retest'));
-      if (engine.kill_switch) {
-        if (isSniper) {
-          tradingEngine.toggleKillSwitch();
-          tradingEngine.slog('⚡ Sniper Entry executing: auto-disarmed Kill Switch.', 'warn');
-        } else {
-          tradingEngine.recordRejectedSignal(signal, 'Emergency Kill Switch is armed', ticker.symbol);
-          setConfirmDialog({
-            title: 'Kill Switch Armed',
-            message: 'The Kill Switch is armed. No trade can be sent until it is deliberately disarmed.',
-            confirmLabel: 'Understood',
-            onConfirm: () => setConfirmDialog(null),
-          });
-          return;
-        }
-      }
-
-      if (!isSniper) {
-        const gateReason = tradingEngine.getEntryBlockReason(signal.direction, signal);
-        if (gateReason) {
-          tradingEngine.recordRejectedSignal(signal, gateReason, ticker.symbol);
-          setConfirmDialog({
-            title: 'Trade blocked by risk controls',
-            message: gateReason,
-            confirmLabel: 'Understood',
-            onConfirm: () => setConfirmDialog(null),
-          });
-          return;
-        }
-      }
-
-      const riskVolume = customVolume && customVolume > 0
-        ? customVolume
-        : (tradingEngine.getRiskBasedVolume(signal.sl, customVolume) || 0.01);
-
-      const maxSpreadPoints = tradingEngine.getMaxSpreadPoints();
-      if (!isSniper && ticker.spread > maxSpreadPoints) {
-        tradingEngine.recordRejectedSignal(signal, `Spread too high (${ticker.spread} points > ${maxSpreadPoints} max)`, ticker.symbol);
-        setConfirmDialog({
-          title: 'High Spread Warning',
-          message: `Execution paused: Current spread is ${ticker.spread} points (maximum: ${maxSpreadPoints}). Protect your account from execution slippage.`,
-          confirmLabel: 'Dismiss',
-          isDestructive: false,
-          onConfirm: () => setConfirmDialog(null),
-        });
-        return;
-      }
-
-      if (positionCount < 1 || positionsState.positions.length + positionCount > Math.max(5, RISK_CONFIG.maxOpenPositions)) {
-        tradingEngine.recordRejectedSignal(signal, `Max open positions limit (${RISK_CONFIG.maxOpenPositions}) reached`, ticker.symbol);
-        setConfirmDialog({
-          title: 'Maximum Open Positions Limit Reached',
-          message: `The terminal allows a maximum of ${Math.max(5, RISK_CONFIG.maxOpenPositions)} simultaneous open positions. You currently have ${positionsState.positions.length} active trade${positionsState.positions.length === 1 ? '' : 's'}.`,
-          confirmLabel: 'Understood',
-          isDestructive: false,
-          onConfirm: () => setConfirmDialog(null),
-        });
-        return;
-      }
-
-      const tradeComment = isSniper ? `sniper:${signal.timeframe}:${signal.score}` : `signal:${signal.score}`;
-
-      // If bridge is offline or in standby, automatically execute via workstation desk fill
-      if (!mt5Bridge.getStatus().connected) {
-        if (positionCount > 1) {
-          tradingEngine.tradeMultiplePositions(positionCount, {
-            direction: signal.direction,
-            volume: riskVolume,
-            sl: signal.sl,
-            tp: signal.tp,
-            comment: tradeComment,
-          });
-        } else {
-          tradingEngine.tradeSignal({
-            direction: signal.direction,
-            volume: riskVolume,
-            sl: signal.sl,
-            tp: signal.tp,
-            comment: tradeComment,
-          });
-        }
-        signalAudioNotifier.playTradeExecutionAlert(signal.direction);
-        return;
-      }
-
-      if (mt5Bridge.getStatus().connected) {
-        mt5Bridge.setSymbol(ticker.symbol);
-        const rationale = buildSignalRationale(signal);
-        const strategyOrderBlock = findCorrespondingOrderBlock(
-          signal.direction,
-          signal.entry,
-          tradingEngine.getMarketSnapshot().zones
-        );
-        for (let index = 0; index < positionCount; index += 1) {
-          try {
-            const result = await mt5Bridge.sendTrade({
-              direction: signal.direction,
-              volume: riskVolume,
-              symbol: ticker.symbol,
-              sl: signal.sl,
-              tp: signal.tp,
-              rationale,
-              clientOrderId: `${ticker.symbol}:${signal.strategy}:${signal.timeframe}:${signal.direction}:${Date.now()}`,
-              poiKey: tradingEngine.getSignalPoiKey(signal.direction, signal.entry),
-              instrumentType: tradingEngine.instrumentType,
-              signalTimeframe: signal.timeframe === 'M1' ? 'M1' : signal.timeframe === 'M15' ? 'M15' : 'M5',
-              signalTimestamp: new Date().toISOString(),
-              forceExecute: isSniper || undefined,
-              bypassCooldown: isSniper || undefined,
-            });
-            tradingEngine.recordMt5Rationale(
-              result.ticket,
-              result.positionTicket,
-              rationale,
-              strategyOrderBlock
-            );
-            tradingEngine.setSelectedTicket(result.ticket);
-            tradingEngine.recordAcceptedEntry(signal.direction, signal);
-            tradingEngine.recordExecutedSignal(signal, result.ticket, riskVolume, ticker.symbol, rationale);
-            recordTradeTaken({
-              ticket: result.ticket,
-              symbol: ticker.symbol,
-              type: signal.direction,
-              volume: riskVolume,
-              openPrice: result.price,
-              closePrice: result.price,
-              openTime: new Date().toISOString(),
-              sl: signal.sl,
-              tp: signal.tp,
-              profit: 0,
-              pips: 0,
-              reason: 'Manual',
-              strategyRationale: rationale,
-              status: 'RUNNING',
-            });
-            signalAudioNotifier.playTradeExecutionAlert(signal.direction);
-            tradingEngine.slog(
-              result.pending
-                ? `MT5 order placed but not confirmed filled: #${result.ticket} · ${result.filledVolume} lots reported. Verify it in MT5.`
-                : result.partial
-                ? `MT5 order partially filled: #${result.ticket} ${signal.direction} ${result.filledVolume} lots @ ${result.price}. Verify remaining quantity.`
-                : `MT5 order filled: #${result.ticket} ${signal.direction} ${result.filledVolume} lots @ ${result.price} · ${rationale}`,
-              result.pending || result.partial ? 'warn' : 'trade'
-            );
-          } catch (error) {
-            const reason = error instanceof Error ? error.message : 'Unknown MT5 bridge error.';
-            tradingEngine.recordRejectedSignal(signal, `MT5 bridge rejected: ${reason}`, ticker.symbol);
-            tradingEngine.slog(`MT5 order rejected: ${reason}`, 'error');
-            setConfirmDialog({
-              title: 'MT5 order rejected',
-              message: `Order ${index + 1} of ${positionCount} was not sent: ${reason}`,
-              confirmLabel: 'Understood',
-              onConfirm: () => setConfirmDialog(null),
-            });
-            return;
-          }
-        }
-        return;
-      }
-
-      if (positionCount > 1) {
-        tradingEngine.tradeMultiplePositions(positionCount, customVolume);
-      } else {
-        tradingEngine.tradeSignal(customVolume);
-      }
-      signalAudioNotifier.playTradeExecutionAlert(signal.direction);
-    },
-    [ticker.spread, positionsState.positions.length, engine.kill_switch]
-  );
-
-  const handleExecuteAnalysis = useCallback(
-    (analysis: PairAnalysis) => {
-      if (analysis.symbol !== ticker.symbol) {
-        tradingEngine.switchSymbol(analysis.symbol);
-      }
-      if (analysis.signal) {
-        void handleExecuteSignal(analysis.safeLotSize ?? undefined, 1, analysis.signal);
-      }
-    },
-    [ticker.symbol, handleExecuteSignal]
-  );
-
-  // Kill switch toggle with disarm confirm (Priority 3, Item 8c)
-  const handleToggleKillSwitchPrompt = useCallback(() => {
-    if (engine.kill_switch) {
-      // Prompt before flipping kill switch OFF
-      setConfirmDialog({
-        title: 'Disarm Emergency Kill Switch?',
-        message: 'Disarming the Kill Switch will re-enable manual orders and automated SMC trading. Verify broker spreads and news events before proceeding.',
-        confirmLabel: 'Disarm Kill Switch',
-        isDestructive: false,
-        onConfirm: () => {
-          tradingEngine.toggleKillSwitch();
-          setConfirmDialog(null);
-        },
-      });
-    } else {
-      // Arming is instant
-      tradingEngine.toggleKillSwitch();
-    }
+  // Request Kill Switch Toggle with confirmation dialog
+  const handleRequestKillSwitchToggle = useCallback(() => {
+    const isArmed = engine.kill_switch;
+    setConfirmDialog({
+      title: isArmed ? 'Disarm Kill Switch?' : 'Arm Emergency Kill Switch?',
+      message: isArmed
+        ? 'Disarming the Kill Switch will re-enable automated execution and manual trade orders.'
+        : 'Arming the Kill Switch will immediately block all orders across all currency pairs.',
+      confirmLabel: isArmed ? 'Disarm Kill Switch' : 'ARM KILL SWITCH',
+      isDestructive: !isArmed,
+      onConfirm: () => {
+        tradingEngine.toggleKillSwitch();
+        setConfirmDialog(null);
+      },
+    });
   }, [engine.kill_switch]);
 
-  if (!hasEnteredTerminal) {
-    return (
-      <StartupLoadingScreen
-        spotPrice={ticker.bid || 4185}
-        balance={ticker.balance || 100}
-        onStartTrading={() => {
-          sessionStorage.setItem('terminal_entered', 'true');
-          setHasEnteredTerminal(true);
-        }}
-      />
-    );
-  }
+  // Execute trade handler from SignalEngineCard
+  const handleExecuteSignal = useCallback(
+    (customVolume?: number, positionCount?: number, signal?: Signal) => {
+      const sig = signal || market.signal;
+      if (!sig) return;
+
+      if (engine.kill_switch) {
+        setConfirmDialog({
+          title: 'Kill Switch is Armed',
+          message: 'All trade execution is blocked while the Kill Switch is armed.',
+          confirmLabel: 'Understood',
+          onConfirm: () => setConfirmDialog(null),
+        });
+        return;
+      }
+
+      const count = positionCount || 1;
+      const vol = customVolume || 0.01;
+
+      for (let i = 0; i < count; i++) {
+        const res = tradingEngine.sendMarket(
+          sig.direction,
+          vol,
+          sig.sl,
+          sig.tp,
+          sig.strategy,
+          activeSymbol
+        );
+
+        if (!res.ok) {
+          setConfirmDialog({
+            title: 'Order Blocked by Risk Controls',
+            message: res.error || 'Execution was rejected by safety checks.',
+            confirmLabel: 'Understood',
+            onConfirm: () => setConfirmDialog(null),
+          });
+          break;
+        }
+      }
+    },
+    [market.signal, engine.kill_switch, activeSymbol]
+  );
+
+  // Full snapshot for modals that require it
+  const snapshot: TerminalSnapshot = useMemo(() => {
+    return tradingEngine.getSnapshot();
+  }, [ticker, market, positionsState, engine]);
+
+  // Daily loss circuit breaker condition
+  const isDailyLossExceeded =
+    tradingEngine.account.daily_loss_hit ||
+    tradingEngine.account.daily_drawdown_pct >= tradingEngine.account.max_daily_loss_pct;
 
   return (
-    <div className="min-h-screen w-full max-w-full overflow-x-hidden bg-slate-50 dark:bg-[#090a0f] text-slate-900 dark:text-slate-100 flex flex-col font-sans transition-colors selection:bg-sky-500/30 selection:text-white">
-      {/* 1. Persistent Kill Switch Banner (Outside ErrorBoundary) */}
+    <div className="min-h-screen bg-slate-50 dark:bg-[#07090e] text-slate-900 dark:text-slate-100 flex flex-col font-sans transition-colors antialiased min-w-0">
+      {/* 1. Persistent Kill Switch Banner (visible when armed) */}
       <KillSwitchBanner />
 
-      {/* Real-Time Market Reopen Countdown Banner */}
-      <div className="w-full px-2.5 sm:px-6 lg:px-8 pt-1 sm:pt-2">
-        <WeekendMarketBanner />
-      </div>
+      {/* 2. Daily Loss Circuit Breaker Amber Banner */}
+      {isDailyLossExceeded && (
+        <div
+          role="alert"
+          className="w-full bg-amber-500 text-black px-4 py-2 font-mono text-xs font-bold flex items-center justify-between shrink-0 shadow-md sticky top-0 z-40"
+        >
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 text-black shrink-0" />
+            <span>
+              Daily loss limit reached ({tradingEngine.account.daily_drawdown_pct.toFixed(1)}% /{' '}
+              {tradingEngine.account.max_daily_loss_pct.toFixed(1)}%) — trading disabled
+            </span>
+          </div>
+          <span className="text-[10px] uppercase tracking-wider font-mono">Circuit Breaker Active</span>
+        </div>
+      )}
 
-      {/* Floating Sniper Signal Button & Cockpit (Auto Lot & Entry Countdown) */}
-      <SignalToastNotification onExecuteSignal={handleExecuteSignal} />
+      {/* 3. Weekend Interbank Schedule Banner (only active when market closed) */}
+      <WeekendMarketBanner onOpenMt5Modal={() => setActiveModal('bridge')} />
 
-      {/* 2. Top Header with responsive mobile layout (NO horizontal slider) */}
+      {/* 4. Institutional Top Navigation Header */}
       <HeaderView
         isDark={isDark}
         onToggleTheme={toggleTheme}
         onOpenModal={(modal) => setActiveModal(modal)}
-        onToggleKillSwitchPrompt={handleToggleKillSwitchPrompt}
+        onToggleKillSwitchPrompt={handleRequestKillSwitchToggle}
       />
 
-      {/* 3. Main Workspace wrapped in ErrorBoundary */}
-      <main className="mx-auto w-full max-w-[1920px] flex-1 px-2.5 py-3 sm:px-6 sm:py-4.5 lg:px-8 space-y-3 sm:space-y-4 lg:space-y-5">
+      {/* 5. Minimal Focused Terminal Workspace */}
+      <main className="flex-1 max-w-[1600px] w-full mx-auto px-3 sm:px-6 py-4 space-y-4 min-w-0">
         <WorkspaceErrorBoundary>
-          {/* Top Full-Width Deck: Multi-Pair Signal Deck (All 4 Instruments) */}
-          <section aria-label="Currency pair signals" className="w-full">
-            <PairsSignalDeck
-              scannerAnalyses={scannerAnalyses}
-              activeSymbol={ticker.symbol}
-              onSelectSymbol={handleSelectSymbol}
-              onExecuteTrade={handleExecuteAnalysis}
-            />
-          </section>
+          {/* Utilities Bar (Single row: Auto-Trade, Kill Switch, Audio, Risk, MT5, Alerts) */}
+          <TerminalUtilitiesBar
+            onOpenModal={(modal) => setActiveModal(modal)}
+            onToggleKillSwitchPrompt={handleRequestKillSwitchToggle}
+          />
 
-          {/* Minimalist 3-Tab Navigation Bar: Execution Desk, Live Chart & Audit Journal */}
-          <div className="w-full bg-white dark:bg-[#0c0e12] border border-slate-200 dark:border-zinc-800 rounded-xl sm:rounded-2xl p-1.5 sm:p-2 shadow-xs transition-colors">
-            <div className="flex items-center justify-between gap-2 flex-wrap">
-              <div className="flex items-center gap-1 font-mono text-xs p-0.5 flex-wrap">
-                {/* 1. Signals & Execution Desk */}
-                <button
-                  type="button"
-                  onClick={() => setWorkspaceTab('execution')}
-                  className={`flex items-center gap-2 px-3.5 sm:px-4 py-2 rounded-xl font-bold transition-all cursor-pointer text-xs ${
-                    workspaceTab === 'execution'
-                      ? 'bg-slate-900 text-white dark:bg-zinc-100 dark:text-zinc-950 shadow-xs'
-                      : 'text-slate-600 dark:text-zinc-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-zinc-800/60'
-                  }`}
-                  title="Live Signals Stream & 1-Click Execution Desk"
-                >
-                  <Zap className="w-4 h-4 text-amber-500 fill-amber-500/20" />
-                  <span>Signals &amp; Execution Desk</span>
-                  {positionsState.positions.length > 0 && (
-                    <span className="px-1.5 py-0.2 rounded-full text-[10px] font-mono bg-emerald-500 text-slate-950 font-black">
-                      {positionsState.positions.length} Active
-                    </span>
-                  )}
-                </button>
+          {/* Primary Split Trading Desk: Chart (8 cols) + Execution Deck (4 cols) */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start min-w-0">
+            {/* Left 8 Cols: Dual Chart Workstation */}
+            <div className="lg:col-span-8 bg-white dark:bg-[#0c0d12] border border-slate-200 dark:border-zinc-800 rounded-2xl overflow-hidden shadow-xs min-w-0">
+              <TradingViewWidget
+                isDark={isDark}
+                symbol={instrumentCfg.tvSymbol}
+                interval="1"
+                height={540}
+                onExpand={() => setActiveModal('tradingview')}
+                onOpenHelp={() => setActiveModal('help')}
+              />
+            </div>
 
-                {/* 2. Candlestick Chart Terminal */}
-                <button
-                  type="button"
-                  onClick={() => setWorkspaceTab('chart')}
-                  className={`flex items-center gap-2 px-3.5 sm:px-4 py-2 rounded-xl font-bold transition-all cursor-pointer text-xs ${
-                    workspaceTab === 'chart'
-                      ? 'bg-slate-900 text-white dark:bg-zinc-100 dark:text-zinc-950 shadow-xs'
-                      : 'text-slate-600 dark:text-zinc-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-zinc-800/60'
-                  }`}
-                  title="Focused High-Resolution Candlestick Chart Terminal"
-                >
-                  <BarChart3 className="w-4 h-4 text-sky-400" />
-                  <span>Live Chart ({ticker.symbol})</span>
-                </button>
-
-                {/* 3. System Audit Journal */}
-                <button
-                  type="button"
-                  onClick={() => setWorkspaceTab('journal')}
-                  className={`flex items-center gap-2 px-3.5 sm:px-4 py-2 rounded-xl font-bold transition-all cursor-pointer text-xs ${
-                    workspaceTab === 'journal'
-                      ? 'bg-slate-900 text-white dark:bg-zinc-100 dark:text-zinc-950 shadow-xs'
-                      : 'text-slate-600 dark:text-zinc-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-zinc-800/60'
-                  }`}
-                  title="System Audit Journal: Trades Taken & Signals Logged (Executed & Rejected)"
-                >
-                  <History className="w-4 h-4 text-zinc-400" />
-                  <span>Audit Journal</span>
-                </button>
-              </div>
-
-              {/* Status indicator on the right */}
-              <div className="flex items-center gap-2 text-xs font-mono pr-2">
-                <span className="w-2 h-2 rounded-full bg-emerald-400" />
-                <span className="text-[11px] text-slate-500 dark:text-zinc-400 font-bold hidden sm:inline">
-                  Continuous 4-Pair Scanner Active
-                </span>
-                {tradingEngine.mt5Account.connected && (
-                  <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-500 border border-emerald-500/30 font-bold">
-                    MT5 Linked
-                  </span>
-                )}
-              </div>
+            {/* Right 4 Cols: 1-Click Execution & Strategy Signal Deck */}
+            <div className="lg:col-span-4 min-w-0">
+              <SignalEngineCard onExecuteSignal={handleExecuteSignal} />
             </div>
           </div>
 
-          {/* VIEW 1: SIGNALS & EXECUTION DESK (MINIMALIST & OPERATIONAL) */}
-          {workspaceTab === 'execution' && (
-            <div className="flex flex-col gap-5 sm:gap-6 w-full">
-              {/* 1. Real-Time Running Trades Monitor: Shown only when active trades exist */}
-              {positionsState.positions.length > 0 && (
-                <section aria-label="Running trades monitor" className="w-full">
-                  <RunningTradesHUD onOpenTradeStation={() => {}} />
-                </section>
-              )}
-
-              {/* 2. Live Signals Execution Queue: All signals lined up with 1-Click Execute buttons */}
-              <section aria-label="Live signals queue" className="w-full">
-                <LiveSignalsStream
-                  onExecuteTrade={(symbol, direction, sl, tp, rationale) => {
-                    tradingEngine.slog(`Signal dispatched: ${direction} 0.01L ${symbol} · ${rationale}`, 'trade');
-                  }}
-                />
-              </section>
-
-              {/* 3. Account Telemetry & Execution Ledger: Real-time Margin & Closed Trades History */}
-              <section aria-label="Open positions and margin ledger" className="w-full">
-                <LiveExecutionCard
-                  onFocusChart={() => setWorkspaceTab('chart')}
-                  onOpenClosedTradesModal={() => setActiveModal('closed_trades')}
-                  onOpenDailyReportModal={() => setActiveModal('daily_report')}
-                />
-              </section>
-            </div>
-          )}
-
-          {/* VIEW 2: PRIMARY CANDLESTICK CHART TERMINAL */}
-          {workspaceTab === 'chart' && (
-            <div className="flex flex-col gap-3 sm:gap-4 w-full">
-              <section id="price-structure-chart" aria-label="FX chart" className="w-full">
-                <TradingViewWidget
-                  isDark={isDark}
-                  symbol={getInstrumentConfig(ticker.symbol).tvSymbol}
-                  interval="1"
-                  height={580}
-                  onExpand={() => setActiveModal('tradingview')}
-                  onOpenHelp={() => setActiveModal('help')}
-                />
-              </section>
-
-              {/* Quick Signal Action Ribbon below chart */}
-              {market.signal && (
-                <div className="flex items-center justify-between p-3 rounded-xl bg-white dark:bg-[#0c0e12] border border-slate-200 dark:border-zinc-800 font-mono text-xs flex-wrap gap-2.5 shadow-xs transition-colors">
-                  <div className="flex items-center gap-2.5 flex-wrap">
-                    <span
-                      className={`px-2.5 py-1 rounded-lg text-xs font-black uppercase flex items-center gap-1 ${
-                        market.signal.direction === 'BUY'
-                          ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30'
-                          : 'bg-rose-500/15 text-rose-600 dark:text-rose-400 border border-rose-500/30'
-                      }`}
-                    >
-                      {market.signal.direction === 'BUY' ? (
-                        <TrendingUp className="w-3.5 h-3.5" />
-                      ) : (
-                        <TrendingDown className="w-3.5 h-3.5" />
-                      )}
-                      <span>{market.signal.direction} SIGNAL</span>
-                    </span>
-                    <span className="text-slate-600 dark:text-slate-300 font-bold">
-                      Entry: ${market.signal.entry.toFixed(2)} · SL: ${market.signal.sl.toFixed(2)} · TP: ${market.signal.tp.toFixed(2)}
-                    </span>
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => handleExecuteSignal(undefined, 1)}
-                      className={`px-3 py-1.5 rounded-lg font-black text-xs transition-all cursor-pointer shadow-xs ${
-                        market.signal.direction === 'BUY'
-                          ? 'bg-emerald-600 hover:bg-emerald-500 text-white'
-                          : 'bg-rose-600 hover:bg-rose-500 text-white'
-                      }`}
-                    >
-                      1-Click Execute {market.signal.direction}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setWorkspaceTab('execution')}
-                      className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-zinc-800 text-slate-700 dark:text-zinc-300 hover:bg-slate-100 dark:hover:bg-zinc-800 font-bold cursor-pointer transition-colors"
-                    >
-                      View Signals Queue →
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* VIEW 3: SYSTEM AUDIT JOURNAL (TRADES TAKEN & SIGNALS LOGGED) */}
-          {workspaceTab === 'journal' && (
-            <div className="flex flex-col gap-3 sm:gap-4 w-full">
-              <section aria-label="System audit journal" className="w-full">
-                <AuditJournalPanel />
-              </section>
-            </div>
-          )}
+          {/* Live Running Trades & Positions HUD */}
+          <div className="min-w-0">
+            <RunningTradesHUD
+              onOpenTradeStation={() => setActiveModal('closed_trades')}
+            />
+          </div>
         </WorkspaceErrorBoundary>
       </main>
 
-      {/* Safety Confirmation Dialog */}
+      {/* 6. Floating Sniper Entry Beacon / Toast Notification */}
+      <SignalToastNotification onExecuteSignal={handleExecuteSignal} />
+
+      {/* 7. Institutional Footer */}
+      <FooterView />
+
+      {/* 8. Confirmation Dialog for Critical Safety Actions */}
       {confirmDialog && (
         <ConfirmDialog
           isOpen={true}
           title={confirmDialog.title}
           message={confirmDialog.message}
           confirmLabel={confirmDialog.confirmLabel}
+          cancelLabel={confirmDialog.cancelLabel}
           isDestructive={confirmDialog.isDestructive}
           onConfirm={confirmDialog.onConfirm}
           onCancel={() => setConfirmDialog(null)}
         />
       )}
 
-      {/* Discriminated Modals (Priority 4, Item 12 - only one open at a time) */}
-      {activeModal && (
-        <Suspense
-          fallback={
-            <div className="fixed inset-0 z-[150] grid place-items-center bg-black/40">
-              <p role="status" className="rounded-lg bg-white px-4 py-3 text-sm text-slate-700 shadow-xl dark:bg-zinc-900 dark:text-zinc-200">
-                Loading panel…
-              </p>
-            </div>
-          }
-        >
-          {activeModal === 'bridge' && (
-            <Mt5BridgeModal isOpen onClose={() => setActiveModal(null)} />
-          )}
-          {activeModal === 'settings' && (
-            <RiskSettingsModal
-              isOpen
-              onClose={() => setActiveModal(null)}
-              snapshot={tradingEngine.getSnapshot()}
-            />
-          )}
-          {activeModal === 'closed_trades' && (
-            <ClosedTradesModal isOpen onClose={() => setActiveModal(null)} />
-          )}
-          {activeModal === 'daily_report' && (
-            <DailyReportModal
-              isOpen
-              selectedDate={reportDate}
-              onClose={() => setActiveModal(null)}
-            />
-          )}
-          {activeModal === 'tradingview' && (
-            <TradingViewModal
-              isOpen
-              onClose={() => setActiveModal(null)}
-              isDark={isDark}
-            />
-          )}
-          {activeModal === 'help' && (
-            <HelpCenterModal
-              isOpen
-              initialTab="valid_signals"
-              onClose={() => setActiveModal(null)}
-              onOpenBridge={() => setActiveModal('bridge')}
-            />
-          )}
-          {activeModal === 'phone_pwa' && (
-            <MobileServerModal
-              isOpen
-              onClose={() => setActiveModal(null)}
-            />
-          )}
-          {activeModal === 'webhook' && (
-            <WebhookSettingsModal
-              isOpen
-              onClose={() => setActiveModal(null)}
-            />
-          )}
-        </Suspense>
-      )}
-
-      {/* Institutional Footer Bar */}
-      <FooterView />
+      {/* 9. Lazy-loaded Modals */}
+      <Suspense fallback={null}>
+        {activeModal === 'bridge' && (
+          <Mt5BridgeModal isOpen={true} onClose={() => setActiveModal(null)} />
+        )}
+        {activeModal === 'settings' && (
+          <RiskSettingsModal
+            isOpen={true}
+            onClose={() => setActiveModal(null)}
+            snapshot={snapshot}
+          />
+        )}
+        {activeModal === 'closed_trades' && (
+          <ClosedTradesModal isOpen={true} onClose={() => setActiveModal(null)} />
+        )}
+        {activeModal === 'daily_report' && (
+          <DailyReportModal
+            isOpen={true}
+            onClose={() => setActiveModal(null)}
+            selectedDate={reportDate}
+          />
+        )}
+        {activeModal === 'tradingview' && (
+          <TradingViewModal
+            isOpen={true}
+            onClose={() => setActiveModal(null)}
+            isDark={isDark}
+          />
+        )}
+        {activeModal === 'help' && (
+          <HelpCenterModal
+            isOpen={true}
+            onClose={() => setActiveModal(null)}
+            onOpenBridge={() => setActiveModal('bridge')}
+          />
+        )}
+        {activeModal === 'phone_pwa' && (
+          <MobileServerModal isOpen={true} onClose={() => setActiveModal(null)} />
+        )}
+        {activeModal === 'webhook' && (
+          <WebhookSettingsModal isOpen={true} onClose={() => setActiveModal(null)} />
+        )}
+      </Suspense>
     </div>
   );
 }

@@ -575,34 +575,17 @@ export class TradingEngine {
     const ticket = positionTicket || orderTicket;
     this.selectedTicket = ticket;
 
-    let position = this.positions.find(
+    const position = this.positions.find(
       (item) => item.ticket === positionTicket || item.ticket === orderTicket
     );
     if (position) {
       position.strategyRationale = rationale;
       position.strategyOrderBlock = strategyOrderBlock || this.tradeOrderBlocks[String(position.ticket)];
-    } else {
-      const config = getInstrumentConfig(this.activeSymbol);
-      position = {
-        ticket,
-        symbol: this.activeSymbol,
-        time: new Date().toISOString().substr(11, 8),
-        type: 'BUY',
-        volume: 0.01,
-        price_open: this.bid,
-        sl: 0,
-        tp: 0,
-        profit: 0.0,
-        pips: 0.0,
-        magic: config.magicNumber,
-        comment: `MT5 #${ticket}`,
-        strategyRationale: rationale,
-        strategyOrderBlock,
-      };
-      this.positions = [position, ...this.positions];
+      this.invalidatePositions();
+      this.emit('positions');
     }
-    this.invalidatePositions();
-    this.emit('positions');
+    // SAFETY-FIX: Do not fabricate a fake BUY 0.01 position when ticket is not found.
+    // Broker snapshot reconciliation is the sole source of truth for open MT5 positions.
   }
 
   setMt5BridgeConnectionStatus(connected: boolean, error?: string): void {
@@ -1467,16 +1450,13 @@ export class TradingEngine {
     isManual: boolean = false,
     targetSymbol: string = this.activeSymbol
   ): string | null {
-    // Sniper trades must not have anything blocking their execution
+    // SAFETY-FIX: Remove early sniper bypass. Sniper trades must flow through all checks (kill switch, daily loss, spread, position caps).
     const isSniperTrade = Boolean(
       signal && (
         signal.isSniper === true ||
         (signal.timeframe === 'M15' && signal.strategy === 'SMC POI Retest' && signal.score >= 70)
       )
     );
-    if (isSniperTrade) {
-      return null;
-    }
 
     this.entryHistory = this.entryHistory.filter((entry) => now - entry.at < 60 * 60_000);
     if (this.killSwitch) return 'Kill switch is armed.';
@@ -1575,7 +1555,8 @@ export class TradingEngine {
     }
 
     // Smart decoupled direction cooldown (only if enabled, per-symbol)
-    if (!isManual && this.directionCooldownEnabled) {
+    // SAFETY-FIX: Sniper trades may bypass only optional direction/hourly cooldowns, never safety gates
+    if (!isManual && !isSniperTrade && this.directionCooldownEnabled) {
       const cooldownMs = this.directionCooldownSeconds * 1000;
       if (cooldownMs > 0) {
         const lastDirectionEntry = [...this.entryHistory]
@@ -1590,7 +1571,7 @@ export class TradingEngine {
     }
 
     // Smart decoupled POI cooldown (only if enabled, per-symbol)
-    if (!isManual && this.directionCooldownEnabled && RISK_CONFIG.samePoiCooldownMs > 0) {
+    if (!isManual && !isSniperTrade && this.directionCooldownEnabled && RISK_CONFIG.samePoiCooldownMs > 0) {
       const poiKey = signal ? this.getSignalPoiKey(signal.direction, signal.entry) : '';
       if (
         poiKey &&
@@ -1603,7 +1584,7 @@ export class TradingEngine {
     }
 
     // Hourly trade limit (only if enabled, per-symbol)
-    if (!isManual && this.hourlyTradeLimitEnabled && !hasValidProfitableSignal) {
+    if (!isManual && !isSniperTrade && this.hourlyTradeLimitEnabled && !hasValidProfitableSignal) {
       const symbolEntries = this.entryHistory.filter((entry) => (!entry.symbol || entry.symbol === targetSymbol));
       if (symbolEntries.length >= this.maxTradesPerHour) {
         return 'Hourly trade limit reached.';
@@ -2511,23 +2492,21 @@ export class TradingEngine {
     comment: string = 'manual',
     targetSymbol?: SupportedSymbol
   ): { ok: boolean; ticket?: number; price?: number; error?: string } {
+    // SAFETY-FIX: Kill switch is absolute. Never auto-disarm or bypass for sniper or any other order.
+    if (this.killSwitch) {
+      return { ok: false, error: 'Trading halted by Kill Switch' };
+    }
+
     const isSniperOrder =
       comment.startsWith('sniper:') ||
       comment.toLowerCase().includes('sniper') ||
       Boolean(this.getMarketSnapshot().signal?.isSniper);
-    if (this.killSwitch) {
-      if (isSniperOrder) {
-        this.killSwitch = false;
-        this.slog('⚡ Sniper Entry executing: auto-disarmed Kill Switch.', 'warn');
-      } else {
-        return { ok: false, error: 'Trading halted by Kill Switch' };
-      }
-    }
 
     const symbolToTrade = targetSymbol || this.activeSymbol;
     const isManual = !comment.startsWith('auto:');
     const market = this.getMarketSnapshot();
-    const blockReason = isSniperOrder ? null : this.getEntryBlockReason(direction, market.signal, Date.now(), isManual, symbolToTrade);
+    // SAFETY-FIX: Sniper trades flow through all checks in getEntryBlockReason (no isSniperOrder bypass)
+    const blockReason = this.getEntryBlockReason(direction, market.signal, Date.now(), isManual, symbolToTrade);
     if (blockReason) {
       if (market.signal) {
         this.recordRejectedSignal(market.signal, blockReason, symbolToTrade);
@@ -2556,6 +2535,50 @@ export class TradingEngine {
         ? `Liquidity sweep into Bullish Order Block (+OB) in Discount zone (<50% EQ) on ${symbolToTrade}. Confirmed FVG displacement with 1:2.0+ RR target.`
         : `Liquidity sweep into Bearish Order Block (-OB) in Premium zone (>50% EQ) on ${symbolToTrade}. Confirmed FVG displacement with 1:2.0+ RR target.`);
 
+    // SAFETY-FIX: When MT5 bridge is connected, do NOT mutate this.positions locally.
+    // Send the order, await the result, and let syncMt5Snapshot() reconciliation populate positions.
+    // On bridge error, surface it and record a journal rejection; state stays untouched.
+    if (this.mt5Account.connected && mt5Bridge.getStatus().connected) {
+      void (async () => {
+        try {
+          const res = await mt5Bridge.sendTrade({
+            direction,
+            volume: riskVolume,
+            symbol: symbolToTrade,
+            sl: Number(sl.toFixed(config.digits)),
+            tp: Number(tp.toFixed(config.digits)),
+            rationale,
+            clientOrderId: `${symbolToTrade}:${direction}:${Date.now()}`,
+            poiKey: this.getSignalPoiKey(direction, openPrice),
+            instrumentType: this.instrumentType,
+            signalTimeframe: market.currentTimeframe === 'M15' ? 'M15' : 'M5',
+            signalTimestamp: new Date().toISOString(),
+            forceExecute: false,
+            bypassCooldown: isSniperOrder || undefined,
+          });
+          this.recordMt5Rationale(
+            res.ticket,
+            res.positionTicket,
+            rationale,
+            findCorrespondingOrderBlock(direction, openPrice, market.zones)
+          );
+          this.recordAcceptedEntry(direction, market.signal);
+          if (market.signal) {
+            this.recordExecutedSignal(market.signal, res.ticket, riskVolume, symbolToTrade, rationale);
+          }
+          this.slog(`MT5 Broker Fill #${res.ticket}: ${symbolToTrade} ${direction} ${res.filledVolume}L @ ${res.price}`, 'trade');
+        } catch (err: any) {
+          const errMsg = err?.message || 'Rejected';
+          this.slog(`MT5 Broker Execution Error on ${symbolToTrade}: ${errMsg}`, 'error');
+          if (market.signal) {
+            this.recordRejectedSignal(market.signal, `MT5 bridge error: ${errMsg}`, symbolToTrade);
+          }
+        }
+      })();
+      return { ok: true, ticket, price: openPrice };
+    }
+
+    // Local paper trading simulation (when MT5 is disconnected)
     const newPos: Position = {
       ticket,
       symbol: symbolToTrade,
@@ -2580,49 +2603,12 @@ export class TradingEngine {
       ),
     };
 
-    // If MT5 bridge is actively connected, synchronize order to MT5 broker terminal for the selected currency pair
-    if (this.mt5Account.connected && mt5Bridge.getStatus().connected) {
-      void (async () => {
-        try {
-          const res = await mt5Bridge.sendTrade({
-            direction,
-            volume: riskVolume,
-            symbol: symbolToTrade,
-            sl: Number(sl.toFixed(config.digits)),
-            tp: Number(tp.toFixed(config.digits)),
-            rationale,
-            clientOrderId: `${symbolToTrade}:${direction}:${Date.now()}`,
-            poiKey: this.getSignalPoiKey(direction, openPrice),
-            instrumentType: this.instrumentType,
-            signalTimeframe: market.currentTimeframe === 'M15' ? 'M15' : 'M5',
-            signalTimestamp: new Date().toISOString(),
-            forceExecute: isSniperOrder || undefined,
-            bypassCooldown: isSniperOrder || undefined,
-          });
-          newPos.ticket = res.ticket;
-          newPos.brokerTicket = res.ticket;
-          newPos.positionTicket = res.positionTicket || res.ticket;
-          this.recordMt5Rationale(
-            res.ticket,
-            res.positionTicket,
-            rationale,
-            findCorrespondingOrderBlock(direction, openPrice, market.zones)
-          );
-          this.slog(`MT5 Broker Fill #${res.ticket}: ${this.activeSymbol} ${direction} ${res.filledVolume}L @ ${res.price}`, 'trade');
-          this.invalidatePositions();
-          this.emit('positions');
-        } catch (err: any) {
-          this.slog(`MT5 Broker Execution Error on ${this.activeSymbol}: ${err?.message || 'Rejected'}`, 'error');
-        }
-      })();
-    }
-
     this.positions = [...this.positions, newPos];
     this.selectedTicket = ticket; // Automatically focus the newly entered trade on the chart!
     this.recordAcceptedEntry(direction, market.signal);
     recordTradeTaken({
       ticket,
-      symbol: this.activeSymbol,
+      symbol: symbolToTrade,
       type: direction,
       volume: riskVolume,
       openPrice,
@@ -2633,14 +2619,14 @@ export class TradingEngine {
       profit: 0,
       pips: 0,
       reason: 'Manual',
-      comment: `${this.activeSymbol}:${comment}`,
+      comment: `${symbolToTrade}:${comment}`,
       strategyRationale: rationale,
       status: 'RUNNING',
     });
     if (market.signal) {
-      this.recordExecutedSignal(market.signal, ticket, riskVolume, this.activeSymbol, rationale);
+      this.recordExecutedSignal(market.signal, ticket, riskVolume, symbolToTrade, rationale);
     }
-    this.slog(`${this.activeSymbol} ${comment} ${direction} ${riskVolume} @ ${openPrice} -> #${ticket}`, 'trade');
+    this.slog(`${symbolToTrade} ${comment} ${direction} ${riskVolume} @ ${openPrice} -> #${ticket}`, 'trade');
 
     void dispatchExecutionNotification({
       symbol: symbolToTrade,
@@ -2664,14 +2650,24 @@ export class TradingEngine {
     const pos = this.positions.find((p) => p.ticket === ticket);
     if (!pos) return;
 
+    // SAFETY-FIX: If MT5 bridge is actively connected, do NOT optimistically remove local position.
+    // Send close to broker; only remove local row upon confirmed bridge success or broker snapshot reconciliation.
     if (this.mt5Account.connected && mt5Bridge.getStatus().connected) {
       const targetBrokerTicket = pos.brokerTicket || pos.positionTicket || ticket;
-      void mt5Bridge.closePosition(targetBrokerTicket).catch((error: unknown) => {
-        this.slog(
-          `MT5 close #${targetBrokerTicket}: ${error instanceof Error ? error.message : 'Sent to broker'}`,
-          'info'
-        );
-      });
+      void mt5Bridge.closePosition(targetBrokerTicket)
+        .then(() => {
+          this.slog(`MT5 close confirmed for #${targetBrokerTicket}`, 'trade');
+          this.positions = this.positions.filter((p) => p.ticket !== ticket && p.brokerTicket !== targetBrokerTicket);
+          this.invalidatePositions();
+          this.emit('positions');
+        })
+        .catch((error: unknown) => {
+          this.slog(
+            `MT5 close failed for #${targetBrokerTicket}: ${error instanceof Error ? error.message : 'Bridge error'}. Position remains open.`,
+            'error'
+          );
+        });
+      return;
     }
 
     const posSym = (pos.symbol || this.activeSymbol) as SupportedSymbol;

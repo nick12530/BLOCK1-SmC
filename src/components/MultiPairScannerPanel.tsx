@@ -197,16 +197,16 @@ export const MultiPairScannerPanel: React.FC<MultiPairScannerPanelProps> = ({
               </div>
 
               {/* Trade Execution Matrix (Entry, SL, TP, RR) */}
-              <div className="bg-white/80 dark:bg-[#0e0f14] p-2.5 rounded-xl border border-slate-200/70 dark:border-zinc-800/80 font-mono text-xs space-y-1">
-                <div className="flex items-center justify-between text-[11px] text-zinc-500 dark:text-zinc-400">
-                  <span>Entry: ${item.entryPrice}</span>
-                  <span className="font-bold text-slate-800 dark:text-zinc-200">
+              <div className="bg-white/80 dark:bg-[#0e0f14] p-2.5 rounded-xl border border-slate-200/70 dark:border-zinc-800/80 font-mono text-xs space-y-1 min-w-0 overflow-hidden">
+                <div className="flex items-center justify-between text-[11px] text-zinc-500 dark:text-zinc-400 gap-1">
+                  <span className="truncate">Entry: ${item.entryPrice.toFixed(item.symbol === 'XAUUSD' ? 2 : item.symbol === 'USDJPY' ? 3 : 4)}</span>
+                  <span className="font-bold text-slate-800 dark:text-zinc-200 shrink-0">
                     1:{item.riskRewardRatio} RR
                   </span>
                 </div>
-                <div className="flex items-center justify-between text-[11px] text-zinc-500 dark:text-zinc-400">
-                  <span>SL: ${item.suggestedSL}</span>
-                  <span>TP: ${item.suggestedTP}</span>
+                <div className="flex items-center justify-between text-[11px] text-zinc-500 dark:text-zinc-400 gap-1">
+                  <span className="truncate text-rose-500">SL: ${item.suggestedSL.toFixed(item.symbol === 'XAUUSD' ? 2 : item.symbol === 'USDJPY' ? 3 : 4)}</span>
+                  <span className="truncate text-emerald-500">TP: ${item.suggestedTP.toFixed(item.symbol === 'XAUUSD' ? 2 : item.symbol === 'USDJPY' ? 3 : 4)}</span>
                 </div>
               </div>
 

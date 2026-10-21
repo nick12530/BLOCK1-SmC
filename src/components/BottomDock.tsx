@@ -200,7 +200,7 @@ export const BottomDock: React.FC<BottomDockProps> = ({ snapshot, closedTrades }
               <div className="py-10 text-center text-[#6b7a90] space-y-1">
                 <div className="text-sm font-medium text-[#94a3b8]">No Active Positions</div>
                 <div className="text-xs">
-                  The automated SMC engine is currently scanning for confluence setups.
+                  The automated trading engine is currently scanning for confluence setups.
                 </div>
               </div>
             )}

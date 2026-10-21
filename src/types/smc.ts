@@ -100,7 +100,7 @@ export interface HumanSignalExplanation {
 }
 
 export interface Signal {
-  strategy?: 'SMC POI Retest' | 'Trend Pullback' | 'Volatility Breakout';
+  strategy?: 'SMC POI Retest' | 'Trend Pullback' | 'Volatility Breakout' | 'POI Retest';
   direction: TradeDirection;
   timeframe: 'M1' | 'M5' | 'M15';
   score: number;
@@ -133,6 +133,9 @@ export interface Signal {
   humanExplanation?: HumanSignalExplanation;
   liquiditySweep?: LiquiditySweepInfo;
   isOutOfSessionException?: boolean;
+  entryState?: 'IMMINENT' | 'TRIGGERED' | 'ACTIVE' | 'PASSED';
+  isImminent?: boolean;
+  isVipTelegram?: boolean; // 100% conviction A+ setup dispatched or pending execution in Telegram VIP
 }
 
 export interface Position {

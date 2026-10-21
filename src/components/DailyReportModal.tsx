@@ -139,7 +139,7 @@ export const DailyReportModal: React.FC<DailyReportModalProps> = ({
 
   const handleCopyReport = () => {
     const reportText = `===========================================
-SMC GOLD BOT (XAUUSD) - DAILY PERFORMANCE REPORT
+NIFTY TERMINAL - DAILY PERFORMANCE REPORT
 Session Date:    ${selectedDate} (Local)
 -------------------------------------------
 Net Realized PnL:   ${stats.netPnl >= 0 ? '+' : ''}$${stats.netPnl} USD (${stats.returnPct}%)
@@ -493,8 +493,8 @@ Daily Drawdown:     ${tradingEngine.account.daily_drawdown_pct}% (Max: 3.0%)
                           ${t.openPrice.toFixed(2)} → ${t.closePrice.toFixed(2)}
                         </td>
                         <td className="py-2.5 px-2">
-                          <span className="block max-w-sm whitespace-normal break-words text-xs leading-relaxed text-zinc-600 dark:text-zinc-300" title={t.strategyRationale || 'SMC Confluence execution'}>
-                            {t.strategyRationale || 'SMC Confluence execution'}
+                          <span className="block max-w-sm whitespace-normal break-words text-xs leading-relaxed text-zinc-600 dark:text-zinc-300" title={t.strategyRationale || 'Confluence execution'}>
+                            {t.strategyRationale || 'Confluence execution'}
                           </span>
                         </td>
                         <td className="py-2.5 px-2">

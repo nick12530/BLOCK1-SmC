@@ -8,6 +8,49 @@ import { Candle, EconomicEvent } from '../types/smc';
 /**
  * Generates realistic initial interbank candlestick history for any supported instrument.
  */
+function generateCandleSeries(
+  basePrice: number,
+  digits: number,
+  volatilityStep: number,
+  count: number,
+  intervalMs: number
+): Candle[] {
+  const now = Date.now();
+  const startTime = now - count * intervalMs;
+  const candles: Candle[] = [];
+  let currentPrice = basePrice;
+
+  for (let i = 0; i < count; i++) {
+    const time = startTime + i * intervalMs;
+    const date = new Date(time);
+    const timeStr = date.toISOString().slice(11, 16);
+
+    const wave = Math.sin(i / 7) * 1.1 + Math.cos(i / 13) * 0.7;
+    const noise = (Math.random() - 0.49) * volatilityStep + wave * (volatilityStep * 0.3);
+    const open = currentPrice;
+    const close = Number((open + noise).toFixed(digits));
+    const wickHigh = Math.abs(noise) * (0.3 + Math.random() * 0.7);
+    const wickLow = Math.abs(noise) * (0.3 + Math.random() * 0.7);
+    const high = Number((Math.max(open, close) + wickHigh).toFixed(digits));
+    const low = Number((Math.min(open, close) - wickLow).toFixed(digits));
+
+    currentPrice = close;
+    candles.push({
+      time,
+      timeStr,
+      open,
+      high,
+      low,
+      close,
+      volume: Math.floor(100 + Math.random() * 300),
+    });
+  }
+  return candles;
+}
+
+/**
+ * Generates realistic initial interbank candlestick history for any supported instrument.
+ */
 export function generatePairCandles(
   symbol: string,
   count: number = 100
@@ -43,88 +86,20 @@ export function generatePairCandles(
     spreadPoints = 12;
   }
 
-  const now = Date.now();
-  const m1Count = count;
-  const m1Interval = 60 * 1000;
-  const startTime = now - m1Count * m1Interval;
+  const candlesM1 = generateCandleSeries(basePrice, digits, volatilityStep, Math.max(60, count), 60 * 1000);
+  const latestPrice = candlesM1[candlesM1.length - 1].close;
 
-  const candlesM1: Candle[] = [];
-  let currentPrice = basePrice;
+  const candlesM5 = generateCandleSeries(latestPrice, digits, volatilityStep * 1.8, Math.max(80, count), 5 * 60 * 1000);
+  const candlesM15 = generateCandleSeries(latestPrice, digits, volatilityStep * 2.8, Math.max(80, count), 15 * 60 * 1000);
+  const candlesH1 = generateCandleSeries(latestPrice, digits, volatilityStep * 4.5, Math.max(240, count * 2.5), 60 * 60 * 1000);
 
-  for (let i = 0; i < m1Count; i++) {
-    const time = startTime + i * m1Interval;
-    const date = new Date(time);
-    const timeStr = date.toISOString().slice(11, 16);
-
-    const noise = (Math.sin(i / 5) * 0.5 + (Math.random() - 0.49)) * volatilityStep;
-    const open = currentPrice;
-    const close = Number((open + noise).toFixed(digits));
-    const high = Number((Math.max(open, close) + Math.abs(noise) * 0.8).toFixed(digits));
-    const low = Number((Math.min(open, close) - Math.abs(noise) * 0.8).toFixed(digits));
-
-    currentPrice = close;
-
-    candlesM1.push({
-      time,
-      timeStr,
-      open,
-      high,
-      low,
-      close,
-      volume: Math.floor(100 + Math.random() * 300),
-    });
-  }
-
-  // Aggregate M5 (5 M1 bars = 1 M5 bar)
-  const candlesM5: Candle[] = [];
-  for (let i = 0; i < candlesM1.length; i += 5) {
-    const chunk = candlesM1.slice(i, i + 5);
-    if (!chunk.length) continue;
-    candlesM5.push({
-      time: chunk[0].time,
-      timeStr: chunk[0].timeStr,
-      open: chunk[0].open,
-      high: Number(Math.max(...chunk.map((c) => c.high)).toFixed(digits)),
-      low: Number(Math.min(...chunk.map((c) => c.low)).toFixed(digits)),
-      close: chunk[chunk.length - 1].close,
-      volume: chunk.reduce((sum, c) => sum + c.volume, 0),
-    });
-  }
-
-  // Aggregate M15 (3 M5 bars = 1 M15 bar)
-  const candlesM15: Candle[] = [];
-  for (let i = 0; i < candlesM5.length; i += 3) {
-    const chunk = candlesM5.slice(i, i + 3);
-    if (!chunk.length) continue;
-    candlesM15.push({
-      time: chunk[0].time,
-      timeStr: chunk[0].timeStr,
-      open: chunk[0].open,
-      high: Number(Math.max(...chunk.map((c) => c.high)).toFixed(digits)),
-      low: Number(Math.min(...chunk.map((c) => c.low)).toFixed(digits)),
-      close: chunk[chunk.length - 1].close,
-      volume: chunk.reduce((sum, c) => sum + c.volume, 0),
-    });
-  }
-
-  // Aggregate H1 (4 M15 bars = 1 H1 bar)
-  const candlesH1: Candle[] = [];
-  for (let i = 0; i < candlesM15.length; i += 4) {
-    const chunk = candlesM15.slice(i, i + 4);
-    if (!chunk.length) continue;
-    candlesH1.push({
-      time: chunk[0].time,
-      timeStr: chunk[0].timeStr,
-      open: chunk[0].open,
-      high: Number(Math.max(...chunk.map((c) => c.high)).toFixed(digits)),
-      low: Number(Math.min(...chunk.map((c) => c.low)).toFixed(digits)),
-      close: chunk[chunk.length - 1].close,
-      volume: chunk.reduce((sum, c) => sum + c.volume, 0),
-    });
-  }
+  // Synchronize latest bar close to latest spot price
+  if (candlesM5.length) candlesM5[candlesM5.length - 1].close = latestPrice;
+  if (candlesM15.length) candlesM15[candlesM15.length - 1].close = latestPrice;
+  if (candlesH1.length) candlesH1[candlesH1.length - 1].close = latestPrice;
 
   const pointVal = Math.pow(10, -digits);
-  const currentBid = Number(currentPrice.toFixed(digits));
+  const currentBid = Number(latestPrice.toFixed(digits));
   const currentAsk = Number((currentBid + spreadPoints * pointVal).toFixed(digits));
 
   return {

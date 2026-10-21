@@ -30,7 +30,7 @@ interface HeaderViewProps {
   isDark: boolean;
   onToggleTheme: () => void;
   onOpenModal: (
-    modal: 'bridge' | 'settings' | 'closed_trades' | 'daily_report' | 'tradingview' | 'help' | 'phone_pwa' | 'webhook'
+    modal: 'bridge' | 'settings' | 'closed_trades' | 'daily_report' | 'tradingview' | 'help' | 'webhook'
   ) => void;
   onToggleKillSwitchPrompt?: () => void;
 }
@@ -96,7 +96,7 @@ export const HeaderView: React.FC<HeaderViewProps> = React.memo(({
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
               </div>
               <span className="text-[10px] text-slate-400 dark:text-zinc-500 font-mono tracking-tight font-medium">
-                SMC Terminal
+                Pro Terminal
               </span>
             </div>
           </div>

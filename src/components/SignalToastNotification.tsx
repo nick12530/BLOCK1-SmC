@@ -1,11 +1,13 @@
 /**
- * SignalToastNotification.tsx - Sniper Entry Beacon & Floating High-Pip Cockpit
- * Remade specifically for Sniper Entries:
- * - Only activates for verified Sniper setups (M15/M5 high-confluence institutional POI)
- * - Automatically calculates safe lot size from balance, equity, and stop distance
- * - Real-time countdown timer towards entry time (auto-expires/passes once timer hits 0:00)
- * - Structured with Entry, TP 1, TP 2, TP 3, and Stop Loss (SL)
- * - Accommodates up to 5 simultaneous trades
+ * SignalToastNotification.tsx - Precision Sniper Entry Flyout Cockpit
+ * 100% Synchronized with Terminal Engine & Active Positions:
+ * - Surfaces imminent A+ sniper setups (M15/M5 high-confluence institutional POI)
+ * - Exact entry point "to the dot" with live distance in pips
+ * - True real-time countdown timer to the exact second
+ * - Automatically shuts down passed/invalidated signals with gentle audio blip
+ * - Automatically closes if trade is already open or filled in the system
+ * - Distinct VIP Telegram Pre-Execution indicator & audio chime
+ * - 1-Click execution synchronized with MT5 execution engine
  */
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
@@ -14,26 +16,18 @@ import { useMarket, useTicker, usePositions, useScannerAnalyses } from '../hooks
 import { tradingEngine } from '../engine/tradingEngine';
 import { getInstrumentConfig, SupportedSymbol } from '../engine/instrumentConfig';
 import { Signal } from '../types/smc';
-import { MTFConfluenceRadar } from './MTFConfluenceRadar';
 import {
-  Crosshair,
   TrendingUp,
   TrendingDown,
   X,
   Zap,
   Clock,
-  Layers,
-  Sparkles,
-  ShieldCheck,
-  CheckCircle2,
-  AlertTriangle,
-  ArrowUpRight,
-  ArrowDownRight,
   Target,
   Minus,
   Plus,
-  RotateCcw,
+  Send,
 } from 'lucide-react';
+import { dispatchSniperAlert } from '../utils/webhookNotifier';
 
 interface SignalToastNotificationProps {
   onExecuteSignal?: (customVolume?: number, positionCount?: number, signal?: Signal) => void | Promise<void>;
@@ -50,26 +44,36 @@ export const SignalToastNotification: React.FC<SignalToastNotificationProps> = (
   const [executing, setExecuting] = useState(false);
   const [feedback, setFeedback] = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
+  const lastAnnouncedSignalKey = useRef<string | null>(null);
 
-  // Surface ONLY sniper entries (M15/M5 institutional POI with high confluence score >= 4.0 or score >= 70)
+  // Surface highest-probability imminent setup synchronized strictly with the system
   const targetSniperInfo = useMemo(() => {
-    // 1. Check active chart signal first
-    if (
-      market.signal &&
-      (market.signal.isSniper ||
-        market.signal.score >= 4.0 ||
-        market.signal.timeframe === 'M15' ||
-        market.signal.strategy === 'SMC POI Retest')
-    ) {
-      return {
-        signal: market.signal,
-        symbol: (ticker.symbol || 'XAUUSD') as SupportedSymbol,
-      };
+    const currentActiveSym = (ticker.symbol || 'XAUUSD') as SupportedSymbol;
+    const isChartPosOpen = positions.some(
+      (p) => p.symbol === currentActiveSym && p.type === market.signal?.direction
+    );
+
+    // 1. Prioritize active chart signal if imminent and not already open
+    if (market.signal && !isChartPosOpen) {
+      const sig = market.signal;
+      const isCandidate = Boolean(sig.isSniper || sig.score >= 3.8 || sig.isImminent);
+      if (isCandidate) {
+        return {
+          signal: sig,
+          symbol: currentActiveSym,
+        };
+      }
     }
 
-    // 2. Scan monitored pairs for best high-confluence sniper entry
+    // 2. Otherwise scan candidate pairs for highest-confluence ready setup with NO open position
     const candidatePairs = scannerAnalyses
-      .filter((p) => p.signal && (p.signal.isSniper || p.confluenceScore >= 70 || p.signal.score >= 4.0))
+      .filter((p) => {
+        if (!p.signal || p.status !== 'READY') return false;
+        const alreadyOpen = positions.some(
+          (pos) => pos.symbol === p.symbol && pos.type === p.signal?.direction
+        );
+        return !alreadyOpen && (p.signal.isSniper || p.confluenceScore >= 70 || p.signal.isImminent);
+      })
       .sort((a, b) => b.confluenceScore - a.confluenceScore);
 
     if (candidatePairs.length > 0 && candidatePairs[0].signal) {
@@ -80,23 +84,22 @@ export const SignalToastNotification: React.FC<SignalToastNotificationProps> = (
     }
 
     return null;
-  }, [market.signal, ticker.symbol, scannerAnalyses]);
+  }, [market.signal, ticker.symbol, scannerAnalyses, positions]);
 
   const signal = targetSniperInfo?.signal || null;
   const activeSymbol = (targetSniperInfo?.symbol || ticker.symbol || 'XAUUSD') as SupportedSymbol;
   const cfg = getInstrumentConfig(activeSymbol);
 
-  // Strict sniper qualification
-  const isSniper = Boolean(
-    signal && (
-      signal.isSniper ||
-      signal.score >= 4.0 ||
-      signal.timeframe === 'M15' ||
-      signal.strategy === 'SMC POI Retest'
-    )
-  );
+  // Real-time live spot price for distance calculations
+  const liveSpotPrice = useMemo(() => {
+    if (ticker.symbol === activeSymbol && ticker.bid > 0) {
+      return signal?.direction === 'BUY' ? ticker.ask : ticker.bid;
+    }
+    const pairAnalysis = scannerAnalyses.find((p) => p.symbol === activeSymbol);
+    return pairAnalysis ? pairAnalysis.price : (signal?.entry ?? 0);
+  }, [ticker, activeSymbol, scannerAnalyses, signal]);
 
-  // Entry countdown timer: countdown towards the entry time window
+  // Real-time countdown timer & auto-shutdown of passed signals
   const [remainingSec, setRemainingSec] = useState<number>(0);
   const [hasPassed, setHasPassed] = useState<boolean>(false);
 
@@ -104,6 +107,16 @@ export const SignalToastNotification: React.FC<SignalToastNotificationProps> = (
     if (!signal) {
       setHasPassed(false);
       setRemainingSec(0);
+      setIsOpen(false);
+      return;
+    }
+
+    // Check if position was just opened for this setup -> immediately dismiss popup
+    const isTradeNowOpen = positions.some(
+      (p) => p.symbol === activeSymbol && p.type === signal.direction
+    );
+    if (isTradeNowOpen) {
+      setIsOpen(false);
       return;
     }
 
@@ -115,10 +128,29 @@ export const SignalToastNotification: React.FC<SignalToastNotificationProps> = (
       const left = Math.max(0, Math.floor((expiry - now) / 1000));
       setRemainingSec(left);
 
-      // Once the entry window passes, the signal passes automatically
-      if (left <= 0) {
-        setHasPassed(true);
-        setIsOpen(false);
+      // Audio tick during final 15 seconds
+      if (left > 0 && left <= 15 && left % 3 === 0) {
+        signalAudioNotifier.playCountdownUrgentTick();
+      }
+
+      // Check price invalidation
+      const curPrice = liveSpotPrice > 0 ? liveSpotPrice : signal.entry;
+      const isPricePastSl = signal.direction === 'BUY'
+        ? curPrice <= signal.sl
+        : curPrice >= signal.sl;
+
+      // Price already ran past entry by > 1.2x ATR
+      const isPriceRunaway = signal.direction === 'BUY'
+        ? curPrice > signal.entry + 1.2 * signal.atr
+        : curPrice < signal.entry - 1.2 * signal.atr;
+
+      // Once the entry window passes, automatically shut down the signal
+      if (left <= 0 || isPricePastSl || isPriceRunaway) {
+        if (!hasPassed) {
+          setHasPassed(true);
+          setIsOpen(false);
+          signalAudioNotifier.playSignalExpiredAlert();
+        }
       } else {
         setHasPassed(false);
       }
@@ -127,7 +159,25 @@ export const SignalToastNotification: React.FC<SignalToastNotificationProps> = (
     updateTimer();
     const interval = setInterval(updateTimer, 1000);
     return () => clearInterval(interval);
-  }, [signal]);
+  }, [signal, activeSymbol, liveSpotPrice, positions, hasPassed]);
+
+  // Synchronized Auto-Popup & Audio Alert when fresh sniper signal is detected
+  useEffect(() => {
+    if (signal && !hasPassed) {
+      const sigKey = `${activeSymbol}-${signal.direction}-${signal.entry}-${signal.timestamp}`;
+      if (lastAnnouncedSignalKey.current !== sigKey) {
+        lastAnnouncedSignalKey.current = sigKey;
+        setIsOpen(true);
+
+        // VIP Telegram setup gets prestigious shimmer alert; regular gets radar alert
+        if (signal.isVipTelegram || signal.score >= 4.5) {
+          signalAudioNotifier.playVipTelegramAlert(signal.direction);
+        } else {
+          signalAudioNotifier.playSniperImminentAlert(signal.direction, signal.entry);
+        }
+      }
+    }
+  }, [signal, hasPassed, activeSymbol]);
 
   // Close when clicking outside popover
   useEffect(() => {
@@ -144,14 +194,13 @@ export const SignalToastNotification: React.FC<SignalToastNotificationProps> = (
     };
   }, [isOpen]);
 
-  // Auto-calculated optimal lot size based on balance and stop distance
+  // Auto-calculated optimal lot size
   const autoLotSize = useMemo(() => {
     if (!signal) return 0.01;
     const calculated = tradingEngine.getRiskBasedVolume(signal.sl, undefined, signal.direction);
     return calculated || signal.recommendedLot || 0.01;
-  }, [signal, ticker.balance, ticker.equity]);
+  }, [signal]);
 
-  // Space for adjusting lot size with user overrides
   const [customLot, setCustomLot] = useState<number>(0.01);
   const [isLotCustomized, setIsLotCustomized] = useState<boolean>(false);
 
@@ -161,7 +210,7 @@ export const SignalToastNotification: React.FC<SignalToastNotificationProps> = (
     }
   }, [autoLotSize, isLotCustomized]);
 
-  if (!signal || !isSniper || hasPassed) {
+  if (!signal || hasPassed) {
     return null;
   }
 
@@ -169,43 +218,31 @@ export const SignalToastNotification: React.FC<SignalToastNotificationProps> = (
   const isBuy = activeDirection === 'BUY';
   const activeEntry = signal.entry;
   const activeSL = signal.sl;
-
-  // Active lot: either user-customized or optimal auto risk-sized
   const activeLot = Math.max(0.01, Math.min(100, Number(customLot) || autoLotSize || 0.01));
 
-  // Multi-target TP 1, TP 2, TP 3 values
+  // Multi-target values
   const riskDist = Math.abs(activeEntry - activeSL);
   const activeTP1 = signal.tp1 ?? Number((isBuy ? activeEntry + riskDist * 1.8 : activeEntry - riskDist * 1.8).toFixed(cfg.digits));
   const activeTP2 = signal.tp2 ?? signal.tp ?? Number((isBuy ? activeEntry + riskDist * 3.2 : activeEntry - riskDist * 3.2).toFixed(cfg.digits));
   const activeTP3 = signal.tp3 ?? Number((isBuy ? activeEntry + riskDist * 5.5 : activeEntry - riskDist * 5.5).toFixed(cfg.digits));
 
-  // Pip measurements
   const slPips = signal.slPips ?? Number((riskDist / cfg.pipSize).toFixed(1));
   const tp1Pips = signal.targetPips1 ?? Number((Math.abs(activeTP1 - activeEntry) / cfg.pipSize).toFixed(1));
   const tp2Pips = signal.targetPips2 ?? signal.targetPips ?? Number((Math.abs(activeTP2 - activeEntry) / cfg.pipSize).toFixed(1));
   const tp3Pips = signal.targetPips3 ?? Number((Math.abs(activeTP3 - activeEntry) / cfg.pipSize).toFixed(1));
 
-  // Chosen TP for execution
   const chosenTp = selectedTpTarget === 'tp1' ? activeTP1 : selectedTpTarget === 'tp3' ? activeTP3 : activeTP2;
   const chosenPips = selectedTpTarget === 'tp1' ? tp1Pips : selectedTpTarget === 'tp3' ? tp3Pips : tp2Pips;
 
-  // Dollars at risk and potential reward based on ACTIVE ADJUSTED lot
   const pipVal = cfg.pipValuePerMicroLot * (activeLot / 0.01);
   const potentialRiskUsd = Number((slPips * pipVal).toFixed(2));
   const potentialRewardUsd = Number((chosenPips * pipVal).toFixed(2));
 
-  // Timer phase calculations
-  const totalDurationSec = signal.timeframe === 'M15' ? 15 * 60 : 5 * 60;
-  const timerProgressPct = Math.max(0, Math.min(100, (remainingSec / totalDurationSec) * 100));
-  const timerPhase: 'optimal' | 'retest' | 'expiring' =
-    remainingSec > totalDurationSec * 0.45 ? 'optimal' : remainingSec > 60 ? 'retest' : 'expiring';
+  // Exact distance to dot in pips
+  const distToDotPips = liveSpotPrice > 0
+    ? Number((Math.abs(liveSpotPrice - activeEntry) / cfg.pipSize).toFixed(1))
+    : 0;
 
-  // Simultaneous positions
-  const maxSimultaneous = 5;
-  const activePositionsCount = positions.length;
-  const canOpenTrade = activePositionsCount < maxSimultaneous;
-
-  // Formatted countdown timer string
   const formatTimer = (sec: number) => {
     const m = Math.floor(sec / 60);
     const s = sec % 60;
@@ -213,14 +250,6 @@ export const SignalToastNotification: React.FC<SignalToastNotificationProps> = (
   };
 
   const handleExecuteSniper = async () => {
-    if (!canOpenTrade) {
-      setFeedback({
-        msg: `Limit reached: Maximum 5 simultaneous trades active (${activePositionsCount}/5). Close a trade first.`,
-        type: 'error',
-      });
-      return;
-    }
-
     setExecuting(true);
     try {
       const orderSignal: Signal = {
@@ -231,6 +260,9 @@ export const SignalToastNotification: React.FC<SignalToastNotificationProps> = (
       if (activeSymbol && activeSymbol !== ticker.symbol) {
         tradingEngine.switchSymbol(activeSymbol);
       }
+
+      signalAudioNotifier.unlock();
+      signalAudioNotifier.playTradeExecutionAlert(activeDirection);
 
       if (onExecuteSignal) {
         await onExecuteSignal(activeLot, 1, orderSignal);
@@ -248,15 +280,14 @@ export const SignalToastNotification: React.FC<SignalToastNotificationProps> = (
         }
       }
 
-      signalAudioNotifier.playTradeExecutionAlert(activeDirection);
       setFeedback({
-        msg: `🎯 SNIPER FILLED: ${activeDirection} ${activeLot}L ${activeSymbol} @ ${activeEntry} | TP: ${chosenTp} (+${chosenPips}p)`,
+        msg: `🎯 FILLED: ${activeDirection} ${activeLot}L ${activeSymbol} @ $${activeEntry.toFixed(cfg.digits)}`,
         type: 'success',
       });
       setTimeout(() => {
         setIsOpen(false);
         setFeedback(null);
-      }, 2000);
+      }, 1500);
     } catch (err) {
       setFeedback({
         msg: err instanceof Error ? err.message : 'Sniper order execution failed',
@@ -267,479 +298,250 @@ export const SignalToastNotification: React.FC<SignalToastNotificationProps> = (
     }
   };
 
+  const handleDispatchTelegram = async () => {
+    const sent = await dispatchSniperAlert({
+      symbol: activeSymbol,
+      direction: activeDirection,
+      timeframe: signal.timeframe,
+      strategy: signal.strategy || 'POI Retest',
+      entry: activeEntry,
+      sl: activeSL,
+      tp1: activeTP1,
+      tp2: activeTP2,
+      tp3: activeTP3,
+      slPips,
+      tp1Pips,
+      tp2Pips,
+      tp3Pips,
+      confluenceScore: Math.round(signal.score * 20),
+      recommendedLot: activeLot,
+      sniperGrade: signal.sniperGrade || 'A+',
+      isImminent: true,
+      validitySeconds: remainingSec,
+      distanceToEntryPips: distToDotPips,
+    });
+    setFeedback({
+      msg: sent ? '✓ Telegram VIP Wire Dispatched' : 'Telegram webhook pending or unconfigured',
+      type: sent ? 'success' : 'error',
+    });
+    setTimeout(() => setFeedback(null), 2500);
+  };
+
   return (
     <>
-      {/* SNIPER ENTRY FLYOUT COCKPIT - Top-Right Minimal */}
+      {/* POPUP COCKPIT: Clean, Spacious & 100% System Synced */}
       {isOpen && (
-        <div className="fixed inset-0 sm:inset-auto sm:top-24 sm:right-4 z-[100] font-mono select-none flex items-start justify-center sm:justify-end p-3 sm:p-0 bg-black/70 sm:bg-transparent backdrop-blur-xs sm:backdrop-blur-none animate-in fade-in duration-150">
+        <div className="fixed top-16 right-4 z-[100] font-mono select-none flex items-start justify-end p-2 animate-in fade-in zoom-in-95 duration-150">
           <div
             ref={popoverRef}
-            className="w-full max-w-md sm:w-[400px] rounded-xl bg-[#0b0e14] text-zinc-100 border border-white/[0.1] shadow-[0_20px_60px_rgba(0,0,0,0.95)] p-4 space-y-3 max-h-[85vh] overflow-y-auto ring-1 ring-white/[0.05]"
+            className="w-[410px] rounded-2xl bg-[#090d14] text-zinc-100 border border-sky-500/30 shadow-[0_20px_50px_rgba(0,0,0,0.9)] p-4 space-y-3.5 ring-1 ring-sky-500/20"
           >
-            {/* Header: Sniper Badge, Countdown Timer & Close */}
-            <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
-              <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-xl bg-amber-500/20 border border-amber-500/50 flex items-center justify-center text-amber-400 shrink-0">
-                  <Target className="w-4 h-4 animate-spin-slow" />
-                </div>
-                <div>
-                  <div className="flex items-center gap-1.5 flex-wrap">
-                    <span className="text-[10px] font-black uppercase tracking-wider text-amber-400 flex items-center gap-1">
-                      <span>🎯 SNIPER ENTRY</span>
-                    </span>
-                    <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-zinc-800 text-zinc-200 border border-zinc-700">
-                      {signal.timeframe} Setup
-                    </span>
-                    <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">
-                      Score {signal.score}
-                    </span>
-                  </div>
-                  <h3 className="font-extrabold text-sm text-white mt-0.5">
-                    {activeDirection} {activeSymbol} · {signal.strategy}
-                  </h3>
-                </div>
+            {/* Header: Imminent Execution Badge, Asset & Countdown */}
+            <div className="flex items-center justify-between border-b border-zinc-800/80 pb-2.5">
+              <div className="flex items-center gap-2">
+                <span className={`px-2.5 py-1 rounded-md text-xs font-black uppercase tracking-wider flex items-center gap-1 ${
+                  isBuy ? 'bg-emerald-600 text-white shadow-xs' : 'bg-rose-600 text-white shadow-xs'
+                }`}>
+                  {isBuy ? <TrendingUp className="w-3.5 h-3.5" /> : <TrendingDown className="w-3.5 h-3.5" />}
+                  <span>{activeDirection}</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => tradingEngine.switchSymbol(activeSymbol)}
+                  className="font-black text-sm text-white hover:text-sky-400 transition-colors cursor-pointer"
+                  title="Click to focus this symbol on chart"
+                >
+                  {activeSymbol}
+                </button>
+                <span className="text-[10px] text-zinc-400 font-bold px-1.5 py-0.5 rounded bg-zinc-800">
+                  {signal.timeframe}
+                </span>
               </div>
 
               <div className="flex items-center gap-2">
-                {/* Entry Countdown Badge with Phase Indicator */}
-                <div
-                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[11px] font-bold ${
-                    timerPhase === 'optimal'
-                      ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300'
-                      : timerPhase === 'retest'
-                      ? 'bg-amber-500/15 border-amber-500/40 text-amber-300'
-                      : 'bg-rose-500/20 border-rose-500/50 text-rose-300 animate-pulse'
-                  }`}
-                  title={`${timerPhase === 'optimal' ? 'Optimal Entry' : timerPhase === 'retest' ? 'Retest Window' : 'Expiring Soon'} · ${formatTimer(remainingSec)} left`}
-                >
-                  <Clock className={`w-3.5 h-3.5 ${timerPhase === 'optimal' ? 'text-emerald-400' : timerPhase === 'retest' ? 'text-amber-400' : 'text-rose-400 animate-pulse'}`} />
-                  <span className="font-mono">{formatTimer(remainingSec)}</span>
+                {/* Live Countdown Timer */}
+                <div className={`flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold font-mono border ${
+                  remainingSec > 60
+                    ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+                    : 'bg-rose-500/15 text-rose-400 border-rose-500/40 animate-pulse'
+                }`}>
+                  <Clock className="w-3 h-3" />
+                  <span>{formatTimer(remainingSec)}</span>
                 </div>
 
                 <button
                   onClick={() => setIsOpen(false)}
                   className="p-1 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors cursor-pointer"
+                  title="Minimize flyout"
                 >
                   <X className="w-4 h-4" />
                 </button>
               </div>
             </div>
 
-            {/* Visual Timer Progress Bar */}
-            <div className="space-y-1">
-              <div className="flex items-center justify-between text-[9px] uppercase tracking-wider font-bold">
-                <span className={timerPhase === 'optimal' ? 'text-emerald-400' : timerPhase === 'retest' ? 'text-amber-400' : 'text-rose-400'}>
-                  {timerPhase === 'optimal' ? '● Optimal Entry Window' : timerPhase === 'retest' ? '▲ Institutional POI Retest' : '⚠ Expiring Soon - Last Call'}
+            {/* VIP Pre-Execution Banner */}
+            {(signal.isVipTelegram || signal.score >= 4.5) && (
+              <div className="flex items-center justify-between px-3 py-1.5 rounded-lg bg-amber-500/15 border border-amber-500/30 text-amber-400 text-xs font-bold">
+                <span className="flex items-center gap-1.5">
+                  <Zap className="w-3.5 h-3.5 fill-current" />
+                  <span>100% CONVICTION VIP TELEGRAM SETUP</span>
                 </span>
-                <span className="text-zinc-500 font-mono">
-                  {Math.round(timerProgressPct)}% window remaining ({signal.timeframe})
-                </span>
-              </div>
-              <div className="w-full bg-zinc-800/80 h-1.5 rounded-full overflow-hidden">
-                <div
-                  className={`h-full transition-all duration-1000 ${
-                    timerPhase === 'optimal'
-                      ? 'bg-emerald-500'
-                      : timerPhase === 'retest'
-                      ? 'bg-amber-500'
-                      : 'bg-rose-500 animate-pulse'
-                  }`}
-                  style={{ width: `${timerProgressPct}%` }}
-                />
-              </div>
-            </div>
-
-            {/* Feedback Message */}
-            {feedback && (
-              <div
-                className={`p-2.5 rounded-xl border text-[11px] flex items-center gap-2 ${
-                  feedback.type === 'success'
-                    ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
-                    : 'bg-rose-500/10 border-rose-500/30 text-rose-400'
-                }`}
-              >
-                {feedback.type === 'success' ? (
-                  <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-400" />
-                ) : (
-                  <AlertTriangle className="w-4 h-4 shrink-0 text-rose-400" />
-                )}
-                <span className="font-bold">{feedback.msg}</span>
+                <button
+                  type="button"
+                  onClick={handleDispatchTelegram}
+                  className="hover:underline flex items-center gap-1 text-[11px] cursor-pointer"
+                  title="Push instant alert to Telegram VIP channel"
+                >
+                  <Send className="w-3 h-3" />
+                  <span>Push</span>
+                </button>
               </div>
             )}
 
-            {/* Top-Down Multi-Timeframe Alignment Radar */}
-            <MTFConfluenceRadar symbol={activeSymbol} signal={signal} direction={activeDirection} compact={true} />
-
-            {/* Multi-Target Grid: Entry, SL, TP 1, TP 2, TP 3 */}
-            <div className="space-y-2">
-              <div className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 flex items-center justify-between">
-                <span>Targets & Stop Loss</span>
-                <span className="text-zinc-500">Click a TP to select for order</span>
+            {/* Exact Entry Level Banner ("To The Dot") */}
+            <div className="p-3.5 rounded-xl bg-slate-900/90 border border-sky-500/30 flex items-center justify-between">
+              <div>
+                <span className="text-[10px] text-sky-400 uppercase tracking-widest font-bold block">
+                  EXACT ENTRY POINT (TO THE DOT)
+                </span>
+                <span className="text-xl font-black text-white tabular-nums tracking-tight">
+                  ${activeEntry.toFixed(cfg.digits)}
+                </span>
+                <span className="text-[10px] text-slate-400 block mt-0.5">
+                  Current: ${liveSpotPrice.toFixed(cfg.digits)} ({distToDotPips}p to dot)
+                </span>
               </div>
-
-              {/* Entry & SL Row */}
-              <div className="grid grid-cols-2 gap-2 text-xs">
-                <div className="p-2.5 rounded-xl bg-zinc-900/90 border border-zinc-800">
-                  <span className="text-[9px] uppercase tracking-wider text-zinc-400 block font-bold">
-                    Entry Spot
-                  </span>
-                  <span className="font-black text-white tabular-nums block text-sm mt-0.5">
-                    ${activeEntry.toFixed(cfg.digits)}
-                  </span>
-                  <span className="text-[9px] text-zinc-500">Live Market Entry</span>
-                </div>
-
-                <div className="p-2.5 rounded-xl bg-rose-950/20 border border-rose-500/30">
-                  <span className="text-[9px] uppercase tracking-wider text-rose-400 block font-bold">
-                    Stop Loss (SL)
-                  </span>
-                  <span className="font-black text-rose-400 tabular-nums block text-sm mt-0.5">
-                    ${activeSL.toFixed(cfg.digits)}
-                  </span>
-                  <span className="text-[9px] text-rose-400/80 block">
-                    -{slPips} pips (-${potentialRiskUsd})
-                  </span>
-                </div>
-              </div>
-
-              {/* Take Profit Target Cards (TP 1, TP 2, TP 3) */}
-              <div className="grid grid-cols-3 gap-2 text-xs">
-                {/* TP 1 */}
-                <button
-                  type="button"
-                  onClick={() => setSelectedTpTarget('tp1')}
-                  className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer ${
-                    selectedTpTarget === 'tp1'
-                      ? 'bg-emerald-950/40 border-emerald-500 text-white ring-1 ring-emerald-500'
-                      : 'bg-zinc-900/80 border-zinc-800 text-zinc-300 hover:border-zinc-700'
-                  }`}
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="text-[9px] uppercase tracking-wider font-bold text-emerald-400">
-                      TP 1
-                    </span>
-                    <span className="text-[8px] px-1 py-0.2 rounded bg-emerald-500/20 text-emerald-300 font-bold">
-                      1:1.8R
-                    </span>
-                  </div>
-                  <span className="font-black tabular-nums block text-xs mt-1">
-                    ${activeTP1.toFixed(cfg.digits)}
-                  </span>
-                  <span className="text-[9px] text-emerald-400 font-bold block mt-0.5">
-                    +{tp1Pips} pips
-                  </span>
-                </button>
-
-                {/* TP 2 (High-Yield Standard) */}
-                <button
-                  type="button"
-                  onClick={() => setSelectedTpTarget('tp2')}
-                  className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer relative ${
-                    selectedTpTarget === 'tp2'
-                      ? 'bg-emerald-950/40 border-emerald-500 text-white ring-1 ring-emerald-500'
-                      : 'bg-zinc-900/80 border-zinc-800 text-zinc-300 hover:border-zinc-700'
-                  }`}
-                >
-                  <span className="absolute -top-1.5 right-1.5 text-[7px] px-1 py-0.2 rounded bg-amber-500 text-black font-black uppercase">
-                    Best RR
-                  </span>
-                  <div className="flex items-center justify-between">
-                    <span className="text-[9px] uppercase tracking-wider font-bold text-emerald-400">
-                      TP 2
-                    </span>
-                    <span className="text-[8px] px-1 py-0.2 rounded bg-emerald-500/20 text-emerald-300 font-bold">
-                      1:3.2R
-                    </span>
-                  </div>
-                  <span className="font-black tabular-nums block text-xs mt-1">
-                    ${activeTP2.toFixed(cfg.digits)}
-                  </span>
-                  <span className="text-[9px] text-emerald-400 font-bold block mt-0.5">
-                    +{tp2Pips} pips
-                  </span>
-                </button>
-
-                {/* TP 3 (Max Pips Runner) */}
-                <button
-                  type="button"
-                  onClick={() => setSelectedTpTarget('tp3')}
-                  className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer ${
-                    selectedTpTarget === 'tp3'
-                      ? 'bg-emerald-950/40 border-emerald-500 text-white ring-1 ring-emerald-500'
-                      : 'bg-zinc-900/80 border-zinc-800 text-zinc-300 hover:border-zinc-700'
-                  }`}
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="text-[9px] uppercase tracking-wider font-bold text-sky-400">
-                      TP 3
-                    </span>
-                    <span className="text-[8px] px-1 py-0.2 rounded bg-sky-500/20 text-sky-300 font-bold">
-                      1:5.5R
-                    </span>
-                  </div>
-                  <span className="font-black tabular-nums block text-xs mt-1">
-                    ${activeTP3.toFixed(cfg.digits)}
-                  </span>
-                  <span className="text-[9px] text-sky-400 font-bold block mt-0.5">
-                    +{tp3Pips} pips
-                  </span>
-                </button>
+              <div className="text-right">
+                <span className="text-[10px] text-zinc-400 uppercase tracking-wider block">Confluence</span>
+                <span className="text-xs font-black text-emerald-400">
+                  {signal.score.toFixed(1)} / 5.0 (A+ Grade)
+                </span>
+                <span className="text-[10px] text-slate-400 block mt-0.5 truncate max-w-[140px]">
+                  {signal.mitigationType || 'POI 50% Mean Threshold'}
+                </span>
               </div>
             </div>
 
-            {/* Spacious Lot Size & Sizing Adjustment Section */}
-            <div className="p-3.5 rounded-xl bg-zinc-900/90 border border-zinc-800 space-y-2.5 text-xs">
-              <div className="flex items-center justify-between">
-                <span className="text-[11px] font-bold uppercase tracking-wider text-zinc-300 flex items-center gap-1.5">
-                  <ShieldCheck className="w-4 h-4 text-amber-400" />
-                  <span>Execution Lot Size</span>
+            {/* Target Price Levels: Stop Loss & TP Selection */}
+            <div className="grid grid-cols-2 gap-2 text-center text-xs font-mono">
+              {/* Stop Loss */}
+              <div className="p-2.5 rounded-xl bg-zinc-900/80 border border-zinc-800">
+                <span className="text-[10px] text-rose-400 uppercase font-bold block">Stop Loss</span>
+                <span className="text-sm font-bold text-white tabular-nums block mt-0.5">
+                  ${activeSL.toFixed(cfg.digits)}
                 </span>
-                {isLotCustomized && customLot !== autoLotSize ? (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setCustomLot(autoLotSize);
-                      setIsLotCustomized(false);
-                    }}
-                    className="text-[10px] text-amber-400 hover:text-amber-300 flex items-center gap-1 underline font-semibold cursor-pointer"
-                  >
-                    <RotateCcw className="w-2.5 h-2.5" />
-                    Reset to Auto ({autoLotSize.toFixed(2)}L)
-                  </button>
-                ) : (
-                  <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20">
-                    Auto-Risk Sized
-                  </span>
-                )}
+                <span className="text-[10px] text-rose-400 block mt-0.5">
+                  -{slPips}p (-${potentialRiskUsd})
+                </span>
               </div>
 
-              {/* Stepper Controls and Numeric Input */}
-              <div className="flex items-center justify-between gap-1.5 bg-black/50 p-1.5 rounded-xl border border-zinc-800">
+              {/* Take Profit Target Switcher */}
+              <div className="p-2.5 rounded-xl bg-zinc-900/80 border border-zinc-800">
+                <span className="text-[10px] text-emerald-400 uppercase font-bold block">Target (TP)</span>
+                <div className="flex items-center justify-center gap-1 mt-1">
+                  {(['tp1', 'tp2', 'tp3'] as const).map((t) => (
+                    <button
+                      key={t}
+                      type="button"
+                      onClick={() => setSelectedTpTarget(t)}
+                      className={`px-1.5 py-0.5 rounded text-[10px] font-bold cursor-pointer transition-colors ${
+                        selectedTpTarget === t
+                          ? 'bg-emerald-600 text-white shadow-xs'
+                          : 'bg-zinc-800 text-zinc-400 hover:text-white'
+                      }`}
+                    >
+                      {t.toUpperCase()}
+                    </button>
+                  ))}
+                </div>
+                <span className="text-[10px] text-emerald-400 block mt-1 tabular-nums font-bold">
+                  +${potentialRewardUsd} (+{chosenPips}p)
+                </span>
+              </div>
+            </div>
+
+            {/* Volume Adjustment */}
+            <div className="flex items-center justify-between bg-zinc-900/60 p-2.5 rounded-xl border border-zinc-800/80 text-xs">
+              <span className="text-zinc-400 text-[11px] font-bold">Position Sizing:</span>
+              <div className="flex items-center gap-2">
                 <button
                   type="button"
                   onClick={() => {
-                    setCustomLot((prev) => Math.max(0.01, Number((prev - 0.05).toFixed(2))));
                     setIsLotCustomized(true);
+                    setCustomLot((l) => Math.max(0.01, Math.round((l - 0.01) * 100) / 100));
                   }}
-                  className="px-2 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-bold transition-colors cursor-pointer"
-                  title="Decrease 0.05 lot"
-                >
-                  -0.05
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setCustomLot((prev) => Math.max(0.01, Number((prev - 0.01).toFixed(2))));
-                    setIsLotCustomized(true);
-                  }}
-                  className="p-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-200 transition-colors cursor-pointer"
-                  title="Decrease 0.01 lot"
+                  className="w-6 h-6 rounded bg-zinc-800 hover:bg-zinc-700 flex items-center justify-center text-zinc-200 cursor-pointer"
                 >
                   <Minus className="w-3.5 h-3.5" />
                 </button>
-
-                <div className="flex-1 flex items-center justify-center">
-                  <input
-                    type="number"
-                    step="0.01"
-                    min="0.01"
-                    max="100"
-                    value={customLot}
-                    onChange={(e) => {
-                      const v = parseFloat(e.target.value);
-                      if (!isNaN(v) && v > 0) {
-                        setCustomLot(Number(v.toFixed(2)));
-                        setIsLotCustomized(true);
-                      }
-                    }}
-                    className="w-24 text-center font-black text-sm bg-zinc-900 border border-amber-500/50 rounded-lg py-1 text-amber-300 tabular-nums focus:border-amber-400 focus:outline-none"
-                  />
-                  <span className="text-[10px] font-bold text-zinc-500 ml-1.5">LOTS</span>
-                </div>
-
+                <span className="font-bold text-white tabular-nums w-12 text-center text-xs">
+                  {activeLot.toFixed(2)}L
+                </span>
                 <button
                   type="button"
                   onClick={() => {
-                    setCustomLot((prev) => Math.min(100, Number((prev + 0.01).toFixed(2))));
                     setIsLotCustomized(true);
+                    setCustomLot((l) => Math.min(10.0, Math.round((l + 0.01) * 100) / 100));
                   }}
-                  className="p-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-200 transition-colors cursor-pointer"
-                  title="Increase 0.01 lot"
+                  className="w-6 h-6 rounded bg-zinc-800 hover:bg-zinc-700 flex items-center justify-center text-zinc-200 cursor-pointer"
                 >
                   <Plus className="w-3.5 h-3.5" />
                 </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setCustomLot((prev) => Math.min(100, Number((prev + 0.05).toFixed(2))));
-                    setIsLotCustomized(true);
-                  }}
-                  className="px-2 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-bold transition-colors cursor-pointer"
-                  title="Increase 0.05 lot"
-                >
-                  +0.05
-                </button>
-              </div>
-
-              {/* Quick Lot Preset Buttons */}
-              <div className="flex items-center gap-1.5 flex-wrap">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setCustomLot(0.01);
-                    setIsLotCustomized(true);
-                  }}
-                  className={`px-2 py-1 rounded-lg text-[10px] font-bold border transition-colors cursor-pointer ${
-                    activeLot === 0.01
-                      ? 'bg-amber-500/20 text-amber-300 border-amber-500/50'
-                      : 'bg-zinc-800 text-zinc-400 border-zinc-700 hover:text-white'
-                  }`}
-                >
-                  0.01 Min
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setCustomLot(autoLotSize);
-                    setIsLotCustomized(false);
-                  }}
-                  className={`px-2 py-1 rounded-lg text-[10px] font-bold border transition-colors cursor-pointer ${
-                    !isLotCustomized || activeLot === autoLotSize
-                      ? 'bg-amber-500/20 text-amber-300 border-amber-500/50'
-                      : 'bg-zinc-800 text-zinc-400 border-zinc-700 hover:text-white'
-                  }`}
-                >
-                  Auto ({autoLotSize.toFixed(2)}L)
-                </button>
-                {[0.05, 0.1, 0.2, 0.5].map((val) => (
-                  <button
-                    key={val}
-                    type="button"
-                    onClick={() => {
-                      setCustomLot(val);
-                      setIsLotCustomized(true);
-                    }}
-                    className={`px-2 py-1 rounded-lg text-[10px] font-bold border transition-colors cursor-pointer ${
-                      activeLot === val && isLotCustomized
-                        ? 'bg-amber-500/20 text-amber-300 border-amber-500/50'
-                        : 'bg-zinc-800 text-zinc-400 border-zinc-700 hover:text-white'
-                    }`}
-                  >
-                    {val.toFixed(2)}L
-                  </button>
-                ))}
-              </div>
-
-              {/* Risk & Reward Readouts dynamically driven by adjusted lot */}
-              <div className="border-t border-zinc-800/80 pt-2 space-y-1.5 text-[11px]">
-                <div className="flex items-center justify-between text-zinc-400">
-                  <span>Selected Potential Reward:</span>
-                  <span className="font-bold text-emerald-400">
-                    +${potentialRewardUsd} USD (+{chosenPips} pips)
-                  </span>
-                </div>
-                <div className="flex items-center justify-between text-zinc-400">
-                  <span>Capital Risk at SL:</span>
-                  <span className="font-bold text-rose-400">
-                    -${potentialRiskUsd} USD (-{slPips} pips)
-                  </span>
-                </div>
-                <div className="flex items-center justify-between text-zinc-400">
-                  <span>Simultaneous Positions:</span>
-                  <span className={`font-bold ${canOpenTrade ? 'text-zinc-300' : 'text-rose-400'}`}>
-                    {activePositionsCount} of {maxSimultaneous} slots active
-                  </span>
-                </div>
               </div>
             </div>
 
-            {/* Execution Actions */}
-            <div className="flex items-center gap-2 pt-1">
-              <button
-                type="button"
-                onClick={() => setIsOpen(false)}
-                className="px-3.5 py-3 rounded-xl border border-zinc-700 bg-zinc-900 hover:bg-zinc-800 text-zinc-400 hover:text-white text-xs font-bold transition-colors cursor-pointer"
-              >
-                Dismiss
-              </button>
+            {/* Feedback Alert */}
+            {feedback && (
+              <div className={`p-2.5 rounded-lg text-xs font-bold text-center ${
+                feedback.type === 'success'
+                  ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                  : 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
+              }`}>
+                {feedback.msg}
+              </div>
+            )}
 
-              <button
-                type="button"
-                disabled={executing || !canOpenTrade}
-                onClick={handleExecuteSniper}
-                className={`flex-1 py-3 sm:py-3.5 rounded-xl font-black text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-2 cursor-pointer shadow-md active:scale-[0.98] ${
-                  !canOpenTrade
-                    ? 'bg-zinc-800 text-zinc-500 cursor-not-allowed border border-zinc-700'
-                    : isBuy
-                    ? 'bg-emerald-500 hover:bg-emerald-400 text-black font-black'
-                    : 'bg-rose-500 hover:bg-rose-400 text-white font-black'
-                }`}
-              >
-                <Zap className="w-4 h-4 fill-current" />
-                <span>
-                  {executing
-                    ? 'EXECUTING...'
-                    : !canOpenTrade
-                    ? 'MAX 5 TRADES REACHED'
-                    : `EXECUTE SNIPER ${activeDirection} (${activeLot.toFixed(2)}L · ${selectedTpTarget.toUpperCase()})`}
-                </span>
-              </button>
-            </div>
+            {/* 1-Click Execution Button */}
+            <button
+              onClick={handleExecuteSniper}
+              disabled={executing}
+              className={`w-full py-3.5 px-4 rounded-xl font-black text-xs uppercase tracking-wider flex items-center justify-center gap-2 cursor-pointer shadow-lg transition-all active:scale-[0.99] ${
+                isBuy
+                  ? 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-950/50'
+                  : 'bg-rose-600 hover:bg-rose-500 text-white shadow-rose-950/50'
+              }`}
+            >
+              <Zap className="w-4 h-4 fill-current" />
+              <span>
+                {executing ? 'EXECUTING ORDER...' : `EXECUTE ${activeDirection} NOW @ $${activeEntry.toFixed(cfg.digits)}`}
+              </span>
+            </button>
           </div>
         </div>
       )}
 
-      {/* FLOATING SNIPER ENTRY TRIGGER BUTTON - Top-Right */}
-      <div className="fixed top-14 right-4 z-[90] select-none font-mono">
-        <button
-          onClick={() => setIsOpen((prev) => !prev)}
-          title={`Sniper ${activeDirection} Setup on ${activeSymbol} · ${formatTimer(remainingSec)} remaining`}
-          className="relative flex items-center gap-2.5 px-3 py-1.5 rounded-full bg-[#10141D] border border-[#2979FF]/50 text-white shadow-lg hover:border-[#2979FF] active:scale-95 transition-all cursor-pointer ring-1 ring-[#2979FF]/20 overflow-hidden"
-        >
-          {/* Target Reticle Icon */}
-          <span className="relative flex h-3 w-3 items-center justify-center">
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-80" />
-            <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-400" />
-          </span>
-
-          {/* Sniper Label & Direction */}
-          <span className="font-black text-xs uppercase tracking-wider text-amber-300 flex items-center gap-1.5">
-            <Target className="w-3.5 h-3.5 text-amber-400" />
-            <span>SNIPER {activeDirection}</span>
-          </span>
-
-          {/* Entry Countdown Timer Pill */}
-          <span
-            className={`text-[10px] font-bold px-2 py-0.5 rounded-md border flex items-center gap-1 ${
-              timerPhase === 'optimal'
-                ? 'bg-emerald-500/20 text-emerald-200 border-emerald-500/40'
-                : timerPhase === 'retest'
-                ? 'bg-amber-500/20 text-amber-200 border-amber-500/40'
-                : 'bg-rose-500/20 text-rose-200 border-rose-500/40 animate-pulse'
+      {/* Floating Bottom Beacon (When minimized) */}
+      {!isOpen && (
+        <div className="fixed bottom-5 right-5 z-40 font-mono select-none">
+          <button
+            onClick={() => setIsOpen(true)}
+            className={`flex items-center gap-2.5 px-3.5 py-2 rounded-xl text-xs font-bold shadow-xl border cursor-pointer transition-all hover:scale-105 ${
+              isBuy
+                ? 'bg-emerald-950/90 text-emerald-300 border-emerald-500/40 shadow-emerald-950/50'
+                : 'bg-rose-950/90 text-rose-300 border-rose-500/40 shadow-rose-950/50'
             }`}
           >
-            <Clock className="w-3 h-3 text-current animate-pulse" />
-            <span>{formatTimer(remainingSec)}</span>
-          </span>
-
-          {/* Active Lot Pill */}
-          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-300 border border-zinc-700 hidden sm:inline-block">
-            {activeLot.toFixed(2)}L
-          </span>
-
-          {/* Subtle bottom edge progress bar */}
-          <div
-            className={`absolute bottom-0 left-0 h-0.5 transition-all duration-1000 ${
-              timerPhase === 'optimal'
-                ? 'bg-emerald-400'
-                : timerPhase === 'retest'
-                ? 'bg-amber-400'
-                : 'bg-rose-500'
-            }`}
-            style={{ width: `${timerProgressPct}%` }}
-          />
-        </button>
-      </div>
+            <div className="relative">
+              <Target className="w-4 h-4 text-white" />
+              <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+            </div>
+            <span>{activeSymbol} {activeDirection} SNIPER</span>
+            <span className="text-[10px] tabular-nums font-mono px-1.5 py-0.5 rounded bg-black/50 text-white">
+              {formatTimer(remainingSec)}
+            </span>
+          </button>
+        </div>
+      )}
     </>
   );
 };

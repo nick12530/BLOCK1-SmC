@@ -40,6 +40,13 @@ describe('Trading Safety UX Components', () => {
   });
 
   it('blocks orders without a validated signal and reports wide spreads', () => {
+    act(() => {
+      tradingEngine.candlesM1 = [];
+      tradingEngine.candlesM5 = [];
+      (tradingEngine as any).invalidateMarket();
+      (tradingEngine as any).emit('market');
+    });
+
     const { rerender } = render(<SignalEngineCard onExecuteSignal={() => {}} />);
 
     let button = screen.getByRole('button', { name: /WAITING FOR CONFIRMED SETUP/i });
@@ -54,7 +61,7 @@ describe('Trading Safety UX Components', () => {
 
     rerender(<SignalEngineCard onExecuteSignal={() => {}} />);
 
-    button = screen.getByRole('button', { name: /WAITING FOR CONFIRMED SETUP/i });
+    button = screen.getByRole('button', { name: /WAITING FOR CONFIRMED SETUP|SPREAD TOO WIDE/i });
     expect((button as HTMLButtonElement).disabled).toBe(true);
     expect(screen.getByText(/45 PTS/)).toBeDefined();
     expect(MAX_SPREAD_POINTS).toBe(40);

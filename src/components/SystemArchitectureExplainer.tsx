@@ -53,7 +53,7 @@ export const SystemArchitectureExplainer: React.FC = () => {
           </div>
           <div>
             <h3 className="font-bold text-slate-900 dark:text-white text-xs sm:text-sm flex items-center gap-2">
-              <span>Institutional SMC Architecture & Live Strategy Rules</span>
+              <span>Institutional Architecture & Live Strategy Rules</span>
               <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 px-2 py-0.5 rounded border border-emerald-300 dark:border-emerald-800">
                 Live Reactive Matrix
               </span>

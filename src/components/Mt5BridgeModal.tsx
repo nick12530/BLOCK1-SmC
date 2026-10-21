@@ -10,7 +10,7 @@ interface Mt5BridgeModalProps {
   onClose: () => void;
 }
 
-const SETUP_COMMAND = 'powershell -ExecutionPolicy Bypass -File .\\mt5-bridge\\start_phone_link.ps1';
+const SETUP_COMMAND = 'python mt5-bridge/mt5_bridge.py';
 
 export const Mt5BridgeModal: React.FC<Mt5BridgeModalProps> = ({ isOpen, onClose }) => {
   const [symbol, setSymbol] = useState('XAUUSD');
@@ -126,7 +126,7 @@ export const Mt5BridgeModal: React.FC<Mt5BridgeModalProps> = ({ isOpen, onClose 
                 Connect MetaTrader 5
               </h2>
               <p className="mt-0.5 text-xs text-slate-500 dark:text-zinc-400">
-                Private phone link · credentials stay in MT5 Desktop
+                Direct PC Bridge · Credentials stay in MT5 Desktop
               </p>
             </div>
           </div>

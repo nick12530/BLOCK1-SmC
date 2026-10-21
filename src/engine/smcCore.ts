@@ -687,24 +687,59 @@ export function evaluateConfluence(
   const isSniper = (timeframe === 'M15' || timeframe === 'M5') && (score >= 4.2 || (sweep.hasSweep && score >= 3.8));
   const sniperQualityIndex = Math.min(100, Math.max(50, Math.round((score / 6.0) * 100)));
   const sniperGrade: 'A+' | 'A' | 'B' = sniperQualityIndex >= 88 ? 'A+' : sniperQualityIndex >= 75 ? 'A' : 'B';
-  const optimalTradeEntry = sweep.hasSweep && sweep.sweptPrice
+  // Technical Analysis Precision Entry:
+  // 1. If Liquidity Sweep (SFP): Exact 68.2% Fibonacci OTE retracement into displacement wick
+  // 2. If Order Block / FVG: 50% Mean Threshold (Equilibrium)
+  // 3. Round to nearest institutional quarter level (.00, .25, .50, .75) for Gold/Metals
+  const rawOptimalEntry = sweep.hasSweep && sweep.sweptPrice
     ? direction === 'BUY'
-      ? Number((sweep.sweptPrice + 0.62 * (lastCandle.high - sweep.sweptPrice)).toFixed(2))
-      : Number((sweep.sweptPrice - 0.62 * (sweep.sweptPrice - lastCandle.low)).toFixed(2))
+      ? sweep.sweptPrice + 0.682 * (lastCandle.high - sweep.sweptPrice)
+      : sweep.sweptPrice - 0.682 * (sweep.sweptPrice - lastCandle.low)
     : zone
-    ? Number(((zone.bottom + zone.top) / 2).toFixed(2))
-    : Number(price.toFixed(2));
+    ? (zone.bottom + zone.top) / 2
+    : price;
+
+  const optimalTradeEntry = price > 500
+    ? Number((Math.round(rawOptimalEntry * 4) / 4).toFixed(2)) // Align to quarter dollars on Gold
+    : Number(rawOptimalEntry.toFixed(4));
+
+  // Precision exact entry point: institutional 50% Mean Threshold / OTE level
+  const exactEntry = isSniper && optimalTradeEntry > 0 ? optimalTradeEntry : Number(price.toFixed(2));
+
+  // Invalidation & entry state timing check
+  const isPassed =
+    now >= expiryTimestamp ||
+    (direction === 'BUY' && price <= sl) ||
+    (direction === 'SELL' && price >= sl) ||
+    (direction === 'BUY' && price > exactEntry + 1.2 * atrNow) ||
+    (direction === 'SELL' && price < exactEntry - 1.2 * atrNow);
+
+  if (isPassed) {
+    return null; // Shut down passed / invalidated signals automatically
+  }
+
+  const distToEntry = Math.abs(price - exactEntry);
+  const entryState: 'IMMINENT' | 'TRIGGERED' | 'ACTIVE' =
+    distToEntry <= 0.4 * atrNow
+      ? 'TRIGGERED'
+      : (direction === 'BUY' && price <= exactEntry) || (direction === 'SELL' && price >= exactEntry)
+      ? 'IMMINENT'
+      : 'ACTIVE';
+
+  const isImminent = entryState === 'IMMINENT' || entryState === 'TRIGGERED' || distToEntry <= 0.6 * atrNow;
+  const isVipTelegram = (isSniper || score >= 4.5 || sniperGrade === 'A+') && isImminent;
+
   const mitigationType = sweep.hasSweep
-    ? 'Liquidity Sweep (SFP)'
+    ? 'Liquidity Sweep (SFP 68.2% OTE)'
     : zone
-    ? `${zone.kind} (${zone.bullish ? 'Demand' : 'Supply'})`
+    ? `${zone.kind} 50% MT (${zone.bullish ? 'Demand' : 'Supply'})`
     : 'Structural POI Retest';
 
   return {
     direction,
     timeframe,
     score: Number(score.toFixed(2)),
-    entry: Number(price.toFixed(2)),
+    entry: exactEntry,
     sl: Number(sl.toFixed(2)),
     tp: Number(tp.toFixed(2)),
     tp1: Number(tp1.toFixed(2)),
@@ -720,7 +755,10 @@ export function evaluateConfluence(
     isSniper,
     sniperQualityIndex,
     sniperGrade,
-    optimalTradeEntry,
+    optimalTradeEntry: exactEntry,
+    entryState,
+    isImminent,
+    isVipTelegram,
     mitigationType,
     reasons,
     atr: Number(atrNow.toFixed(2)),

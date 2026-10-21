@@ -249,7 +249,7 @@ export const SMCAnalysisRadar: React.FC<SMCAnalysisRadarProps> = ({
             <div className="flex items-center justify-between">
               <span className="font-bold text-slate-900 dark:text-white flex items-center gap-2">
                 <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                <span>SMC Analysis Engine Active in Background</span>
+                <span>Institutional Analysis Engine Active in Background</span>
               </span>
               <span className="text-slate-500 dark:text-slate-400">
                 Score Threshold: ≥ 4.0

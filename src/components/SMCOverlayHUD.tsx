@@ -92,7 +92,7 @@ export const SMCOverlayHUD: React.FC<SMCOverlayHUDProps> = memo(({
           {/* Active Overlay Status & Live Structure */}
           <div className="flex items-center gap-2 text-[10px] sm:text-[11px] font-bold flex-wrap">
             <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-            <span className="text-sky-300">SMC</span>
+            <span className="text-sky-300">ORDER FLOW</span>
             <span className="text-slate-500">|</span>
             <span className={isPremium ? 'text-rose-400 font-bold' : 'text-emerald-400 font-bold'}>
               {isPremium ? 'PREMIUM (Sells)' : 'DISCOUNT (Buys)'}
@@ -183,7 +183,7 @@ export const SMCOverlayHUD: React.FC<SMCOverlayHUDProps> = memo(({
         )}
 
         <div className="text-[9px] text-slate-500">
-          Transparent SMC Overlay
+          Transparent Structure Overlay
         </div>
       </div>
     </div>

@@ -59,7 +59,7 @@ export const TopNav: React.FC<TopNavProps> = ({
         <div className="flex items-center gap-1.5 mr-1">
           <span className="font-mono text-xs font-black tracking-widest text-[#2979FF]">NIFTY</span>
           <span className="text-[10px] uppercase font-bold tracking-wider px-1 py-0.5 rounded bg-white/[0.04] text-zinc-400 border border-white/[0.06]">
-            SMC
+            PRO
           </span>
         </div>
 

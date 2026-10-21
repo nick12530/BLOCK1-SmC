@@ -28,7 +28,7 @@ export const MinimalSignalCard: React.FC<MinimalSignalCardProps> = ({
             <div>
               <div className="flex items-center gap-2">
                 <span className="font-bold text-slate-900 dark:text-white text-sm">
-                  SMC Confluence Engine Active
+                  Institutional Confluence Active
                 </span>
                 <span className="text-[10px] uppercase font-mono tracking-widest px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-500/25 font-semibold">
                   Background Scanning
@@ -79,7 +79,7 @@ export const MinimalSignalCard: React.FC<MinimalSignalCardProps> = ({
                   : 'bg-rose-600 text-white shadow-sm shadow-rose-600/30'
               }`}
             >
-              VALID SMC SIGNAL
+              VALID CONFLUENCE SIGNAL
             </span>
             <span className="text-xs font-mono font-bold text-slate-700 dark:text-slate-300">
               Confluence: {sig.score} / 5.0

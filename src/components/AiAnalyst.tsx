@@ -18,7 +18,7 @@ export const AiAnalyst: React.FC<AiAnalystProps> = ({ snapshot }) => {
     }
     setIsLoading(true);
 
-    const promptContext = `You are a Tier-1 institutional FX & Commodities market analyst specializing in Smart Money Concepts (SMC) and order flow for Gold (XAUUSD).
+    const promptContext = `You are a Tier-1 institutional FX & Commodities market analyst specializing in order flow, liquidity sweeps, and price action for Gold (XAUUSD).
 Analyze the current live market state:
 - Current Bid Price: ${snapshot.bid.toFixed(2)}, Ask: ${snapshot.ask.toFixed(2)}, Spread: ${snapshot.spread} pts
 - 24h Range: High ${snapshot.high24h.toFixed(2)} - Low ${snapshot.low24h.toFixed(2)} (Change: ${snapshot.change24h > 0 ? '+' : ''}${snapshot.change24h} / ${snapshot.change24hPct}%)
@@ -92,7 +92,7 @@ Be professional, analytical, and direct. Avoid conversational filler.`;
             onClick={generateAnalysis}
             className="px-3 py-1.5 rounded-lg bg-[#4f8ef7]/15 hover:bg-[#4f8ef7]/25 text-[#4f8ef7] border border-[#4f8ef7]/30 text-xs font-semibold transition-colors"
           >
-            Generate SMC Order Flow Brief
+            Generate Order Flow Brief
           </button>
         </div>
       )}

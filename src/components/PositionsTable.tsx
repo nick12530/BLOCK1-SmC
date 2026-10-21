@@ -16,7 +16,7 @@ export const PositionsTable: React.FC<PositionsTableProps> = ({ snapshot, closed
   };
 
   const handleCloseAll = () => {
-    if (window.confirm('Close all active SMC bot positions at market price?')) {
+    if (window.confirm('Close all active open positions at market price?')) {
       tradingEngine.closeAll();
     }
   };

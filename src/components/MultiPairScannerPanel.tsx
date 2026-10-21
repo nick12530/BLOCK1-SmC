@@ -50,7 +50,7 @@ export const MultiPairScannerPanel: React.FC<MultiPairScannerPanelProps> = ({
               </span>
             </h2>
             <p className="text-xs text-slate-500 dark:text-zinc-400">
-              Continuous SMC confluence evaluation, liquidity tracking, and small account risk protection
+              Continuous order flow confluence evaluation, liquidity tracking, and small account risk protection
             </p>
           </div>
         </div>

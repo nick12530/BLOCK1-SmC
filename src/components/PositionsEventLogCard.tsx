@@ -246,7 +246,7 @@ export const PositionsEventLogCard: React.FC<PositionsEventLogCardProps> = React
         ) : (
           <div className="p-5 rounded-xl border border-dashed border-zinc-200 dark:border-zinc-800 text-center text-zinc-400 font-sans space-y-1.5">
             <span className="text-sm font-semibold block text-zinc-500">No Open Positions</span>
-            <span className="text-xs block text-zinc-400">1-click execute verified SMC signal below</span>
+            <span className="text-xs block text-zinc-400">1-click execute verified trade signal below</span>
           </div>
         )}
 

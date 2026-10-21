@@ -157,7 +157,7 @@ export const MinimalPositions: React.FC<MinimalPositionsProps> = ({
                 No Open Positions
               </div>
               <div className="text-xs">
-                Zero gold market exposure. The SMC engine is scanning order flow for high-confluence entries.
+                Zero market exposure. The trading engine is scanning order flow for high-confluence entries.
               </div>
             </div>
           )}

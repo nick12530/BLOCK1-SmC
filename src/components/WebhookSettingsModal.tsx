@@ -64,7 +64,7 @@ export const WebhookSettingsModal: React.FC<WebhookSettingsModalProps> = ({ isOp
 
     const testTime = new Date().toLocaleTimeString();
     const testHtml = `
-⚡ <b>SMC TERMINAL TEST ALERT</b> ⚡
+⚡ <b>NIFTY TERMINAL TEST ALERT</b> ⚡
 ━━━━━━━━━━━━━━━━━━
 <b>Status:</b> Telegram webhook linked successfully!
 <b>Signal Channel:</b> M15/M5 Institutional Sniper
@@ -90,7 +90,7 @@ export const WebhookSettingsModal: React.FC<WebhookSettingsModalProps> = ({ isOp
         }
         const res = await sendCustomWebhook(config.webhookUrl, {
           event: 'TEST_ALERT',
-          message: 'SMC Terminal webhook verified successfully.',
+          message: 'NIFTY Terminal webhook verified successfully.',
           timestamp: new Date().toISOString(),
         });
         if (!res.ok) {

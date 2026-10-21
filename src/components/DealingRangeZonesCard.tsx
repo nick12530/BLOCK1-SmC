@@ -113,8 +113,8 @@ export const DealingRangeZonesCard: React.FC = React.memo(() => {
         {showExplanation && (
           <div className="p-3 rounded-xl bg-slate-50 dark:bg-zinc-900/90 border border-slate-200 dark:border-zinc-800 text-[11px] font-sans space-y-1.5 text-slate-700 dark:text-zinc-300">
             <div className="font-bold text-slate-900 dark:text-white flex items-center justify-between">
-              <span>SMC Market Context Guide</span>
-              <span className="text-[10px] text-zinc-400">Smart Money Concepts</span>
+              <span>Market Structure Guide</span>
+              <span className="text-[10px] text-zinc-400">Order Flow &amp; Liquidity</span>
             </div>
             <ul className="space-y-1 text-[10px] text-slate-600 dark:text-zinc-400 leading-relaxed">
               <li>

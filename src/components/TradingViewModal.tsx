@@ -45,7 +45,7 @@ export const TradingViewModal: React.FC<TradingViewModalProps> = ({ isOpen, onCl
           <div className="flex items-center gap-3">
           <span className="w-2.5 h-2.5 rounded-full bg-sky-500" />
             <h2 id="tradingview-modal-title" className="text-sm font-bold text-zinc-950 dark:text-white">
-              Official TradingView &amp; SMC Workstation · {ticker.symbol}
+              Official TradingView &amp; Precision Workstation · {ticker.symbol}
             </h2>
           </div>
 
@@ -80,7 +80,7 @@ export const TradingViewModal: React.FC<TradingViewModalProps> = ({ isOpen, onCl
           </button>
 
           <span className="text-[11px] text-zinc-400 hidden sm:inline">
-            One price scale for broker candles, SMC levels, and execution markers
+            One price scale for broker candles, structure levels, and execution markers
           </span>
 
           <button

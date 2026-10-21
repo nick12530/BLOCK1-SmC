@@ -160,7 +160,7 @@ export const LiveSignalsStream: React.FC<LiveSignalsStreamProps> = ({ onExecuteT
           id: `active-${sym}-${sig.direction}`,
           symbol: sym,
           direction: sig.direction,
-          strategy: sig.strategy || 'SMC POI Retest',
+          strategy: sig.strategy ? sig.strategy.replace(/^SMC\s*/, '') : 'POI Retest',
           timeframe: sig.timeframe || 'M5',
           entry: sig.entry,
           sl: sig.sl,
@@ -539,7 +539,7 @@ export const LiveSignalsStream: React.FC<LiveSignalsStreamProps> = ({ onExecuteT
           <div className="text-center py-8 border border-dashed border-slate-200 dark:border-zinc-800 rounded-xl space-y-1.5">
             <Sparkles className="w-5 h-5 text-slate-400 mx-auto" />
             <div className="font-bold text-slate-700 dark:text-slate-300">
-              Scanning Market for Qualified SMC Setups...
+              Scanning Market for Qualified Institutional Setups...
             </div>
             <p className="text-[11px] text-slate-400 dark:text-zinc-500 max-w-md mx-auto font-sans">
               Monitoring USDJPY, XAUUSD, EURUSD, and GBPUSD for order block tapping and liquidity sweeps.

@@ -74,6 +74,7 @@ describe('TradingEngine Store Architecture', () => {
   beforeEach(() => {
     if (typeof localStorage !== 'undefined') localStorage.clear();
     engine = new TradingEngine();
+    engine.spread = 18;
     engine.mt5Account.connected = false;
     engine.stopEngineLoops(); // stop background loops during unit tests
     engine.bypassNewsBlackout = true;

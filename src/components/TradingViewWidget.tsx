@@ -136,11 +136,11 @@ export const TradingViewWidget: React.FC<TradingViewWidgetProps> = memo(({
                   ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-950 shadow-xs'
                   : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
               }`}
-              title="Institutional SMC execution chart with Order Blocks, FVGs, and live broker trade lines"
+              title="Institutional precision execution chart with Order Blocks, FVGs, and live broker trade lines"
             >
               <Layers className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
-              <span className="hidden sm:inline">SMC Engine</span>
-              <span className="sm:hidden">SMC</span>
+              <span className="hidden sm:inline">Terminal Chart</span>
+              <span className="sm:hidden">Chart</span>
             </button>
           </div>
 
@@ -155,7 +155,7 @@ export const TradingViewWidget: React.FC<TradingViewWidgetProps> = memo(({
                 ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30'
                 : 'bg-slate-500/10 text-slate-600 dark:text-slate-400 border-slate-500/20'
             }`}
-            title="SMC Signals and market calculations are powered by live TradingView interbank chart data"
+            title="Signals and market calculations are powered by live TradingView interbank chart data"
           >
             <span
               className={`w-1.5 h-1.5 rounded-full ${
@@ -221,7 +221,7 @@ export const TradingViewWidget: React.FC<TradingViewWidgetProps> = memo(({
                     ? 'bg-emerald-600 text-white shadow-xs'
                     : 'text-slate-500 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white'
                 }`}
-                title="Toggle technical & SMC indicators on or off"
+                title="Toggle technical & structure indicators on or off"
               >
                 {showIndicators ? <Eye className="w-3 h-3" /> : <EyeOff className="w-3 h-3" />}
                 <span>Indicators: {showIndicators ? 'ON' : 'OFF'}</span>
@@ -241,7 +241,7 @@ export const TradingViewWidget: React.FC<TradingViewWidgetProps> = memo(({
             {showConfigMenu && (
               <div className="absolute right-0 top-full mt-1.5 z-50 w-52 rounded-xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-2.5 shadow-xl font-mono text-[11px] space-y-1.5">
                 <div className="font-bold text-slate-900 dark:text-white pb-1 border-b border-slate-100 dark:border-zinc-800 flex items-center justify-between">
-                  <span>SMC Indicators</span>
+                  <span>Technical Indicators</span>
                   <button
                     onClick={() => setShowConfigMenu(false)}
                     className="text-[10px] text-zinc-400 hover:text-zinc-200"
@@ -279,7 +279,7 @@ export const TradingViewWidget: React.FC<TradingViewWidgetProps> = memo(({
             <button
               onClick={onOpenHelp}
               className="p-1 rounded text-zinc-400 hover:text-zinc-950 dark:hover:text-white transition-colors"
-              title="View SMC abbreviations and strategy guide"
+              title="View strategy guide and abbreviations"
             >
               <HelpCircle className="w-3.5 h-3.5" />
             </button>

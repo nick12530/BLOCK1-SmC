@@ -250,7 +250,7 @@ export const TradeLaunchpad: React.FC<TradeLaunchpadProps> = ({
           }`}
         >
           <Sparkles className="w-3.5 h-3.5 text-sky-400" />
-          <span>Execute SMC Prime Setup</span>
+          <span>Execute Prime Setup</span>
           {rawSig && <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />}
         </button>
 

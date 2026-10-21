@@ -168,7 +168,7 @@ export const ProTradingWorkspace: React.FC<ProTradingWorkspaceProps> = ({
                       {sig ? `${sig.direction} SIGNAL` : `WATCHING ${anticipatedDir} SETUP`}
                     </span>
                     <span className="text-xs font-mono font-bold text-slate-700 dark:text-slate-300">
-                      {sig ? `Confluence ${sig.score}/5.0` : 'SMC Background Screening'}
+                      {sig ? `Confluence ${sig.score}/5.0` : 'Background Screening'}
                     </span>
                   </div>
 

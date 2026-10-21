@@ -9,7 +9,8 @@
  */
 
 import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
-import { useMarket, usePositions, useTicker, useScannerAnalyses } from '../hooks/useTradingStore';
+import { ZoomIn, ZoomOut, RotateCcw } from 'lucide-react';
+import { useMarket, usePositions, useTicker } from '../hooks/useTradingStore';
 import { findCorrespondingOrderBlock } from '../engine/tradeJournal';
 import { calculateATR, detectFVGs, detectOrderBlocks, MarketStructureEngine } from '../engine/smcCore';
 import { tradingEngine } from '../engine/tradingEngine';
@@ -73,7 +74,6 @@ export const SMCInteractiveChart: React.FC<SMCInteractiveChartProps> = ({
   const market = useMarket();
   const positionsState = usePositions();
   const ticker = useTicker();
-  const scannerAnalyses = useScannerAnalyses();
 
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const [chartWidth, setChartWidth] = useState(900);
@@ -245,15 +245,30 @@ export const SMCInteractiveChart: React.FC<SMCInteractiveChartProps> = ({
   const nearestZones = useMemo(() => {
     const zones = timeframeZones.length > 0 ? timeframeZones : Array.isArray(market.zones) ? market.zones : [];
     const currentPrice = ticker.bid;
-    return [...zones]
-      .filter((z) => !z.filled)
-      .sort((a, b) => {
-        const distA = Math.abs((a.top + a.bottom) / 2 - currentPrice);
-        const distB = Math.abs((b.top + b.bottom) / 2 - currentPrice);
-        return distA - distB;
-      })
-      .slice(0, 6);
+    const active = [...zones].filter((z) => !z.filled);
+
+    // Keep UI clean and uncluttered: select the nearest Bullish Demand OB and nearest Bearish Supply OB
+    const bullish = active.filter((z) => z.bullish).sort((a, b) => Math.abs(a.top - currentPrice) - Math.abs(b.top - currentPrice))[0];
+    const bearish = active.filter((z) => !z.bullish).sort((a, b) => Math.abs(a.bottom - currentPrice) - Math.abs(b.bottom - currentPrice))[0];
+    const selected: Zone[] = [];
+    if (bullish) selected.push(bullish);
+    if (bearish) selected.push(bearish);
+    return selected;
   }, [timeframeZones, market.zones, ticker.bid]);
+
+  const handleZoomIn = useCallback(() => {
+    setVisibleCount((c) => Math.max(16, c - 10));
+  }, []);
+
+  const handleZoomOut = useCallback(() => {
+    setVisibleCount((c) => Math.min(120, c + 10));
+  }, []);
+
+  const handleZoomReset = useCallback(() => {
+    const defaultVisible = timeframe === 'H4' ? 35 : timeframe === 'H1' ? 45 : 55;
+    setVisibleCount(defaultVisible);
+    setPanOffset(0);
+  }, [timeframe]);
 
   const candles = useMemo(() => {
     if (!rawCandles.length) return [];
@@ -308,8 +323,18 @@ export const SMCInteractiveChart: React.FC<SMCInteractiveChartProps> = ({
     [minPrice, maxPrice, priceRange, vbHeight]
   );
 
-  const candleSpacing = candles.length > 0 ? (plotWidth - 20) / candles.length : 10;
-  const candleBodyWidth = Math.max(3, candleSpacing * 0.65);
+  // Proportional candlestick sizing & clean right-alignment (never oversized or unresizeable)
+  const availablePlotWidth = Math.max(100, plotWidth - 30);
+  const maxCandleSpacing = 22;
+  const minCandleSpacing = 5;
+  const idealSpacing = candles.length > 0 ? availablePlotWidth / candles.length : 12;
+  const candleSpacing = Math.max(minCandleSpacing, Math.min(maxCandleSpacing, idealSpacing));
+  const candleBodyWidth = Math.max(2.5, Math.min(12, candleSpacing * 0.68));
+
+  const totalCandlesWidth = candles.length * candleSpacing;
+  const candleStartX = totalCandlesWidth < availablePlotWidth
+    ? plotWidth - 25 - totalCandlesWidth
+    : 15;
 
   const chartStructure = timeframeStructure;
 
@@ -340,11 +365,6 @@ export const SMCInteractiveChart: React.FC<SMCInteractiveChartProps> = ({
 
   // Dealing range equilibrium level
   const eqPrice = timeframeEqPrice;
-
-  // Other currency pairs signals linked into SMC Engine
-  const otherPairAnalyses = useMemo(() => {
-    return scannerAnalyses.filter((item) => item.symbol !== ticker.symbol);
-  }, [scannerAnalyses, ticker.symbol]);
 
   // Helper to render dotted horizontal line with right-anchored badge that never covers center candlesticks
   const renderDottedTextLine = (
@@ -395,76 +415,72 @@ export const SMCInteractiveChart: React.FC<SMCInteractiveChartProps> = ({
 
   return (
     <div className="w-full h-full flex flex-col font-mono select-none overflow-hidden bg-black text-white">
-      {/* Top Strip 1: Linked Currency Pair Indicators */}
-      {otherPairAnalyses.length > 0 && (
-        <div className="px-3 py-1.5 bg-[#090e15] border-b border-zinc-800/80 flex items-center justify-between gap-2 overflow-x-auto no-scrollbar text-[10px]">
-          <div className="flex items-center gap-1.5 text-zinc-400 shrink-0">
-            <span className="w-1.5 h-1.5 rounded-full bg-sky-400" />
-            <span className="font-bold uppercase tracking-wider text-[9px] text-zinc-500">Cross-Pair Signals:</span>
+      {/* Top Strip: Clean Institutional Header with Zoom & Telemetry */}
+      <div className="px-3 py-1.5 bg-[#090d14] border-b border-zinc-800/90 flex items-center justify-between flex-wrap gap-2 text-[11px]">
+        {/* Left: Active Pair Badge & Structure Status */}
+        <div className="flex items-center gap-2.5 flex-wrap">
+          <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-zinc-900 border border-zinc-800">
+            <span className="font-black text-white text-xs">{ticker.symbol}</span>
+            <span className="text-[10px] text-sky-400 font-bold px-1 rounded bg-sky-950/80 border border-sky-500/30">
+              {timeframe}
+            </span>
           </div>
 
-          <div className="flex items-center gap-2 shrink-0">
-            {otherPairAnalyses.map((pair) => {
-              const isBull = pair.bias === 'BUY';
-              const hasSignal = Boolean(pair.signal);
-              return (
-                <button
-                  key={pair.symbol}
-                  onClick={() => tradingEngine.switchSymbol(pair.symbol as SupportedSymbol)}
-                  className={`px-2 py-0.5 rounded-md border font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
-                    hasSignal
-                      ? isBull
-                        ? 'bg-emerald-950/60 border-emerald-500/40 text-emerald-300 hover:bg-emerald-900/60'
-                        : 'bg-rose-950/60 border-rose-500/40 text-rose-300 hover:bg-rose-900/60'
-                      : 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-white'
-                  }`}
-                  title={`Switch to ${pair.displayName} (Score: ${pair.confluenceScore}/100)`}
-                >
-                  <span className="text-white">{pair.symbol}</span>
-                  <span className={isBull ? 'text-emerald-400' : 'text-rose-400'}>
-                    {pair.bias} ({pair.confluenceScore})
-                  </span>
-                  <span className="text-[9px] text-zinc-500">
-                    {pair.orderBlocks.length > 0 ? (isBull ? '+OB' : '-OB') : 'EQ'}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* Top Strip 2: Chart Legend & Telemetry */}
-      <div className="px-3 py-1.5 bg-[#0d121a] border-b border-zinc-800 flex items-center justify-between flex-wrap gap-2 text-[11px]">
-        <div className="flex items-center gap-3 flex-wrap">
-          <span className="font-black text-sky-400">{ticker.symbol} · {timeframe}</span>
-
-          {/* Institutional Legend Matching image.png */}
-          <div className="hidden sm:flex items-center gap-3 text-[10px]">
-            <span className="flex items-center gap-1 text-rose-400">
-              <span className="w-2.5 h-2 rounded bg-rose-500/20 border border-rose-500" />
-              <span>Order Block (-OB)</span>
+          {/* Quick Legend Tags */}
+          <div className="hidden sm:flex items-center gap-2 text-[10px]">
+            <span className="flex items-center gap-1 text-emerald-400 font-medium">
+              <span className="w-2 h-2 rounded-xs bg-emerald-500/30 border border-emerald-500" />
+              <span>Demand (+OB)</span>
             </span>
-            <span className="flex items-center gap-1 text-emerald-400">
-              <span className="w-2.5 h-2 rounded bg-emerald-500/20 border border-emerald-500" />
-              <span>Demand Block (+OB)</span>
+            <span className="flex items-center gap-1 text-rose-400 font-medium">
+              <span className="w-2 h-2 rounded-xs bg-rose-500/30 border border-rose-500" />
+              <span>Supply (-OB)</span>
             </span>
-            <span className="flex items-center gap-1 text-rose-300">
-              <span className="w-3 border-t-2 border-dotted border-rose-400 inline-block" />
-              <span>Liquidity</span>
+            <span className="flex items-center gap-1 text-amber-400 font-medium">
+              <span className="w-2 border-t border-amber-400 inline-block" />
+              <span>50% EQ</span>
             </span>
-            {selectedPosition && (
-              <span className="flex items-center gap-1 text-cyan-400 font-bold bg-cyan-950/60 px-1.5 py-0.5 rounded border border-cyan-500/40">
-                <span>Trade #{selectedPosition.ticket} OB Focused</span>
-              </span>
-            )}
           </div>
         </div>
 
-        <div className="flex items-center gap-2 text-xs">
-          <span className="text-zinc-400">Bid:</span>
-          <strong className="text-white tabular-nums">${ticker.bid.toFixed(2)}</strong>
-          <CandleCountdownBadge timeframe={timeframe} />
+        {/* Right: Candlestick Zoom Controls & Live Quotes */}
+        <div className="flex items-center gap-2.5">
+          {/* Zoom In / Out Controls */}
+          <div className="flex items-center bg-zinc-900 border border-zinc-800 rounded-md p-0.5 text-zinc-300">
+            <button
+              type="button"
+              onClick={handleZoomOut}
+              className="p-1 hover:text-white hover:bg-zinc-800 rounded transition-colors cursor-pointer"
+              title="Zoom Out (Show More / Sleeker Candlesticks)"
+            >
+              <ZoomOut className="w-3.5 h-3.5" />
+            </button>
+            <button
+              type="button"
+              onClick={handleZoomReset}
+              className="px-1.5 py-0.5 text-[10px] font-bold hover:text-white hover:bg-zinc-800 rounded transition-colors cursor-pointer"
+              title="Reset Zoom (Optimal Fit)"
+            >
+              Fit
+            </button>
+            <button
+              type="button"
+              onClick={handleZoomIn}
+              className="p-1 hover:text-white hover:bg-zinc-800 rounded transition-colors cursor-pointer"
+              title="Zoom In (Enlarge Candlesticks)"
+            >
+              <ZoomIn className="w-3.5 h-3.5" />
+            </button>
+          </div>
+
+          {/* Live Quote & Candle Countdown */}
+          <div className="flex items-center gap-2 text-xs">
+            <div className="flex items-center gap-1 font-bold">
+              <span className="text-zinc-500 text-[10px]">BID:</span>
+              <span className="text-white tabular-nums">${ticker.bid.toFixed(ticker.symbol === 'XAUUSD' || ticker.symbol === 'USDJPY' ? 2 : 4)}</span>
+            </div>
+            <CandleCountdownBadge timeframe={timeframe} />
+          </div>
         </div>
       </div>
 
@@ -482,7 +498,8 @@ export const SMCInteractiveChart: React.FC<SMCInteractiveChartProps> = ({
             const rect = event.currentTarget.getBoundingClientRect();
             const mouseX = Math.max(0, Math.min(plotWidth, event.clientX - rect.left));
             const mouseY = Math.max(0, Math.min(vbHeight, event.clientY - rect.top));
-            const candleIdx = Math.floor(mouseX / candleSpacing);
+            const mouseOffset = mouseX - candleStartX;
+            const candleIdx = Math.max(0, Math.min(candles.length - 1, Math.floor(mouseOffset / candleSpacing)));
             const activeCandle = candles[candleIdx] || candles[candles.length - 1];
 
             setCrosshair({ x: mouseX, y: mouseY, candle: activeCandle });
@@ -713,7 +730,7 @@ export const SMCInteractiveChart: React.FC<SMCInteractiveChartProps> = ({
 
           {/* 7. CANDLESTICKS */}
           {candles.map((c, idx) => {
-            const x = 15 + idx * candleSpacing;
+            const x = candleStartX + idx * candleSpacing;
             const isUp = c.close >= c.open;
             const yHigh = getY(c.high);
             const yLow = getY(c.low);

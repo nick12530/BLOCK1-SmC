@@ -565,11 +565,24 @@ export function analyzeInstrument(
     if (scoreSession >= 5) reasons.push(`${sessions.activeSessionName} (+${scoreSession})`);
     if (scoreCandle >= 5) reasons.push(`${candlePattern.name} (${candlePattern.bias}) (+${scoreCandle})`);
 
+    const exactEntry = isSniper && optimalTradeEntry > 0 ? optimalTradeEntry : Number(price.toFixed(config.digits));
+    const distToEntry = Math.abs(price - exactEntry);
+    const distPips = Number((distToEntry / config.pipSize).toFixed(1));
+    const entryState: 'IMMINENT' | 'TRIGGERED' | 'ACTIVE' =
+      distToEntry <= 0.4 * atr
+        ? 'TRIGGERED'
+        : (tentativeBias === 'BUY' && price <= exactEntry) || (tentativeBias === 'SELL' && price >= exactEntry)
+        ? 'IMMINENT'
+        : 'ACTIVE';
+
+    const isImminent = distPips <= 3.0 || entryState === 'IMMINENT' || entryState === 'TRIGGERED';
+    const isVipTelegram = (confluenceScore >= 75 || sniperGrade === 'A+') && isImminent;
+
     signalObj = {
       direction: tentativeBias,
       timeframe: signalTimeframe,
       score: Number((confluenceScore / 20).toFixed(1)), // normalized 5-point scale for legacy UI
-      entry: Number(price.toFixed(config.digits)),
+      entry: exactEntry,
       sl: suggestedSL,
       tp: suggestedTP,
       tp1: suggestedTP1,
@@ -585,25 +598,29 @@ export function analyzeInstrument(
       isSniper,
       sniperQualityIndex,
       sniperGrade,
-      optimalTradeEntry,
+      optimalTradeEntry: exactEntry,
+      entryState,
+      isImminent,
+      isVipTelegram,
       mitigationType,
       recommendedLot: sizingResult.safeVolume || undefined,
       reasons,
       atr,
       timestamp: new Date().toISOString(),
       actionReason: `${symbol} ${tentativeBias} (${confluenceScore}/100 Confluence) - 1:${riskRewardRatio} RR · Targets: TP1 (${targetPips1}p), TP2 (${targetPips2}p), TP3 (${targetPips3}p)`,
-      perfectEntryReason: `SMC ${signalTimeframe} ${tentativeBias} confluence with ${reasons.slice(0, 2).join(' + ')}`,
-      strategy: 'SMC POI Retest',
+      perfectEntryReason: `${signalTimeframe} ${tentativeBias} confluence with ${reasons.slice(0, 2).join(' + ')}`,
+      strategy: 'POI Retest',
       candlestickPattern: candlePattern,
     };
 
-    if (isSniper) {
+    // Dispatch strictly imminent VIP setups (about to be executed with high conviction)
+    if (isSniper && isVipTelegram) {
       void dispatchSniperAlert({
         symbol,
         direction: tentativeBias,
         timeframe: signalTimeframe,
-        strategy: 'SMC POI Retest',
-        entry: Number(price.toFixed(config.digits)),
+        strategy: 'POI Retest',
+        entry: exactEntry,
         sl: suggestedSL,
         tp1: suggestedTP1,
         tp2: suggestedTP2,
@@ -615,8 +632,12 @@ export function analyzeInstrument(
         confluenceScore,
         recommendedLot: sizingResult.safeVolume || undefined,
         sniperGrade,
-        optimalTradeEntry,
+        optimalTradeEntry: exactEntry,
+        mitigationType,
         triggerPattern: candlePattern.name !== 'Neutral Price Action' ? candlePattern.name : undefined,
+        isImminent: true,
+        validitySeconds,
+        distanceToEntryPips: distPips,
       });
     }
   }

@@ -1,5 +1,5 @@
 /**
- * App.tsx - NIFTY Institutional SMC Trading Terminal
+ * App.tsx - NIFTY Institutional Trading Terminal
  * Minimalist, high-performance layout:
  * - Pure trading focus: Real-time Chart + Signal Engine + Active Positions HUD
  * - No extra cluttered tabs or dealing range cards
@@ -68,9 +68,6 @@ const TradingViewModal = lazy(() =>
 const HelpCenterModal = lazy(() =>
   import('./components/HelpCenterModal').then((m) => ({ default: m.HelpCenterModal }))
 );
-const MobileServerModal = lazy(() =>
-  import('./components/MobileServerModal').then((m) => ({ default: m.MobileServerModal }))
-);
 const WebhookSettingsModal = lazy(() =>
   import('./components/WebhookSettingsModal').then((m) => ({ default: m.WebhookSettingsModal }))
 );
@@ -90,7 +87,7 @@ export default function App() {
 
   // Active modal
   const [activeModal, setActiveModal] = useState<
-    'bridge' | 'settings' | 'closed_trades' | 'daily_report' | 'tradingview' | 'help' | 'phone_pwa' | 'webhook' | null
+    'bridge' | 'settings' | 'closed_trades' | 'daily_report' | 'tradingview' | 'help' | 'webhook' | null
   >(null);
   const [reportDate, setReportDate] = useState(() => localDayKey(new Date()));
 
@@ -180,7 +177,7 @@ export default function App() {
 
   // Stable modal callbacks to preserve memoization across child components
   const handleOpenModal = useCallback(
-    (modal: 'bridge' | 'settings' | 'closed_trades' | 'daily_report' | 'tradingview' | 'help' | 'phone_pwa' | 'webhook') => {
+    (modal: 'bridge' | 'settings' | 'closed_trades' | 'daily_report' | 'tradingview' | 'help' | 'webhook') => {
       setActiveModal(modal);
     },
     []
@@ -350,9 +347,6 @@ export default function App() {
             onClose={handleCloseModal}
             onOpenBridge={handleOpenBridge}
           />
-        )}
-        {activeModal === 'phone_pwa' && (
-          <MobileServerModal isOpen={true} onClose={handleCloseModal} />
         )}
         {activeModal === 'webhook' && (
           <WebhookSettingsModal isOpen={true} onClose={handleCloseModal} />

@@ -116,7 +116,8 @@ export async function sendCustomWebhook(
 }
 
 /**
- * Dispatches an automated Sniper Signal alert to configured Telegram and Webhook destinations
+ * Dispatches an automated Sniper Signal alert to configured Telegram and Webhook destinations.
+ * Differentiates VIP Pre-Execution signals that are about to be executed with high conviction.
  */
 export async function dispatchSniperAlert(params: {
   symbol: SupportedSymbol;
@@ -137,54 +138,71 @@ export async function dispatchSniperAlert(params: {
   sniperGrade?: 'A+' | 'A' | 'B';
   optimalTradeEntry?: number;
   triggerPattern?: string;
+  mitigationType?: string;
+  isImminent?: boolean;
+  validitySeconds?: number;
+  distanceToEntryPips?: number;
 }): Promise<boolean> {
   const config = getWebhookConfig();
   if (!config.enabled) return false;
 
-  // Filter criteria
+  // Filter criteria: require minimum confluence score
   if (params.confluenceScore < config.minConfluenceScore) return false;
 
-  // Deduplication check (cooldown: 5 mins per symbol + direction)
+  // If onlySniperSignals is true, ensure only high-conviction imminent/pre-execution setups are dispatched
+  if (config.onlySniperSignals) {
+    const isHighConviction = params.confluenceScore >= 75 || params.sniperGrade === 'A+';
+    if (!isHighConviction) return false;
+  }
+
+  // Deduplication check (cooldown: 4 mins per symbol + direction)
   const signalKey = `${params.symbol}-${params.direction}-${params.timeframe}`;
   const now = Date.now();
   const lastSent = recentlySentSignals.get(signalKey);
-  if (lastSent && now - lastSent < 300_000) {
-    return false; // Skip duplicate notification within 5 mins
+  if (lastSent && now - lastSent < 240_000) {
+    return false; // Skip duplicate notification within cooldown
   }
   recentlySentSignals.set(signalKey, now);
 
   const cfg = getInstrumentConfig(params.symbol);
   const isBuy = params.direction === 'BUY';
-  const dirBadge = isBuy ? '🟢 BUY NOW' : '🔴 SELL NOW';
-  const gradeLabel = params.sniperGrade ? ` • <b>Grade ${params.sniperGrade}</b>` : '';
-  const oteLine = params.optimalTradeEntry
-    ? `  • <b>Optimal OTE (62%):</b> <code>${params.optimalTradeEntry.toFixed(cfg.digits)}</code>\n`
-    : '';
+  const dirBadge = isBuy ? '🟢 BUY LIMIT / TRIGGER' : '🔴 SELL LIMIT / TRIGGER';
+  const gradeLabel = params.sniperGrade ? ` • <b>Grade ${params.sniperGrade} (100% Conviction)</b>` : '';
   const triggerLine = params.triggerPattern
     ? `  • <b>Trigger Pattern:</b> ${params.triggerPattern}\n`
     : '';
 
+  const distText = typeof params.distanceToEntryPips === 'number'
+    ? `${params.distanceToEntryPips.toFixed(1)} pips to dot`
+    : 'At Exact Strike Zone';
+
+  const validitySec = params.validitySeconds ?? 180;
+  const validityText = `${Math.floor(validitySec / 60)}m ${(validitySec % 60).toString().padStart(2, '0')}s Countdown Active`;
+
   const telegramHtml = `
-⚡️ <b>INSTITUTIONAL SMC TRADE SIGNAL</b> ⚡️
+🚨 <b>[VIP PRE-EXECUTION • 100% A+ INSTITUTIONAL SNIPER]</b> 🚨
+⚡ <b>IMMINENT ORDER TRIGGER • HIGH CONVICTION SETUP</b> ⚡
 ━━━━━━━━━━━━━━━━━━━━━━━━
-💎 <b>PAIR:</b> #${params.symbol}
-🎯 <b>ACTION:</b> <b>${dirBadge}</b>
-📊 <b>TIMEFRAME:</b> ${params.timeframe}  |  <b>CONFLUENCE:</b> ${params.confluenceScore}%${gradeLabel}
+💎 <b>ASSET:</b> #${params.symbol} (${params.timeframe})
+🏹 <b>ACTION:</b> <b>${dirBadge}</b>
+🎯 <b>EXACT ENTRY (TO THE DOT):</b> <code>${params.entry.toFixed(cfg.digits)}</code>
+⚡ <b>EXECUTION STATUS:</b> <b>IMMINENT</b> (${distText})
+🛑 <b>STRICT STOP LOSS:</b> <code>${params.sl.toFixed(cfg.digits)}</code> (-${params.slPips} pips)
 
-📍 <b>ENTRY ZONE:</b> <code>${params.entry.toFixed(cfg.digits)}</code>
-${oteLine}🛑 <b>STOP LOSS:</b> <code>${params.sl.toFixed(cfg.digits)}</code> (-${params.slPips} pips)
-
-🎯 <b>TARGET OBJECTIVES:</b>
-  ├ <b>TP 1:</b> <code>${params.tp1.toFixed(cfg.digits)}</code> (+${params.tp1Pips} pips) • 1:1.8 RR
-  ├ <b>TP 2:</b> <code>${params.tp2.toFixed(cfg.digits)}</code> (+${params.tp2Pips} pips) • 1:3.2 RR <i>[Recommended]</i>
+🎯 <b>3-TIER PROFIT OBJECTIVES:</b>
+  ├ <b>TP 1:</b> <code>${params.tp1.toFixed(cfg.digits)}</code> (+${params.tp1Pips} pips) • 1:1.8 RR <i>[Scale 50% & SL to BE]</i>
+  ├ <b>TP 2:</b> <code>${params.tp2.toFixed(cfg.digits)}</code> (+${params.tp2Pips} pips) • 1:3.2 RR <i>[Primary Target]</i>
   └ <b>TP 3:</b> <code>${params.tp3.toFixed(cfg.digits)}</code> (+${params.tp3Pips} pips) • 1:5.5 RR <i>[Runner]</i>
 
-🛡 <b>RISK MANAGEMENT:</b>
-  • <b>Setup:</b> ${params.strategy}
-${triggerLine}  • <b>Suggested Sizing:</b> <code>${params.recommendedLot ? `${params.recommendedLot.toFixed(2)} Lots` : '0.01 - 0.05 Lots'}</code>
-  • <b>Trade Rule:</b> Move Stop Loss to Break-Even (BE) once TP1 is secured
+📋 <b>5-POINT A+ CONFLUENCE CONFIRMATION:</b>
+  • <b>Confluence Score:</b> <b>${params.confluenceScore}%</b>${gradeLabel}
+  • <b>Mitigation POI:</b> ${params.mitigationType || 'Order Block 50% Mean Threshold & Liquidity Sweep'}
+${triggerLine}  • <b>Recommended Sizing:</b> <code>${params.recommendedLot ? `${params.recommendedLot.toFixed(2)} Lots` : '0.01 - 0.05 Lots'}</code>
+  • <b>Execution Window:</b> ⏱️ <b>${validityText}</b>
+
+👉 <b>ACTION:</b> EXECUTE NOW OR PLACE PENDING LIMIT AT EXACT DOT. Auto-cancels if level breached.
 ━━━━━━━━━━━━━━━━━━━━━━━━
-🕒 <i>${new Date().toLocaleTimeString()} UTC • NIFTY Terminal</i>
+🕒 <i>${new Date().toLocaleTimeString()} UTC • NIFTY Terminal VIP Wire</i>
 `.trim();
 
   let sent = false;
@@ -196,7 +214,7 @@ ${triggerLine}  • <b>Suggested Sizing:</b> <code>${params.recommendedLot ? `${
 
   if ((config.type === 'webhook' || config.type === 'both') && config.webhookUrl) {
     const payload = {
-      event: 'SNIPER_SIGNAL',
+      event: 'VIP_SNIPER_SIGNAL',
       symbol: params.symbol,
       direction: params.direction,
       strategy: params.strategy,
@@ -207,6 +225,8 @@ ${triggerLine}  • <b>Suggested Sizing:</b> <code>${params.recommendedLot ? `${
       tp2: params.tp2,
       tp3: params.tp3,
       confluenceScore: params.confluenceScore,
+      isImminent: params.isImminent ?? true,
+      validitySeconds: params.validitySeconds,
       timestamp: new Date().toISOString(),
     };
     const res = await sendCustomWebhook(config.webhookUrl, payload);

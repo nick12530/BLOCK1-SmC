@@ -269,7 +269,7 @@ export class TradingEngine {
   currentTimeframe: ChartTimeframe = 'M15';
   simulateWeekendMode: boolean = false;
   allowHighConfluenceOverride: boolean = true;
-  autoSelectBestScenario: boolean = true;
+  autoSelectBestScenario: boolean = false;
   instrumentType: InstrumentType = 'standard';
   private hasBrokerMarketData = false;
   private symbolSpec: SymbolTradingSpec | null = null;
@@ -974,11 +974,18 @@ export class TradingEngine {
         : [];
       const nowMs = Date.now();
       const signals = candidateSignals
-        // Entry countdown expiry filter: once entry time window passes, the signal passes/expires
+        // Entry countdown expiry & price invalidation filter: automatically shut down passed signals
         .filter((signal) => {
           if (signal.expiryTimestamp && nowMs > signal.expiryTimestamp) {
             return false;
           }
+          const curPrice = this.ticker.bid || this.ticker.last || signal.entry;
+          // Invalidate if price breaches Stop Loss
+          if (signal.direction === 'BUY' && curPrice <= signal.sl) return false;
+          if (signal.direction === 'SELL' && curPrice >= signal.sl) return false;
+          // Invalidate if price already ran away past entry by > 1.2x ATR
+          if (signal.direction === 'BUY' && curPrice > signal.entry + 1.2 * signal.atr) return false;
+          if (signal.direction === 'SELL' && curPrice < signal.entry - 1.2 * signal.atr) return false;
           return true;
         })
         .map((signal) => {
@@ -988,7 +995,7 @@ export class TradingEngine {
             : signal.validitySeconds || 180;
           return {
             ...signal,
-            strategy: signal.strategy ?? 'SMC POI Retest' as const,
+            strategy: signal.strategy ?? ('POI Retest' as const),
             recommendedLot: autoLot,
             validitySeconds,
           };
@@ -1525,9 +1532,17 @@ export class TradingEngine {
     // Minimum lot risk calculation (Section 7: TRADE_REJECTED: MINIMUM_LOT_EXCEEDS_RISK)
     if (signal) {
       const stopDist = Math.abs(signal.entry - signal.sl);
-      const sizing = calculateSmallAccountPositionSize(this.account.equity, this.account.risk_pct, stopDist, this.activeSymbol);
+      const symbolToEvaluate = (((signal as any)?.symbol || targetSymbol || this.activeSymbol) as SupportedSymbol);
+      const sizing = calculateSmallAccountPositionSize(this.account.equity, this.account.risk_pct, stopDist, symbolToEvaluate);
       if (sizing.rejectionReason) {
-        return sizing.rejectionReason;
+        // High-confluence signals with bypass override, valid profitable signals, or manual orders
+        // are allowed to execute at the broker minimum 0.01 lot as long as the trade doesn't risk an excessive fraction of equity (>10%)
+        const maxPermittedMinLotRisk = Math.max(RISK_CONFIG.smallAccountMaxRiskUsd, this.account.equity * 0.10);
+        if ((bypassDailyLimit || isManual || hasValidProfitableSignal) && sizing.riskAmount <= maxPermittedMinLotRisk) {
+          // Permitted high-confluence or manual execution with minimum lot
+        } else {
+          return sizing.rejectionReason;
+        }
       }
     }
 
@@ -2019,6 +2034,7 @@ export class TradingEngine {
               `💰 MULTI-TIER SCALE-OUT (1.5R SECURED): Closed 50% (${halfVolume}L) for +$${partialProfit.toFixed(2)} USD (#${p.ticket}). SL moved to Spread-Protected BE ($${currentSl.toFixed(cfg.digits)}). Runner (${currentVolume}L) targeting 3.0R+ ($${currentTp.toFixed(cfg.digits)})!`,
               'trade'
             );
+            signalAudioNotifier.playTpPartialAlert();
 
             if (this.mt5Account.connected && mt5Bridge.getStatus().connected) {
               const targetTicket = p.brokerTicket || p.positionTicket || p.ticket;
@@ -2155,8 +2171,6 @@ export class TradingEngine {
     this.tickCount++;
     if (this.tickCount % 2 === 0) {
       this.refreshScanner();
-    }
-    if (this.tickCount % 6 === 0) {
       this.invalidateMarket();
       this.emit('market');
     }
@@ -2259,8 +2273,11 @@ export class TradingEngine {
     };
 
     this.pendingOrders.push(newPendingOrder);
+    const formattedPrice = typeof newPendingOrder.entry === 'number'
+      ? newPendingOrder.entry.toFixed(config?.digits ?? 2)
+      : String(newPendingOrder.entry ?? '');
     this.slog(
-      `⏳ Pending ${newPendingOrder.type} #${newPendingOrder.ticket} queued at $${newPendingOrder.entry.toFixed(config.digits)} (holding for ${ttlSeconds}s / max ${maxDriftPips} pips drift)`,
+      `⏳ Pending ${newPendingOrder.type} #${newPendingOrder.ticket} queued at $${formattedPrice} (holding for ${ttlSeconds}s / max ${maxDriftPips} pips drift)`,
       'info'
     );
     this.invalidatePositions();
@@ -2724,7 +2741,7 @@ export class TradingEngine {
       pips,
       reason,
       comment: pos.comment,
-      strategyRationale: pos.strategyRationale || `${posSym} ${pos.type} SMC Order Block & Liquidity Pool confluence`,
+      strategyRationale: pos.strategyRationale || `${posSym} ${pos.type} Order Block & Liquidity Pool confluence`,
       strategyOrderBlock: pos.strategyOrderBlock,
     };
 

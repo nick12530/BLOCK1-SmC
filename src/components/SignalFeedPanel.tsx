@@ -90,7 +90,7 @@ export const SignalFeedPanel: React.FC<SignalFeedPanelProps> = ({ onExecuteTrade
         sig.direction,
         sig.sl,
         sig.tp,
-        sig.actionReason || sig.reasons?.[0] || 'SMC Setup Execution',
+        sig.actionReason || sig.reasons?.[0] || 'Confluence Setup Execution',
         lot
       );
     } else {

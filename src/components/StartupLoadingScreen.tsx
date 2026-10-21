@@ -89,7 +89,7 @@ export const StartupLoadingScreen: React.FC<StartupLoadingScreenProps> = ({
             NIFTY
           </h1>
           <p className="text-xs text-sky-400 font-mono tracking-wider">
-            INSTITUTIONAL SMC TRADING TERMINAL
+            INSTITUTIONAL TRADING TERMINAL
           </p>
         </div>
 

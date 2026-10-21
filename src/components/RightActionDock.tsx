@@ -91,7 +91,7 @@ export const RightActionDock: React.FC<RightActionDockProps> = ({
             }`}
           >
             <Target className="w-3.5 h-3.5" />
-            <span>SMC Signal</span>
+            <span>Terminal Signal</span>
             {sig && (
               <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse ml-0.5" />
             )}
@@ -263,7 +263,7 @@ export const RightActionDock: React.FC<RightActionDockProps> = ({
                 <AlertCircle className="w-5 h-5 text-[#6b7a90] mx-auto" />
                 <div className="font-semibold text-[#94a3b8] text-xs">Awaiting Confluence Setup</div>
                 <div className="text-[11px] text-[#6b7a90]">
-                  SMC engine requires 5.0+ confluence, HTF alignment, a Discount/Premium POI retest, matching candle confirmation, and an active London or New York session.
+                  Institutional engine requires 5.0+ confluence, HTF alignment, a Discount/Premium POI retest, matching candle confirmation, and an active London or New York session.
                 </div>
               </div>
             )}

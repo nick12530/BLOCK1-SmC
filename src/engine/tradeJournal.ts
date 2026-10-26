@@ -1,10 +1,13 @@
-import type { ClosedTrade, JournalSignalRecord, JournalTradeRecord, Signal, TradeDirection, Zone } from '../types/smc';
+import type { Candle, ClosedTrade, JournalSignalRecord, JournalTradeRecord, Signal, TradeDirection, Zone } from '../types/smc';
+import { advanceSignalValidation } from './signalValidation';
+import type { SignalValidationRecord } from './signalValidation';
 
 const CLOSED_TRADES_STORAGE_KEY = 'smc.closed-trades.v1';
 const TRADE_RATIONALES_STORAGE_KEY = 'smc.trade-rationales.v1';
 const TRADE_ORDER_BLOCKS_STORAGE_KEY = 'smc.trade-order-blocks.v1';
 const JOURNAL_SIGNALS_STORAGE_KEY = 'smc.journal-signals.v1';
 const JOURNAL_TRADES_STORAGE_KEY = 'smc.journal-trades.v1';
+const SIGNAL_VALIDATION_STORAGE_KEY = 'smc.signal-validation.v1';
 
 export type TradeRationales = Record<string, string>;
 export type TradeOrderBlocks = Record<string, Zone>;
@@ -146,6 +149,75 @@ export function recordJournalSignal(
   return fullRecord;
 }
 
+export function readSignalValidations(): SignalValidationRecord[] {
+  try {
+    const stored = localStorage.getItem(SIGNAL_VALIDATION_STORAGE_KEY);
+    if (!stored) return [];
+    const parsed: unknown = JSON.parse(stored);
+    if (!Array.isArray(parsed)) throw new Error('Stored signal validation journal is not an array.');
+    return parsed.filter(isSignalValidationRecord);
+  } catch (error) {
+    console.error('[Trade Journal] Could not load signal validation records:', error);
+    return [];
+  }
+}
+
+function isSignalValidationRecord(value: unknown): value is SignalValidationRecord {
+  if (!value || typeof value !== 'object') return false;
+  const record = value as Partial<SignalValidationRecord>;
+  return (
+    typeof record.id === 'string' &&
+    typeof record.createdAt === 'string' &&
+    Number.isFinite(Date.parse(record.createdAt)) &&
+    Number.isFinite(record.sourceCandleTime) &&
+    Number.isFinite(record.expiresAt) &&
+    typeof record.symbol === 'string' &&
+    (record.direction === 'BUY' || record.direction === 'SELL') &&
+    (record.timeframe === 'M5' || record.timeframe === 'M15') &&
+    Number.isFinite(record.triggerPrice) &&
+    Number.isFinite(record.stopLoss) &&
+    Number.isFinite(record.takeProfit) &&
+    Number.isFinite(record.confluenceScore) &&
+    ['WATCHING', 'TARGET_HIT', 'STOP_HIT', 'AMBIGUOUS', 'EXPIRED_UNTRIGGERED', 'EXPIRED_OPEN'].includes(
+      String(record.outcome)
+    )
+  );
+}
+
+function persistSignalValidations(records: SignalValidationRecord[]): void {
+  try {
+    localStorage.setItem(SIGNAL_VALIDATION_STORAGE_KEY, JSON.stringify(records.slice(-300)));
+  } catch (error) {
+    console.error('[Trade Journal] Could not persist signal validation records:', error);
+  }
+}
+
+export function recordSignalValidation(record: SignalValidationRecord): void {
+  const existing = readSignalValidations();
+  if (existing.some((item) => item.id === record.id)) return;
+  existing.push(record);
+  persistSignalValidations(existing);
+  notifyJournalChanged();
+}
+
+export function advanceSignalValidations(
+  symbol: string,
+  oneMinuteCandles: Candle[],
+  now = Date.now()
+): void {
+  const existing = readSignalValidations();
+  let changed = false;
+  const advanced = existing.map((record) => {
+    if (record.symbol !== symbol || record.outcome !== 'WATCHING') return record;
+    const next = advanceSignalValidation(record, oneMinuteCandles, now);
+    if (next !== record) changed = true;
+    return next;
+  });
+  if (!changed) return;
+  persistSignalValidations(advanced);
+  notifyJournalChanged();
+}
+
 // -------------------------------------------------------------
 // TRADES TAKEN AUDIT JOURNAL (Running & Completed Positions)
 // -------------------------------------------------------------
@@ -272,6 +344,7 @@ export function reconcileRunningJournalTrades(activeTickets: number[]): void {
 export function clearJournalSignals(): void {
   try {
     localStorage.removeItem(JOURNAL_SIGNALS_STORAGE_KEY);
+    localStorage.removeItem(SIGNAL_VALIDATION_STORAGE_KEY);
     notifyJournalChanged();
   } catch (e) {
     console.error('[Trade Journal] Could not clear signals:', e);

@@ -264,6 +264,9 @@ export const LiveSignalsStream: React.FC<LiveSignalsStreamProps> = ({ onExecuteT
           type: 'success',
         });
         tradingEngine.slog(`MT5 order executed: #${result.ticket} ${signal.direction} 0.01L ${signal.symbol} @ ${result.price}`, 'trade');
+        if (onExecuteTrade) {
+          onExecuteTrade(signal.symbol, signal.direction, signal.sl, signal.tp, signal.strategy);
+        }
       } else {
         const res = tradingEngine.sendMarket(
           signal.direction,
@@ -282,6 +285,9 @@ export const LiveSignalsStream: React.FC<LiveSignalsStreamProps> = ({ onExecuteT
             type: 'success',
           });
           tradingEngine.slog(`Order placed: ${signal.direction} 0.01L ${signal.symbol} @ ${res.price?.toFixed(cfg.digits)}`, 'trade');
+          if (onExecuteTrade) {
+            onExecuteTrade(signal.symbol, signal.direction, signal.sl, signal.tp, signal.strategy);
+          }
         } else {
           tradingEngine.recordRejectedSignal(
             {
@@ -307,29 +313,8 @@ export const LiveSignalsStream: React.FC<LiveSignalsStreamProps> = ({ onExecuteT
         }
       }
 
-      if (onExecuteTrade) {
-        onExecuteTrade(signal.symbol, signal.direction, signal.sl, signal.tp, signal.strategy);
-      }
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : 'Bridge execution error';
-      // Attempt fallback to local workstation execution engine so user is never blocked by bridge 502/network error
-      const fallbackRes = tradingEngine.sendMarket(
-        signal.direction,
-        0.01,
-        signal.sl,
-        signal.tp,
-        `smc:${signal.strategy.replace(/[^a-zA-Z0-9]/g, '').slice(0, 12)}`
-      );
-      if (fallbackRes.ok) {
-        signalAudioNotifier.playTradeExecutionAlert(signal.direction);
-        setFeedback({
-          id: signal.id,
-          msg: `RUNNING: Order #${fallbackRes.ticket} · ${signal.direction} 0.01L ${signal.symbol} (Desk fill - bridge offline)`,
-          type: 'success',
-        });
-        tradingEngine.slog(`Bridge fallback execution: #${fallbackRes.ticket} ${signal.direction} 0.01L ${signal.symbol} (${errorMsg.slice(0, 40)})`, 'trade');
-        return;
-      }
       tradingEngine.recordRejectedSignal(
         {
           direction: signal.direction,
@@ -346,9 +331,10 @@ export const LiveSignalsStream: React.FC<LiveSignalsStreamProps> = ({ onExecuteT
         errorMsg,
         signal.symbol
       );
+      tradingEngine.slog(`MT5 signal execution failed for ${signal.symbol}: ${errorMsg}`, 'warn');
       setFeedback({
         id: signal.id,
-        msg: `FAILED: ${errorMsg}`,
+        msg: `MT5 ORDER REJECTED: ${errorMsg}`,
         type: 'error',
       });
     } finally {
@@ -372,7 +358,7 @@ export const LiveSignalsStream: React.FC<LiveSignalsStreamProps> = ({ onExecuteT
   return (
     <div className="w-full bg-white dark:bg-[#0c0d12] border border-slate-200 dark:border-zinc-800 rounded-xl p-4 sm:p-5 shadow-xs font-mono text-xs flex flex-col gap-4">
       {/* Header & Filter Controls */}
-      <div className="flex items-center justify-between flex-wrap gap-2 pb-2.5 border-b border-slate-100 dark:border-zinc-800">
+      <div className="flex items-center justify-between flex-wrap gap-2 pb-1">
         <div className="flex items-center gap-2">
           <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
           <div>
@@ -467,7 +453,7 @@ export const LiveSignalsStream: React.FC<LiveSignalsStreamProps> = ({ onExecuteT
 
                   <div className="flex items-center gap-2.5">
                     <span className="text-xs font-bold text-slate-700 dark:text-zinc-300">
-                      {sig.confluenceScore}% Confluence
+                      {sig.confluenceScore}/100 Confluence
                     </span>
 
                     {secondsRemaining > 0 && (
@@ -480,7 +466,7 @@ export const LiveSignalsStream: React.FC<LiveSignalsStreamProps> = ({ onExecuteT
                 </div>
 
                 {/* Row 2: Clean Linear Data Grid (Entry, SL, TP, Action) */}
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2 border-t border-slate-200/60 dark:border-zinc-800/60 items-center">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2 items-center">
                   <div>
                     <span className="text-[10px] text-slate-400 dark:text-zinc-500 block uppercase font-medium">
                       Entry Price

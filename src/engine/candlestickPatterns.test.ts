@@ -3,10 +3,18 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { analyzeGoldCandlestickPatterns } from './candlestickPatterns';
+import { analyzeCandlestickPatterns, analyzeGoldCandlestickPatterns } from './candlestickPatterns';
 import { Candle } from '../types/smc';
 
 describe('Gold Candlestick Pattern Engine', () => {
+  it('reports unavailable rather than fabricating a pattern when broker candles are absent', () => {
+    const result = analyzeGoldCandlestickPatterns([]);
+    expect(result.activePattern.name).toBe('Unavailable');
+    expect(result.activePattern.reliability).toBe(0);
+    expect(result.activePattern.displacementScore).toBe(0);
+    expect(result.lastCandleMetrics.range).toBe(0);
+  });
+
   it('detects Bullish Liquidity Sweep Pinbar (Hammer) on Gold', () => {
     // A candle with a massive lower rejection wick sweeping liquidity
     const candles: Candle[] = [
@@ -39,5 +47,20 @@ describe('Gold Candlestick Pattern Engine', () => {
     expect(result.activePattern.type).toBe('BEARISH_ENGULFING');
     expect(result.activePattern.bias).toBe('BEARISH');
     expect(result.activePattern.reliability).toBeGreaterThanOrEqual(90);
+  });
+
+  it('scales equal-level pattern tolerance to FX pips and keeps price metrics precise', () => {
+    const candles: Candle[] = [
+      { time: 1000, timeStr: '10:00', open: 1.1002, high: 1.1005, low: 1.1000, close: 1.1003, volume: 100 },
+      { time: 2000, timeStr: '10:05', open: 1.1002, high: 1.1006, low: 1.1000, close: 1.1004, volume: 100 },
+      { time: 3000, timeStr: '10:10', open: 1.1004, high: 1.1005, low: 1.1000, close: 1.1001, volume: 100 },
+      { time: 4000, timeStr: '10:15', open: 1.1001, high: 1.1004, low: 1.0998, close: 1.1003, volume: 100 },
+    ];
+
+    const result = analyzeCandlestickPatterns(candles, 0.0001, 'EURUSD');
+
+    expect(result.activePattern.type).toBe('TWEEZER_BOTTOM');
+    expect(result.activePattern.marketInsight).toContain('repeated low');
+    expect(result.lastCandleMetrics.range).toBe(0.0006);
   });
 });

@@ -15,7 +15,8 @@ import {
   JournalSignalRecord,
   JournalTradeRecord,
 } from '../types/smc';
-import { subscribeJournal } from '../engine/tradeJournal';
+import { readSignalValidations, subscribeJournal } from '../engine/tradeJournal';
+import type { SignalValidationRecord } from '../engine/signalValidation';
 import type { PairAnalysis } from '../engine/multiPairScanner';
 import type { SupportedSymbol } from '../engine/instrumentConfig';
 
@@ -128,6 +129,27 @@ export function useJournalTrades(): JournalTradeRecord[] {
       // fallback
     }
     return cachedTradesSnapshot;
+  }, []);
+
+  return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+}
+
+let cachedValidationsRaw = '';
+let cachedValidationsSnapshot: SignalValidationRecord[] = [];
+
+export function useSignalValidations(): SignalValidationRecord[] {
+  const subscribe = useCallback((cb: () => void) => subscribeJournal(cb), []);
+  const getSnapshot = useCallback(() => {
+    try {
+      const stored = localStorage.getItem('smc.signal-validation.v1') || '[]';
+      if (stored !== cachedValidationsRaw) {
+        cachedValidationsRaw = stored;
+        cachedValidationsSnapshot = readSignalValidations();
+      }
+    } catch (error) {
+      console.error('[Signal Validation] Could not read browser journal storage:', error);
+    }
+    return cachedValidationsSnapshot;
   }, []);
 
   return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);

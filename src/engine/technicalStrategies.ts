@@ -63,9 +63,10 @@ function createSignal(
   const targetPips3 = Number((Math.abs(tp3 - entry) / pipSize).toFixed(1));
   const targetPips = targetPips2;
 
-  const validityDurationMs = timeframe === 'M15' ? 15 * 60_000 : timeframe === 'M5' ? 5 * 60_000 : 90_000;
+  const timeframeMs = timeframe === 'M15' ? 15 * 60_000 : timeframe === 'M5' ? 5 * 60_000 : 60_000;
+  const validityDurationMs = timeframe === 'M1' ? 90_000 : timeframeMs;
   const candleTimeMs = candle.time < 1_000_000_000_000 ? candle.time * 1000 : candle.time;
-  const expiryTimestamp = candleTimeMs + validityDurationMs;
+  const expiryTimestamp = candleTimeMs + timeframeMs + validityDurationMs;
   const validitySeconds = Math.max(0, Math.round((expiryTimestamp - Date.now()) / 1000));
   const isSniper = (timeframe === 'M15' || timeframe === 'M5') && score >= 4.2;
 
@@ -132,11 +133,15 @@ export function evaluateTechnicalStrategies(
   const previous = executionCandles[executionCandles.length - 2];
   const lastFast = fast[fast.length - 1];
   const previousFast = fast[fast.length - 2];
-  const higherTrend: TradeDirection | null = higherFast.at(-1)! > higherSlow.at(-1)!
-    ? 'BUY'
-    : higherFast.at(-1)! < higherSlow.at(-1)!
-      ? 'SELL'
-      : null;
+  const higherAtrValues = calculateATR(higherTimeframeCandles, ATR_PERIOD);
+  const higherAtr = higherAtrValues.at(-1);
+  if (!Number.isFinite(higherAtr) || higherAtr! <= 0) return [];
+  const higherEmaSeparation = higherFast.at(-1)! - higherSlow.at(-1)!;
+  const higherTrend: TradeDirection | null = Math.abs(higherEmaSeparation) <= higherAtr! * 0.1
+    ? null
+    : higherEmaSeparation > 0
+      ? 'BUY'
+      : 'SELL';
   const signals: Signal[] = [];
 
   const trendDirection: TradeDirection | null = lastFast > slow.at(-1)!
@@ -144,22 +149,30 @@ export function evaluateTechnicalStrategies(
     : lastFast < slow.at(-1)!
       ? 'SELL'
       : null;
+  const latestBody = Math.abs(latest.close - latest.open);
   const trendRetest = trendDirection === 'BUY'
-    ? previous.low <= previousFast + atr * 0.15 && latest.close > lastFast && latest.close > latest.open
+    ? previous.low <= previousFast + atr * 0.3 && latest.close > lastFast &&
+      latest.close > latest.open && latestBody >= atr * 0.15
     : trendDirection === 'SELL'
-      ? previous.high >= previousFast - atr * 0.15 && latest.close < lastFast && latest.close < latest.open
+      ? previous.high >= previousFast - atr * 0.3 && latest.close < lastFast &&
+        latest.close < latest.open && latestBody >= atr * 0.15
       : false;
-  if (trendDirection && trendRetest && (higherTrend === trendDirection || instrumentType === 'synthetic')) {
+  if (trendDirection && trendRetest) {
+    const trendScore = higherTrend === trendDirection ? 6.8 : higherTrend === null ? 6.2 : 5.8;
     signals.push(createSignal(
       'Trend Pullback',
       trendDirection,
       timeframe,
-      higherTrend === trendDirection ? 6.8 : 5.0,
+      trendScore,
       latest,
       atr,
       [
         `${EMA_FAST}-EMA pullback reclaimed in the direction of the ${EMA_SLOW}-EMA trend.`,
-        higherTrend === trendDirection ? 'Higher-timeframe trend agrees with momentum.' : 'Synthetic instrument: higher-timeframe alignment is not required.',
+        higherTrend === trendDirection
+          ? 'Higher-timeframe trend agrees with momentum.'
+          : higherTrend === null
+            ? 'Higher-timeframe trend is neutral; execution-timeframe confirmation supports this candidate.'
+            : 'Higher-timeframe trend disagrees; watch-only candidate below the automatic-execution score threshold.',
       ],
       digits,
       tickSize,
@@ -171,22 +184,26 @@ export function evaluateTechnicalStrategies(
   if (lookback.length === 20) {
     const resistance = Math.max(...lookback.map((candle) => candle.high));
     const support = Math.min(...lookback.map((candle) => candle.low));
-    const body = Math.abs(latest.close - latest.open);
-    const bullishBreakout = latest.close > resistance && latest.close > latest.open && body >= atr * 0.8;
-    const bearishBreakout = latest.close < support && latest.close < latest.open && body >= atr * 0.8;
+    const body = latestBody;
+    const bullishBreakout = latest.close > resistance && latest.close > latest.open && body >= atr * 0.6;
+    const bearishBreakout = latest.close < support && latest.close < latest.open && body >= atr * 0.6;
     const breakoutDirection: TradeDirection | null = bullishBreakout ? 'BUY' : bearishBreakout ? 'SELL' : null;
-    // Require higher-timeframe confirmation: reject counter-trend noise that gets trapped by market makers
-    if (breakoutDirection && (higherTrend === breakoutDirection || instrumentType === 'synthetic')) {
+    if (breakoutDirection) {
+      const breakoutScore = higherTrend === breakoutDirection ? 6.5 : higherTrend === null ? 6.2 : 5.8;
       signals.push(createSignal(
         'Volatility Breakout',
         breakoutDirection,
         timeframe,
-        higherTrend === breakoutDirection ? 6.5 : 4.8,
+        breakoutScore,
         latest,
         atr,
         [
-          `Closed candle broke the previous 20-bar ${breakoutDirection === 'BUY' ? 'high' : 'low'} with a body at least 0.8 ATR.`,
-          higherTrend === breakoutDirection ? 'Higher-timeframe trend aligns and confirms breakout.' : 'Synthetic instrument: higher-timeframe alignment not required.',
+          `Candle broke the previous 20-bar ${breakoutDirection === 'BUY' ? 'high' : 'low'} with a body at least 0.6 ATR.`,
+          higherTrend === breakoutDirection
+            ? 'Higher-timeframe trend aligns and confirms breakout.'
+            : higherTrend === null
+              ? 'Higher-timeframe trend is neutral; breakout confirmation supports this candidate.'
+              : 'Higher-timeframe trend disagrees; watch-only candidate below the automatic-execution score threshold.',
         ],
         digits,
         tickSize,

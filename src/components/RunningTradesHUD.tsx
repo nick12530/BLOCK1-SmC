@@ -53,9 +53,9 @@ export const RunningTradesHUD: React.FC<RunningTradesHUDProps> = ({ onOpenTradeS
   }
 
   return (
-    <div className="w-full bg-white dark:bg-[#0d1117] border border-slate-200 dark:border-zinc-800/80 rounded-xl sm:rounded-2xl p-3 sm:p-4 shadow-xs font-mono text-xs">
+    <div className="neo-panel neo-card w-full border rounded-2xl p-4 sm:p-5 font-mono text-xs">
       {/* Top Banner Header: Aggregate Running P&L */}
-      <div className="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-zinc-800/80 flex-wrap gap-2">
+      <div className="flex items-center justify-between pb-1 flex-wrap gap-3">
         <div className="flex items-center gap-2">
           <span className="relative flex h-2.5 w-2.5">
             <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500" />
@@ -98,13 +98,14 @@ export const RunningTradesHUD: React.FC<RunningTradesHUDProps> = ({ onOpenTradeS
           const isPosProfit = pos.profit >= 0;
           const posSymbol = pos.symbol || ticker.symbol || 'USDJPY';
           const cfg = getInstrumentConfig(posSymbol);
-          const currentPrice = isBuy ? ticker.bid : ticker.ask;
+          const hasLiveQuote = ticker.symbol === posSymbol;
+          const pipsGain = Number(pos.pips.toFixed(1));
+          const currentPrice = hasLiveQuote
+            ? isBuy ? ticker.bid : ticker.ask
+            : pos.price_open + (isBuy ? pipsGain : -pipsGain) * cfg.pipSize;
 
-          // Pip calculations
-          const pipSize = cfg.pipSize || 0.01;
-          const pipsGain = Number(((pos.profit / (pos.volume * 100)) / pipSize).toFixed(1));
-          const slDistancePips = pos.sl > 0 ? Math.abs(currentPrice - pos.sl) / pipSize : 0;
-          const tpDistancePips = pos.tp > 0 ? Math.abs(pos.tp - currentPrice) / pipSize : 0;
+          const slDistancePips = pos.sl > 0 ? Math.abs(currentPrice - pos.sl) / cfg.pipSize : 0;
+          const tpDistancePips = pos.tp > 0 ? Math.abs(pos.tp - currentPrice) / cfg.pipSize : 0;
 
           // Progress bar towards TP / SL
           let progressPct = 50;
@@ -119,7 +120,7 @@ export const RunningTradesHUD: React.FC<RunningTradesHUDProps> = ({ onOpenTradeS
           return (
             <div
               key={pos.ticket}
-              className="bg-slate-50 dark:bg-[#12161f] border border-slate-200 dark:border-zinc-800/80 rounded-xl p-3 flex flex-col justify-between gap-2.5 transition-all hover:border-slate-300 dark:hover:border-zinc-700 min-w-0 overflow-hidden"
+              className="neo-panel neo-card border rounded-2xl p-4 flex flex-col justify-between gap-3 transition-all min-w-0 overflow-hidden"
             >
               {/* Row 1: Symbol, Direction, Volume, Live P&L */}
               <div className="flex items-center justify-between gap-2 min-w-0">
@@ -164,7 +165,7 @@ export const RunningTradesHUD: React.FC<RunningTradesHUDProps> = ({ onOpenTradeS
                   </div>
                 </div>
                 <div>
-                  <div className="text-[9px] uppercase text-slate-400">Current Spot</div>
+                  <div className="text-[9px] uppercase text-slate-400">{hasLiveQuote ? 'Live Spot' : 'Position Mark'}</div>
                   <div className="font-bold text-slate-900 dark:text-white">
                     {currentPrice.toFixed(cfg.digits)}
                   </div>
@@ -196,7 +197,7 @@ export const RunningTradesHUD: React.FC<RunningTradesHUDProps> = ({ onOpenTradeS
               )}
 
               {/* Row 3: Action Buttons (Breakeven, Partial Scale Out, Close) */}
-              <div className="flex items-center gap-1.5 pt-1 border-t border-slate-200/60 dark:border-zinc-800/60">
+              <div className="flex items-center gap-1.5 pt-2">
                 <button
                   type="button"
                   onClick={() => {

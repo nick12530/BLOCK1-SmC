@@ -65,9 +65,9 @@ export const TradingViewWidget: React.FC<TradingViewWidgetProps> = memo(({
   const [showConfigMenu, setShowConfigMenu] = useState(false);
   const [chartKey, setChartKey] = useState(0);
 
-  const engine = useEngine();
   const ticker = useTicker();
   const market = useMarket();
+  const engine = useEngine();
   const bestOpportunity = useBestOpportunity();
   const autoFocusEnabled = engine.autoSelectBestScenario ?? true;
 
@@ -148,21 +148,11 @@ export const TradingViewWidget: React.FC<TradingViewWidgetProps> = memo(({
             {rawSymbol}
           </span>
 
-          {/* TradingView Live Data Sync Badge */}
           <span
-            className={`hidden lg:inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full border ${
-              engine.tradingViewSynced
-                ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30'
-                : 'bg-slate-500/10 text-slate-600 dark:text-slate-400 border-slate-500/20'
-            }`}
-            title="SMC Signals and market calculations are powered by live TradingView interbank chart data"
+            className="hidden lg:inline-flex items-center text-[10px] font-bold px-2 py-0.5 rounded-full border bg-slate-500/10 text-slate-600 dark:text-slate-400 border-slate-500/20"
+            title="This chart embed is for viewing only. Signal calculations use verified MT5 broker data."
           >
-            <span
-              className={`w-1.5 h-1.5 rounded-full ${
-                engine.tradingViewSynced ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'
-              }`}
-            />
-            <span>TV Data Active</span>
+            Chart view only · MT5 powers signals
           </span>
 
           {/* Auto-Scenario Focus Pill */}

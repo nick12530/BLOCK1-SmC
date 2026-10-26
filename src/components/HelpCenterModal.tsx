@@ -7,7 +7,7 @@
  * - The 6 Institutional Execution Verification Gates
  * - Dealing Range & 50% Equilibrium (Discount vs Premium)
  * - MT5 Telemetry (Balance, Equity, Margin, Free Margin, Margin Level %)
- * - MT5 Live Broker Connector & Mobile PWA Installation
+ * - PC-local MT5 Live Broker Connector
  */
 
 import React, { useState, useMemo } from 'react';
@@ -16,7 +16,6 @@ import {
   BookOpen,
   Zap,
   Layers,
-  Smartphone,
   Server,
   DollarSign,
   CheckCircle2,
@@ -48,8 +47,7 @@ type TabType =
   | 'dealing_range'
   | 'balances'
   | 'abbreviations'
-  | 'mt5'
-  | 'phone_pwa';
+  | 'mt5';
 
 interface TabItem {
   id: TabType;
@@ -69,7 +67,6 @@ const TABS: TabItem[] = [
   { id: 'balances', num: '07', title: 'MT5 Balances & Margin', desc: 'Capital & leverage guide', icon: DollarSign },
   { id: 'abbreviations', num: '08', title: 'Glossary & SMC', desc: 'OB, BOS, CHoCH, FVG, ATR, SFP', icon: Layers },
   { id: 'mt5', num: '09', title: 'MT5 Live Bridge', desc: 'Broker execution & socket sync', icon: Server },
-  { id: 'phone_pwa', num: '10', title: 'Mobile Server & PWA', desc: 'Start server on phone & install app', icon: Smartphone },
 ];
 
 export const HelpCenterModal: React.FC<HelpCenterModalProps> = ({
@@ -291,7 +288,7 @@ export const HelpCenterModal: React.FC<HelpCenterModalProps> = ({
                     <span>10. MT5 ZeroMQ Bridge &amp; Phone Server Engine</span>
                   </div>
                   <p className="text-zinc-600 dark:text-zinc-400 leading-relaxed">
-                    <strong>Functionality:</strong> High-performance bridge syncing real-time broker ticks, margin, and order execution with MetaTrader 5. When offline, operates as a self-contained algorithmic station. Features native mobile server launchers (<code>./start-on-phone.sh</code>) for Termux and iSH with Tailscale remote network synchronization.
+                    <strong>Functionality:</strong> PC-local bridge syncing real-time broker ticks, margin, and order execution with MetaTrader 5. The bridge is bound to the same Windows PC and does not expose remote device access.
                   </p>
                 </div>
               </div>
@@ -762,69 +759,6 @@ export const HelpCenterModal: React.FC<HelpCenterModalProps> = ({
             </div>
           )}
 
-          {/* TAB 9: MOBILE PWA */}
-          {activeTab === 'phone_pwa' && (
-            <div className="space-y-3.5">
-              <div className="p-3.5 rounded-xl bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-800 space-y-1">
-                <span className="font-bold text-zinc-950 dark:text-white font-mono text-xs block">
-                  Install as Standalone Mobile App (iOS &amp; Android)
-                </span>
-                <p className="text-[11px] text-zinc-600 dark:text-zinc-400 leading-relaxed">
-                  Progressive Web App (PWA) configured for edge-to-edge OLED mobile screens with zero browser address bar jumping:
-                </p>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-[11px]">
-                <div className="p-3.5 rounded-xl bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 space-y-2">
-                  <div className="flex items-center gap-1.5 font-bold text-zinc-950 dark:text-white font-mono text-xs">
-                    <span className="px-1.5 py-0.5 rounded bg-zinc-200 dark:bg-zinc-800">iOS</span>
-                    <span>iPhone &amp; iPad (Safari)</span>
-                  </div>
-                  <ol className="list-decimal list-inside space-y-1 text-zinc-600 dark:text-zinc-400">
-                    <li>Open this URL in <strong>Safari</strong> on your iPhone.</li>
-                    <li>Tap the <strong>Share</strong> icon (square with arrow up).</li>
-                    <li>Select <strong>&quot;Add to Home Screen&quot;</strong>.</li>
-                    <li>Tap <strong>&quot;Add&quot;</strong> in top-right.</li>
-                  </ol>
-                </div>
-
-                <div className="p-3.5 rounded-xl bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 space-y-2">
-                  <div className="flex items-center gap-1.5 font-bold text-zinc-950 dark:text-white font-mono text-xs">
-                    <span className="px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-500">Android</span>
-                    <span>Google Chrome</span>
-                  </div>
-                  <ol className="list-decimal list-inside space-y-1 text-zinc-600 dark:text-zinc-400">
-                    <li>Open this URL in <strong>Google Chrome</strong>.</li>
-                    <li>Tap the <strong>3 dots menu (&vellip;)</strong>.</li>
-                    <li>Select <strong>&quot;Install App&quot;</strong> or <strong>&quot;Add to Home Screen&quot;</strong>.</li>
-                    <li>Confirm installation.</li>
-                  </ol>
-                </div>
-              </div>
-
-              {/* Start Local Server Directly on Phone */}
-              <div className="p-3.5 rounded-xl bg-slate-900/90 border border-slate-800 space-y-2.5 font-mono text-[11px]">
-                <div className="flex items-center justify-between">
-                  <span className="font-bold text-sky-400">Launch Phone Server (Android Termux or iOS iSH)</span>
-                  <span className="text-[10px] text-zinc-400">1-Command Launcher</span>
-                </div>
-                <div className="p-2.5 rounded-lg bg-black/80 text-emerald-400 text-[10px] font-mono leading-relaxed border border-zinc-800 overflow-x-auto">
-                  # 1. On Android Termux:<br />
-                  pkg update &amp;&amp; pkg install nodejs git<br />
-                  bash start-on-phone.sh<br />
-                  <br />
-                  # 2. Or run zero-dependency mobile HTTP daemon directly:<br />
-                  node scripts/mobile-server.js<br />
-                  <br />
-                  # Access in mobile browser: http://localhost:3000 (or your Wi-Fi LAN IP)
-                </div>
-                <div className="text-[10px] text-zinc-400 space-y-1">
-                  <p>• <strong>Tailscale Remote Sync:</strong> Connect your phone to your Tailscale mesh network (e.g. <code>http://100.x.y.z:8000</code>). The terminal will sync ticks and trades to your desktop MT5 terminal securely over cellular data.</p>
-                  <p>• <strong>100% Standalone Offline Mode:</strong> If MT5 is not reachable, the system automatically runs as a full client-side algorithmic trading workstation with real-time indicators and simulated execution.</p>
-                </div>
-              </div>
-            </div>
-          )}
         </div>
 
         {/* Footer */}

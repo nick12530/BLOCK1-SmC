@@ -173,9 +173,9 @@ export const SignalEngine: React.FC<SignalEngineProps> = ({ snapshot, onTradeSig
       ) : (
         <div className="border border-dashed border-[#1e2a3d] rounded-lg p-5 bg-[#0b0f17]/40 text-center flex flex-col items-center justify-center gap-2">
           <AlertCircle className="w-5 h-5 text-[#6b7a90]" />
-          <div className="text-xs text-[#94a3b8] font-medium">No active institutional setup</div>
+          <div className="text-xs text-[#94a3b8] font-medium">No active setup</div>
           <div className="text-[11px] text-[#6b7a90] max-w-[240px]">
-            Waiting for a 5.0+ setup with HTF alignment, FVG/OB POI retest, matching candle confirmation, and an active London or New York session.
+            Scanning for SMC retests, confirmed trend pullbacks, and breakouts. Neutral-timeframe candidates can qualify; counter-trend candidates are excluded from auto-execution. Score, risk, spread, and news checks still apply.
           </div>
           <button
             disabled

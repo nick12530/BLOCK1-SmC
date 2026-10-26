@@ -4,17 +4,9 @@ import './index.css';
 
 createRoot(document.getElementById('root')!).render(<App />);
 
-// Register Service Worker for standalone mobile web app (PWA) support
+// Remove service workers left behind by older installations.
 if ('serviceWorker' in navigator && typeof window !== 'undefined') {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker
-      .register('/sw.js')
-      .then((reg) => {
-        // Service worker registered successfully
-      })
-      .catch((err) => {
-        // Service worker registration skipped or blocked
-      });
-  });
+  void navigator.serviceWorker.getRegistrations()
+    .then((registrations) => Promise.all(registrations.map((registration) => registration.unregister())))
+    .catch((error) => console.error('Could not remove old service worker registrations:', error));
 }
-

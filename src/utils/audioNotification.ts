@@ -72,6 +72,32 @@ class SignalAudioNotifier {
     return this.volumeLevel === 'subtle' ? 0.15 : this.volumeLevel === 'normal' ? 0.55 : 0.35;
   }
 
+  private playNotes(notes: number[], waveform: OscillatorType = 'triangle', noteGap = 0.11) {
+    if (this.isMuted) return;
+    this.initContext();
+    if (!this.ctx) return;
+
+    const now = this.ctx.currentTime;
+    const masterGain = this.ctx.createGain();
+    masterGain.gain.setValueAtTime(this.getGainMultiplier(), now);
+    masterGain.connect(this.ctx.destination);
+
+    notes.forEach((frequency, index) => {
+      const start = now + index * noteGap;
+      const oscillator = this.ctx!.createOscillator();
+      const envelope = this.ctx!.createGain();
+      oscillator.type = waveform;
+      oscillator.frequency.setValueAtTime(frequency, start);
+      envelope.gain.setValueAtTime(0.0001, start);
+      envelope.gain.linearRampToValueAtTime(0.7, start + 0.008);
+      envelope.gain.exponentialRampToValueAtTime(0.0001, start + 0.115);
+      oscillator.connect(envelope);
+      envelope.connect(masterGain);
+      oscillator.start(start);
+      oscillator.stop(start + 0.12);
+    });
+  }
+
   public onSignalAlert(callback: (direction: string, price: number) => void): () => void {
     this.listeners.add(callback);
     return () => {
@@ -97,53 +123,8 @@ class SignalAudioNotifier {
       });
     }
 
-    if (this.isMuted) return;
-
     try {
-      this.initContext();
-      if (!this.ctx) return;
-
-      const now = this.ctx.currentTime;
-      const masterGain = this.ctx.createGain();
-      masterGain.gain.setValueAtTime(this.getGainMultiplier(), now);
-
-      const filter = this.ctx.createBiquadFilter();
-      filter.type = 'lowpass';
-      filter.frequency.setValueAtTime(1800, now);
-      filter.Q.setValueAtTime(0.7, now);
-
-      masterGain.connect(filter);
-      filter.connect(this.ctx.destination);
-
-      const isBuy = direction === 'BUY';
-      const rootFreq = isBuy ? 659.25 : 587.33; // E5 for Buy, D5 for Sell
-      const secondFreq = isBuy ? 987.77 : 440.0; // B5 for Buy, A4 for Sell
-
-      // Note 1
-      const osc1 = this.ctx.createOscillator();
-      const gain1 = this.ctx.createGain();
-      osc1.type = 'sine';
-      osc1.frequency.setValueAtTime(rootFreq, now);
-      gain1.gain.setValueAtTime(0.0001, now);
-      gain1.gain.linearRampToValueAtTime(0.8, now + 0.015);
-      gain1.gain.exponentialRampToValueAtTime(0.0001, now + 0.32);
-      osc1.connect(gain1);
-      gain1.connect(masterGain);
-      osc1.start(now);
-      osc1.stop(now + 0.33);
-
-      // Note 2 (Chime response after 60ms)
-      const osc2 = this.ctx.createOscillator();
-      const gain2 = this.ctx.createGain();
-      osc2.type = 'sine';
-      osc2.frequency.setValueAtTime(secondFreq, now + 0.06);
-      gain2.gain.setValueAtTime(0.0001, now + 0.06);
-      gain2.gain.linearRampToValueAtTime(0.7, now + 0.08);
-      gain2.gain.exponentialRampToValueAtTime(0.0001, now + 0.45);
-      osc2.connect(gain2);
-      gain2.connect(masterGain);
-      osc2.start(now + 0.06);
-      osc2.stop(now + 0.46);
+      this.playNotes(direction === 'BUY' ? [784, 1046] : [659, 440], 'triangle', 0.14);
     } catch (e) {
       console.warn('Signal alert failed:', e);
     }
@@ -192,6 +173,14 @@ class SignalAudioNotifier {
       oscTone.stop(now + 0.29);
     } catch (e) {
       console.warn('Trade execution sound failed:', e);
+    }
+  }
+
+  public playPrecisionEntryAlert() {
+    try {
+      this.playNotes([1047, 1397, 1760], 'square', 0.085);
+    } catch (e) {
+      console.warn('Precision entry sound failed:', e);
     }
   }
 
@@ -314,11 +303,12 @@ class SignalAudioNotifier {
   /**
    * Quick test preview of all system sounds
    */
-  public playTestChime(type: 'signal' | 'trade' | 'profit' | 'loss' = 'signal') {
+  public playTestChime(type: 'signal' | 'trade' | 'precision' | 'profit' | 'loss' = 'signal') {
     const wasMuted = this.isMuted;
     this.isMuted = false;
     if (type === 'signal') this.playSignalAlert('BUY', 4188.5, false);
     else if (type === 'trade') this.playTradeExecutionAlert('BUY');
+    else if (type === 'precision') this.playPrecisionEntryAlert();
     else if (type === 'profit') this.playProfitAlert(25.5);
     else if (type === 'loss') this.playLossAlert(-10.0);
     this.isMuted = wasMuted;

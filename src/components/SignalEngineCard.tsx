@@ -6,11 +6,11 @@
  * - Sleek candidate selector pills (when multiple setups exist)
  * - Spacious 3-column target level matrix (Entry, Stop Loss, Take Profit)
  * - Ergonomic volume controls with quick-pick presets (0.01, 0.02, 0.05, 0.10)
- * - High-contrast 1-Click Execution Button with clear risk/reward context
+ * - High-contrast execution button with clear risk/reward context
  */
 
 import React, { useState, useMemo } from 'react';
-import { useMarket, useTicker, useEngine } from '../hooks/useTradingStore';
+import { useMarket, useTicker } from '../hooks/useTradingStore';
 import { tradingEngine } from '../engine/tradingEngine';
 import {
   ArrowRight,
@@ -19,7 +19,6 @@ import {
   Check,
   Minus,
   Plus,
-  Bot,
   TrendingUp,
   TrendingDown,
   ShieldAlert,
@@ -27,6 +26,7 @@ import {
 import { Signal, TradeDirection } from '../types/smc';
 import { buildSignalRationale } from '../engine/tradeJournal';
 import { getInstrumentConfig } from '../engine/instrumentConfig';
+import type { SupportedSymbol } from '../engine/instrumentConfig';
 import { signalAudioNotifier } from '../utils/audioNotification';
 
 interface SignalEngineCardProps {
@@ -35,10 +35,16 @@ interface SignalEngineCardProps {
 
 const LOT_PRESETS = [0.01, 0.02, 0.05, 0.10];
 
+function formatSignalCountdown(seconds?: number): string {
+  if (seconds === undefined || seconds <= 0) return '—';
+  const minutes = Math.floor(seconds / 60);
+  const remainingSeconds = seconds % 60;
+  return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
+}
+
 export const SignalEngineCard: React.FC<SignalEngineCardProps> = React.memo(({ onExecuteSignal }) => {
   const market = useMarket();
   const ticker = useTicker();
-  const engine = useEngine();
 
   // Execution parameters
   const [lotSize, setLotSize] = useState<number>(0.01);
@@ -51,23 +57,42 @@ export const SignalEngineCard: React.FC<SignalEngineCardProps> = React.memo(({ o
     (signal) => `${signal.strategy}:${signal.direction}:${signal.timeframe}:${signal.timestamp}` === selectedSignalId
   );
   const rawSig = selectedSignal ?? market.signal;
+  const scannerAnalysis = rawSig
+    ? market.scannerAnalyses?.find(
+        (analysis) =>
+          analysis.symbol === ticker.symbol &&
+          analysis.signal?.timestamp === rawSig.timestamp
+      )
+    : undefined;
+  const scannerBlockReason =
+    scannerAnalysis && scannerAnalysis.status !== 'READY'
+      ? scannerAnalysis.rejectionReason ||
+        `Confluence ${scannerAnalysis.confluenceScore}/100 is below the ${getInstrumentConfig(ticker.symbol).minScore}/100 setup threshold.`
+      : null;
   const maxSpreadPoints = tradingEngine.getMaxSpreadPoints();
   const isWideSpread = ticker.spread > maxSpreadPoints;
 
   const activeDirection: TradeDirection = rawSig?.direction || (market.bias === 'bearish' ? 'SELL' : 'BUY');
   const isBull = activeDirection === 'BUY';
+  const instrumentConfig = getInstrumentConfig(ticker.symbol);
 
   const currentSpot = activeDirection === 'BUY' ? ticker.ask : ticker.bid;
   const entryPrice = currentSpot;
   const signalEntry = rawSig?.entry ?? null;
   const riskLimitedLotSize = rawSig ? tradingEngine.getRiskBasedVolume(rawSig.sl, lotSize, rawSig.direction) : null;
+  const sizingInfo = rawSig
+    ? tradingEngine.getRiskSizingInfo(rawSig.sl, rawSig.direction, ticker.symbol as SupportedSymbol)
+    : null;
+  const hasSafeLot = typeof riskLimitedLotSize === 'number' && riskLimitedLotSize > 0;
   const slPrice = rawSig?.sl ?? null;
   const tpPrice = rawSig?.tp ?? null;
-  const riskPts = rawSig ? Math.abs(rawSig.entry - rawSig.sl) : 0;
-  const rewardPts = rawSig ? Math.abs(rawSig.tp - rawSig.entry) : 0;
+  const riskPts = rawSig ? Math.abs(entryPrice - rawSig.sl) : 0;
+  const rewardPts = rawSig ? Math.abs(rawSig.tp - entryPrice) : 0;
+  const riskPips = riskPts / instrumentConfig.pipSize;
+  const rewardPips = rewardPts / instrumentConfig.pipSize;
 
   const tradeMetrics = useMemo(() => {
-    const config = getInstrumentConfig(ticker.symbol);
+    const config = instrumentConfig;
     const totalLots = Number(((riskLimitedLotSize ?? lotSize) * positionCount).toFixed(2));
     const spec = market.symbolSpec;
     let riskDollar = 0;
@@ -97,7 +122,7 @@ export const SignalEngineCard: React.FC<SignalEngineCardProps> = React.memo(({ o
       rewardDollar,
       rrRatio,
     };
-  }, [riskPts, rewardPts, lotSize, positionCount, riskLimitedLotSize, market.symbolSpec, ticker.symbol, currentSpot]);
+  }, [riskPts, rewardPts, lotSize, positionCount, riskLimitedLotSize, market.symbolSpec, ticker.symbol, currentSpot, instrumentConfig]);
 
   const handleAdjustLot = (delta: number) => {
     setLotSize((prev) => {
@@ -116,11 +141,11 @@ export const SignalEngineCard: React.FC<SignalEngineCardProps> = React.memo(({ o
   };
 
   const handleExecute = async () => {
-    if (isWideSpread || !rawSig) return;
+    if (isWideSpread || !rawSig || riskLimitedLotSize === null || riskLimitedLotSize <= 0) return;
     signalAudioNotifier.unlock();
     signalAudioNotifier.playTradeExecutionAlert(rawSig.direction);
 
-    const safeLot = riskLimitedLotSize ?? lotSize ?? 0.01;
+    const safeLot = riskLimitedLotSize;
     if (onExecuteSignal) {
       await onExecuteSignal(safeLot, positionCount, rawSig);
     } else {
@@ -144,19 +169,19 @@ export const SignalEngineCard: React.FC<SignalEngineCardProps> = React.memo(({ o
   };
 
   return (
-    <div className="bg-white dark:bg-[#0c0d12] border border-slate-200 dark:border-zinc-800 rounded-2xl p-4 sm:p-5 flex flex-col justify-between shadow-xs space-y-4 font-mono text-xs transition-colors min-w-0 overflow-hidden">
-      {/* 1. Top Bar: Header, Pair Badge, Auto-Trader Switch & Copy */}
-      <div className="flex items-center justify-between border-b border-slate-100 dark:border-zinc-800/80 pb-3 gap-2 min-w-0">
+    <div className="neo-panel neo-card border rounded-2xl p-5 sm:p-6 flex flex-col justify-between space-y-5 font-mono text-xs transition-colors min-w-0 overflow-hidden">
+      {/* 1. Top Bar: Active pair and signal controls */}
+      <div className="flex items-center justify-between pb-1 gap-2 min-w-0">
         <div className="flex items-center gap-2 min-w-0">
           <div className="w-7 h-7 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-500 shrink-0">
             <Zap className="w-3.5 h-3.5" />
           </div>
           <div>
-            <h2 className="font-black text-sm text-slate-900 dark:text-white uppercase tracking-wider font-sans">
+            <h2 className="font-black text-base text-slate-900 dark:text-white uppercase tracking-wider font-sans">
               Signal Engine
             </h2>
-            <div className="flex items-center gap-1.5 text-[10px] text-slate-400 dark:text-zinc-500">
-              <span>{ticker.symbol}</span>
+            <div className="flex items-center gap-1.5 text-[11px] font-bold text-slate-500 dark:text-zinc-400">
+              <span>{ticker.symbol} · {market.signals.length} active setup{market.signals.length === 1 ? '' : 's'}</span>
               <span>·</span>
               <span>Spread: {ticker.spread} PTS</span>
             </div>
@@ -164,22 +189,6 @@ export const SignalEngineCard: React.FC<SignalEngineCardProps> = React.memo(({ o
         </div>
 
         <div className="flex items-center gap-2 shrink-0">
-          {/* Auto-Trader Quick Switch */}
-          <button
-            type="button"
-            onClick={() => tradingEngine.toggleAutoTrade()}
-            aria-pressed={engine.auto_trade}
-            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-bold transition-all cursor-pointer ${
-              engine.auto_trade
-                ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-600 dark:text-emerald-400'
-                : 'bg-slate-100 hover:bg-slate-200 dark:bg-zinc-900 dark:hover:bg-zinc-800 border-slate-200 dark:border-zinc-800 text-slate-600 dark:text-zinc-400'
-            }`}
-            title={engine.auto_trade ? 'Auto-Trader is active. Click to pause.' : 'Auto-Trader is idle. Click to activate.'}
-          >
-            <Bot className="w-3.5 h-3.5 shrink-0" />
-            <span>Auto: {engine.auto_trade ? 'ON' : 'OFF'}</span>
-          </button>
-
           <button
             type="button"
             onClick={handleCopy}
@@ -208,7 +217,7 @@ export const SignalEngineCard: React.FC<SignalEngineCardProps> = React.memo(({ o
                 onClick={() => setSelectedSignalId(sigId)}
                 className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-all cursor-pointer shrink-0 ${
                   isSelected
-                    ? 'bg-slate-900 text-white dark:bg-white dark:text-black border-slate-900 dark:border-white shadow-xs'
+                    ? 'neo-vivid-blue border-transparent text-white shadow-xs'
                     : 'bg-slate-50 dark:bg-zinc-900 border-slate-200 dark:border-zinc-800 text-slate-600 dark:text-zinc-400 hover:border-slate-300'
                 }`}
               >
@@ -252,11 +261,30 @@ export const SignalEngineCard: React.FC<SignalEngineCardProps> = React.memo(({ o
           )}
         </div>
 
-        <p className="text-xs leading-relaxed text-slate-700 dark:text-zinc-300">
+        <p className="text-sm font-medium leading-relaxed text-slate-800 dark:text-zinc-200">
           {rawSig
             ? rawSig.humanExplanation?.simpleSummary || buildSignalRationale(rawSig)
-            : 'Waiting for high-probability structural break and POI confirmation.'}
+            : 'Scanning live quotes for trend, structure, and entry-zone confirmation.'}
         </p>
+        {rawSig && (
+          <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] font-bold">
+            <span className="rounded-md bg-slate-900 px-2 py-1 text-white dark:bg-white dark:text-black">
+              {rawSig.timeframe} SETUP
+            </span>
+            <span className="rounded-md bg-sky-500/15 px-2 py-1 text-sky-700 dark:text-sky-300">
+              WINDOW {formatSignalCountdown(rawSig.validitySeconds)}
+            </span>
+            <span className="text-slate-500 dark:text-zinc-400">Signal quality is not a profit guarantee</span>
+          </div>
+        )}
+        {scannerBlockReason && (
+          <p
+            role="status"
+            className="mt-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[11px] font-bold text-amber-800 dark:text-amber-200"
+          >
+            Candidate signal · execution held: {scannerBlockReason}
+          </p>
+        )}
       </div>
 
       {/* 4. Target Price Levels Matrix (Entry, Stop Loss, Take Profit) */}
@@ -267,7 +295,7 @@ export const SignalEngineCard: React.FC<SignalEngineCardProps> = React.memo(({ o
             Entry Spot
           </span>
           <span className="text-sm font-black text-slate-900 dark:text-white tabular-nums block mt-1">
-            {signalEntry === null ? '—' : `$${signalEntry.toFixed(2)}`}
+            {signalEntry === null ? '—' : signalEntry.toFixed(instrumentConfig.digits)}
           </span>
           <span className="text-[10px] text-slate-500 dark:text-zinc-400 block mt-0.5">
             {rawSig ? rawSig.timeframe : 'Pending'}
@@ -283,7 +311,7 @@ export const SignalEngineCard: React.FC<SignalEngineCardProps> = React.memo(({ o
             {slPrice === null ? '—' : `$${slPrice.toFixed(2)}`}
           </span>
           <span className="text-[10px] text-slate-500 dark:text-zinc-400 block mt-0.5">
-            {rawSig ? `-${riskPts.toFixed(1)}p ($${tradeMetrics.riskDollar})` : 'Pending'}
+            {rawSig ? `-${riskPips.toFixed(1)} pips ($${tradeMetrics.riskDollar})` : 'Pending'}
           </span>
         </div>
 
@@ -293,13 +321,24 @@ export const SignalEngineCard: React.FC<SignalEngineCardProps> = React.memo(({ o
             Take Profit
           </span>
           <span className="text-sm font-black text-emerald-600 dark:text-emerald-400 tabular-nums block mt-1">
-            {tpPrice === null ? '—' : `$${tpPrice.toFixed(2)}`}
+            {tpPrice === null ? '—' : tpPrice.toFixed(instrumentConfig.digits)}
           </span>
           <span className="text-[10px] text-slate-500 dark:text-zinc-400 block mt-0.5">
-            {rawSig ? `+${rewardPts.toFixed(1)}p (+$${tradeMetrics.rewardDollar})` : 'Pending'}
+            {rawSig ? `+${rewardPips.toFixed(1)} pips (+$${tradeMetrics.rewardDollar})` : 'Pending'}
           </span>
         </div>
       </div>
+
+      {rawSig && (riskLimitedLotSize === null || riskLimitedLotSize <= 0) && (
+        <div
+          role="status"
+          className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[11px] font-bold leading-relaxed text-amber-800 dark:text-amber-200"
+        >
+          {sizingInfo
+            ? `No safe lot: broker minimum ${sizingInfo.minimumLot}L risks $${sizingInfo.minimumLotRisk.toFixed(2)} at the live quote, above your ${sizingInfo.riskPercent}% risk budget of $${sizingInfo.riskBudget.toFixed(2)}. This order remains blocked.`
+            : 'Waiting for a fresh broker quote and symbol specification. Position sizing is unavailable, so execution remains blocked.'}
+        </div>
+      )}
 
       {/* 5. Volume & Risk-Reward Configuration Row */}
       <div className="p-3 rounded-xl border border-slate-200 dark:border-zinc-800 bg-slate-50/70 dark:bg-zinc-900/60 flex items-center justify-between gap-3 min-w-0 flex-wrap">
@@ -308,7 +347,7 @@ export const SignalEngineCard: React.FC<SignalEngineCardProps> = React.memo(({ o
             Risk &amp; Reward
           </span>
           <span className="font-black text-xs text-slate-900 dark:text-white">
-            1:{tradeMetrics.rrRatio} RR · {tradeMetrics.totalLots}L Vol
+            1:{tradeMetrics.rrRatio} RR · {riskLimitedLotSize && riskLimitedLotSize > 0 ? `${riskLimitedLotSize.toFixed(2)}L safe` : 'Sizing blocked'}
           </span>
         </div>
 
@@ -363,13 +402,13 @@ export const SignalEngineCard: React.FC<SignalEngineCardProps> = React.memo(({ o
       {/* 7. High-Contrast 1-Click Execution Button */}
       <button
         onClick={handleExecute}
-        disabled={isWideSpread || !rawSig || riskLimitedLotSize === null || riskLimitedLotSize <= 0}
-        className={`w-full py-3.5 px-4 rounded-xl font-black text-xs sm:text-sm tracking-wider uppercase transition-all flex items-center justify-center gap-2 cursor-pointer min-w-0 ${
-          isWideSpread || !rawSig
-            ? 'bg-zinc-200 text-zinc-400 dark:bg-zinc-900 dark:text-zinc-600 cursor-not-allowed border border-zinc-300 dark:border-zinc-800'
+        disabled={isWideSpread || !rawSig || !sizingInfo || !hasSafeLot || Boolean(scannerBlockReason)}
+        className={`w-full py-4 px-4 rounded-xl font-black text-sm sm:text-base tracking-wider uppercase transition-all flex items-center justify-center gap-2 cursor-pointer min-w-0 ${
+          isWideSpread || !rawSig || !sizingInfo || !hasSafeLot || Boolean(scannerBlockReason)
+            ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/50 dark:text-amber-200 cursor-not-allowed border border-amber-300/70 dark:border-amber-800/70'
             : activeDirection === 'SELL'
-              ? 'bg-rose-600 hover:bg-rose-500 text-white shadow-md active:scale-[0.99] border border-rose-500'
-              : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-md active:scale-[0.99] border border-emerald-500'
+              ? 'neo-vivid-red text-white shadow-md active:scale-[0.99] border border-rose-400'
+              : 'neo-vivid-green text-white shadow-md active:scale-[0.99] border border-emerald-400'
         }`}
       >
         <span className="truncate">
@@ -377,9 +416,13 @@ export const SignalEngineCard: React.FC<SignalEngineCardProps> = React.memo(({ o
             ? 'WAITING FOR CONFIRMED SETUP'
             : isWideSpread
               ? `SPREAD TOO WIDE (${ticker.spread} PTS)`
-              : !riskLimitedLotSize
-                ? 'RISK SIZING UNAVAILABLE'
-                : `${activeDirection} ${riskLimitedLotSize.toFixed(2)} LOTS @ $${entryPrice.toFixed(2)}`}
+              : !sizingInfo
+                ? 'WAITING FOR BROKER SIZING DATA'
+              : !hasSafeLot
+                ? 'RISK LIMIT: MINIMUM LOT TOO LARGE'
+                  : scannerBlockReason
+                    ? 'SETUP NOT EXECUTION-READY'
+                  : `${activeDirection} ${riskLimitedLotSize.toFixed(2)} LOTS @ ${entryPrice.toFixed(instrumentConfig.digits)}`}
         </span>
         <ArrowRight className="w-4 h-4 shrink-0" />
       </button>

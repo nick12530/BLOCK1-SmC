@@ -11,6 +11,9 @@ import logging
 import time
 import sqlite3
 import threading
+from urllib.error import HTTPError, URLError
+from urllib.parse import urlencode
+from urllib.request import Request as UrlRequest, urlopen
 from functools import wraps
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -24,6 +27,9 @@ mt5 = cast(Any, mt5)
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
+from risk_math import is_valid_close_volume, stop_risk, volume_for_risk
+from broker_time import future_broker_clock_offset_seconds
+from calendar_feed import normalize_finnhub_calendar, normalize_forexfactory_calendar
 
 app = FastAPI(title="Local MT5 Bridge", docs_url=None, redoc_url=None)
 
@@ -38,6 +44,9 @@ _inflight_order_requests: set[str] = set()
 _symbol_spec_cache: dict[tuple[int, str, str], dict] = {}
 _closed_trades_cache: dict[str, tuple[float, list[dict]]] = {}
 _closed_trades_cache_ttl = 5.0  # Cache closed trades for 5s to eliminate redundant heavy deal processing
+_economic_calendar_cache: tuple[float, str, list[dict]] | None = None
+_economic_calendar_cache_lock = threading.Lock()
+_economic_calendar_cache_ttl = 15 * 60
 RISK_CONFIG = json.loads((Path(__file__).resolve().parents[1] / "risk-config.json").read_text(encoding="utf-8"))
 STATE_DIRECTORY = Path(os.environ.get("LOCALAPPDATA", str(Path.home()))) / "SMCBridge"
 STATE_DIRECTORY.mkdir(parents=True, exist_ok=True)
@@ -289,6 +298,7 @@ class AutoTradeControlRequest(BaseModel):
 
 class CloseRequest(BaseModel):
     ticket: int = Field(gt=0)
+    volume: float | None = Field(default=None, gt=0, le=100)
     expectedLogin: int = Field(gt=0)
     expectedServer: str = Field(min_length=1, max_length=128)
 
@@ -376,6 +386,10 @@ def read_snapshot(symbol: str) -> dict:
     symbol_spec = get_symbol_spec(account["login"], account["server"], resolved_symbol, info)
     if info.point <= 0 or tick.bid <= 0 or tick.ask <= 0:
         raise HTTPException(status_code=503, detail=f"MT5 returned an invalid quote for {resolved_symbol!r}.")
+    broker_clock_offset = future_broker_clock_offset_seconds(
+        float(tick.time),
+        datetime.now(timezone.utc).timestamp(),
+    )
     account_mode = {
         mt5.ACCOUNT_TRADE_MODE_DEMO: "demo",
         mt5.ACCOUNT_TRADE_MODE_REAL: "live",
@@ -403,8 +417,11 @@ def read_snapshot(symbol: str) -> dict:
             return []
         return [
             {
-                "time": int(rate["time"]) * 1000,
-                "timeStr": datetime.fromtimestamp(int(rate["time"]), timezone.utc).strftime("%H:%M"),
+                "time": (int(rate["time"]) - broker_clock_offset) * 1000,
+                "timeStr": datetime.fromtimestamp(
+                    int(rate["time"]) - broker_clock_offset,
+                    timezone.utc,
+                ).strftime("%H:%M"),
                 "open": float(rate["open"]),
                 "high": float(rate["high"]),
                 "low": float(rate["low"]),
@@ -574,6 +591,97 @@ def ping(request: Request) -> dict:
     if account:
         return {"status": "ok", "connected": True, "login": account["login"], "server": account["server"]}
     return {"status": "ok", "connected": False, "message": "MT5 Bridge active; waiting for MT5 terminal"}
+
+
+@app.get("/api/economic-calendar")
+def economic_calendar(request: Request) -> dict:
+    require_bridge_token(request)
+    global _economic_calendar_cache
+    api_key = os.environ.get("FINNHUB_API_KEY", "").strip()
+
+    now_monotonic = time.monotonic()
+    with _economic_calendar_cache_lock:
+        if (
+            _economic_calendar_cache is not None
+            and now_monotonic - _economic_calendar_cache[0] < _economic_calendar_cache_ttl
+        ):
+            cached_at = datetime.now(timezone.utc)
+            source, raw_events = _economic_calendar_cache[1], _economic_calendar_cache[2]
+            events = (
+                normalize_forexfactory_calendar(raw_events, cached_at)
+                if source == "Forex Factory"
+                else normalize_finnhub_calendar(raw_events, cached_at)
+            )
+            return {
+                "available": True,
+                "events": events,
+                "source": source,
+                "updatedAt": cached_at.isoformat(),
+            }
+
+    now = datetime.now(timezone.utc)
+    provider_failures: list[str] = []
+    providers: list[tuple[str, str]] = [
+        ("Forex Factory", "https://nfs.faireconomy.media/ff_calendar_thisweek.json"),
+    ]
+    if api_key:
+        query = urlencode(
+            {
+                "from": now.date().isoformat(),
+                "to": (now.date() + timedelta(days=7)).isoformat(),
+                "token": api_key,
+            }
+        )
+        providers.append(
+            ("Finnhub", f"https://finnhub.io/api/v1/calendar/economic?{query}")
+        )
+
+    for source, url in providers:
+        upstream_request = UrlRequest(
+            url,
+            headers={"Accept": "application/json", "User-Agent": "NIFTY-SMC-Terminal/1.0"},
+        )
+        try:
+            with urlopen(upstream_request, timeout=10) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+        except HTTPError as error:
+            logger.warning("%s economic calendar returned HTTP %s.", source, error.code)
+            provider_failures.append(f"{source} HTTP {error.code}")
+            continue
+        except (URLError, TimeoutError, OSError, json.JSONDecodeError) as error:
+            logger.warning("%s economic calendar request failed: %s", source, type(error).__name__)
+            provider_failures.append(f"{source} unavailable")
+            continue
+
+        if source == "Forex Factory":
+            if not isinstance(payload, list) or not all(isinstance(record, dict) for record in payload):
+                logger.warning("Forex Factory returned an invalid economic calendar response.")
+                provider_failures.append("Forex Factory returned invalid data")
+                continue
+            raw_events = payload
+            events = normalize_forexfactory_calendar(raw_events, now)
+        else:
+            raw_events = payload.get("economicCalendar") if isinstance(payload, dict) else None
+            if not isinstance(raw_events, list) or not all(isinstance(record, dict) for record in raw_events):
+                logger.warning("Finnhub returned an invalid economic calendar response.")
+                provider_failures.append("Finnhub returned invalid data")
+                continue
+            events = normalize_finnhub_calendar(raw_events, now)
+
+        with _economic_calendar_cache_lock:
+            _economic_calendar_cache = (time.monotonic(), source, raw_events)
+        return {
+            "available": True,
+            "events": events,
+            "source": source,
+            "updatedAt": now.isoformat(),
+        }
+
+    failure_summary = "; ".join(provider_failures) or "No calendar providers are configured"
+    raise HTTPException(
+        status_code=503,
+        detail=f"Economic calendar is unavailable: {failure_summary}.",
+    )
 
 
 @app.post("/api/connect")
@@ -746,27 +854,6 @@ def place_trade(payload: TradeRequest, request: Request) -> dict:
     payload.volume = round(vol_min + max(0, step_count) * vol_step, vol_decimals)
     payload.volume = max(vol_min, min(vol_max, payload.volume))
 
-    stop_distance = abs(price - payload.sl)
-    risk_per_lot = stop_distance / symbol_spec["tickSize"] * symbol_spec["tickValue"]
-    risk_budget = account["equity"] * RISK_CONFIG["riskPercentPerTrade"] / 100
-    max_safe_volume = risk_budget / risk_per_lot if risk_per_lot > 0 else 0
-    safe_step_count = math.floor((max_safe_volume - symbol_spec["volumeMin"]) / symbol_spec["volumeStep"] + 1e-9)
-    # SAFETY-FIX: Use dynamic vol_decimals precision for safe_volume
-    safe_volume = round(symbol_spec["volumeMin"] + max(0, safe_step_count) * symbol_spec["volumeStep"], vol_decimals)
-    small_account_threshold = float(RISK_CONFIG.get("smallAccountThresholdUsd", 50))
-    small_account_max_risk = float(RISK_CONFIG.get("smallAccountMaxRiskUsd", 2.5))
-    is_small_account_micro = (
-        account["equity"] <= small_account_threshold
-        and payload.volume <= symbol_spec["volumeMin"] + 1e-9
-        and (risk_per_lot * symbol_spec["volumeMin"]) <= small_account_max_risk
-    )
-    if not payload.forceExecute and not is_small_account_micro and (max_safe_volume < symbol_spec["volumeMin"] or payload.volume > safe_volume + 1e-9):
-        # Auto-size down safely to allowable volume rather than failing order
-        if safe_volume >= symbol_spec["volumeMin"]:
-            payload.volume = safe_volume
-        elif payload.volume > symbol_spec["volumeMin"] + 1e-9:
-            payload.volume = symbol_spec["volumeMin"]
-
     open_positions = read_positions()
     max_positions = max(5, int(RISK_CONFIG.get("maxOpenPositions", 5)))
     if len(open_positions) >= max_positions:
@@ -891,6 +978,119 @@ def place_trade(payload: TradeRequest, request: Request) -> dict:
     # Target SL and TP requested
     desired_sl = float(payload.sl or 0.0)
     desired_tp = float(payload.tp or 0.0)
+    stop_distance = abs(price - desired_sl)
+    risk_per_lot = stop_distance / symbol_spec["tickSize"] * symbol_spec["tickValue"]
+    risk_budget = account["equity"] * RISK_CONFIG["riskPercentPerTrade"] / 100
+    if not math.isfinite(risk_per_lot) or risk_per_lot <= 0 or risk_budget <= 0:
+        raise HTTPException(status_code=400, detail="Risk sizing inputs are invalid; order was not sent.")
+    safe_volume = volume_for_risk(risk_budget, risk_per_lot, vol_min, vol_step, vol_max)
+    if safe_volume is None:
+        min_lot_risk = risk_per_lot * vol_min
+        raise HTTPException(
+            status_code=423,
+            detail=(
+                f"TRADE_REJECTED: MINIMUM_LOT_EXCEEDS_RISK "
+                f"({vol_min}L risks ${min_lot_risk:.2f}, budget: ${risk_budget:.2f})."
+            ),
+        )
+    payload.volume = min(payload.volume, safe_volume)
+
+    portfolio_risk_budget = account["equity"] * RISK_CONFIG["maxPortfolioRiskPercent"] / 100
+    current_portfolio_risk = 0.0
+    for exposure in open_positions:
+        exposure_symbol = str(exposure["symbol"])
+        exposure_sl = float(exposure["sl"])
+        if exposure_sl <= 0:
+            raise HTTPException(
+                status_code=423,
+                detail=f"TRADE_REJECTED: OPEN_POSITION_RISK_UNKNOWN ({exposure_symbol} position has no stop loss).",
+            )
+        exposure_info = mt5.symbol_info(exposure_symbol)
+        if exposure_info is None:
+            raise HTTPException(status_code=503, detail=f"Risk specifications unavailable for open position {exposure_symbol}.")
+        exposure_spec = get_symbol_spec(account["login"], account["server"], exposure_symbol, exposure_info)
+        if exposure_spec["tickSize"] <= 0 or exposure_spec["tickValue"] <= 0:
+            raise HTTPException(status_code=503, detail=f"Risk specifications invalid for open position {exposure_symbol}.")
+        position_risk = stop_risk(
+            exposure["type"],
+            float(exposure["volume"]),
+            float(exposure["price_open"]),
+            exposure_sl,
+            exposure_spec["tickSize"],
+            exposure_spec["tickValue"],
+        )
+        if position_risk is None:
+            raise HTTPException(status_code=503, detail=f"Risk inputs invalid for open position {exposure_symbol}.")
+        current_portfolio_risk += position_risk
+
+    broker_pending_orders = mt5.orders_get()
+    if broker_pending_orders is None:
+        raise HTTPException(status_code=503, detail=f"MT5 pending orders unavailable: {mt5.last_error()}")
+    for order in broker_pending_orders:
+        order_sl = float(order.sl)
+        if order_sl <= 0:
+            raise HTTPException(
+                status_code=423,
+                detail=f"TRADE_REJECTED: PENDING_ORDER_RISK_UNKNOWN (order {int(order.ticket)} has no stop loss).",
+            )
+        order_symbol = str(order.symbol)
+        order_info = mt5.symbol_info(order_symbol)
+        if order_info is None:
+            raise HTTPException(status_code=503, detail=f"Risk specifications unavailable for pending order {order_symbol}.")
+        order_spec = get_symbol_spec(account["login"], account["server"], order_symbol, order_info)
+        if order_spec["tickSize"] <= 0 or order_spec["tickValue"] <= 0:
+            raise HTTPException(status_code=503, detail=f"Risk specifications invalid for pending order {order_symbol}.")
+        buy_order_types = {
+            getattr(mt5, "ORDER_TYPE_BUY_LIMIT", 2),
+            getattr(mt5, "ORDER_TYPE_BUY_STOP", 4),
+            getattr(mt5, "ORDER_TYPE_BUY_STOP_LIMIT", 6),
+        }
+        order_direction = "BUY" if int(order.type) in buy_order_types else "SELL"
+        order_risk = stop_risk(
+            order_direction,
+            float(order.volume_current),
+            float(order.price_open),
+            order_sl,
+            order_spec["tickSize"],
+            order_spec["tickValue"],
+        )
+        if order_risk is None:
+            raise HTTPException(status_code=503, detail=f"Risk inputs invalid for pending order {order_symbol}.")
+        current_portfolio_risk += order_risk
+
+    available_portfolio_risk = portfolio_risk_budget - current_portfolio_risk
+    if available_portfolio_risk <= 0:
+        raise HTTPException(
+            status_code=423,
+            detail=(
+                f"TRADE_REJECTED: PORTFOLIO_RISK_LIMIT_EXCEEDED "
+                f"(${current_portfolio_risk:.2f} open/pending risk, "
+                f"limit ${portfolio_risk_budget:.2f})."
+            ),
+        )
+    portfolio_safe_volume = volume_for_risk(
+        available_portfolio_risk,
+        risk_per_lot,
+        vol_min,
+        vol_step,
+        vol_max,
+    )
+    if portfolio_safe_volume is None:
+        raise HTTPException(
+            status_code=423,
+            detail=(
+                f"TRADE_REJECTED: PORTFOLIO_RISK_LIMIT_EXCEEDED "
+                f"(${current_portfolio_risk:.2f} existing risk, "
+                f"${available_portfolio_risk:.2f} remaining; minimum lot would exceed the portfolio limit)."
+            ),
+        )
+    if payload.volume > portfolio_safe_volume + 1e-9:
+        logger.info(
+            "Reducing requested volume from %sL to portfolio-risk-safe %sL.",
+            payload.volume,
+            portfolio_safe_volume,
+        )
+        payload.volume = portfolio_safe_volume
 
     # Determine execution mode: Market Execution (2) requires sl=0, tp=0 on entry deal
     trade_ex_mode = getattr(info, "trade_ex_mode", None)
@@ -926,6 +1126,12 @@ def place_trade(payload: TradeRequest, request: Request) -> dict:
         getattr(mt5, "TRADE_RETCODE_PLACED", 10008),
         getattr(mt5, "TRADE_RETCODE_DONE_PARTIAL", 10010),
     )
+    trade_disabled_ret_code = getattr(mt5, "TRADE_RETCODE_TRADE_DISABLED", 10017)
+    auto_trade_disabled_ret_codes = (
+        getattr(mt5, "TRADE_RETCODE_CLIENT_DISABLES_AT", 10027),
+        getattr(mt5, "TRADE_RETCODE_AUTOTRADING_DISABLED", 10026),
+    )
+    disabled_ret_codes = (trade_disabled_ret_code, *auto_trade_disabled_ret_codes)
 
     magic_num = payload.magic or {
         "EURUSD": 10001,
@@ -946,6 +1152,37 @@ def place_trade(payload: TradeRequest, request: Request) -> dict:
                 # Refresh tick for accurate live price on each pass
                 cur_tick = mt5.symbol_info_tick(symbol)
                 cur_price = (cur_tick.ask if payload.direction == "BUY" else cur_tick.bid) if cur_tick else price
+                current_risk_per_lot = abs(cur_price - desired_sl) / symbol_spec["tickSize"] * symbol_spec["tickValue"]
+                current_portfolio_budget = max(0.0, portfolio_risk_budget - current_portfolio_risk)
+                current_safe_volume = volume_for_risk(
+                    min(risk_budget, current_portfolio_budget),
+                    current_risk_per_lot,
+                    vol_min,
+                    vol_step,
+                    vol_max,
+                )
+                if current_safe_volume is None:
+                    min_lot_risk = current_risk_per_lot * vol_min
+                    reason = (
+                        "PORTFOLIO_RISK_LIMIT_EXCEEDED"
+                        if current_portfolio_budget < risk_budget
+                        else "MINIMUM_LOT_EXCEEDS_RISK"
+                    )
+                    raise HTTPException(
+                        status_code=423,
+                        detail=(
+                            f"TRADE_REJECTED: {reason} "
+                            f"({vol_min}L risks ${min_lot_risk:.2f}, "
+                            f"available budget: ${min(risk_budget, current_portfolio_budget):.2f}) at refreshed quote."
+                        ),
+                    )
+                if payload.volume > current_safe_volume + 1e-9:
+                    logger.info(
+                        "Reduced order volume at refreshed quote from %sL to risk-safe %sL.",
+                        payload.volume,
+                        current_safe_volume,
+                    )
+                    payload.volume = current_safe_volume
 
                 request_data = {
                     "action": mt5.TRADE_ACTION_DEAL,
@@ -963,6 +1200,49 @@ def place_trade(payload: TradeRequest, request: Request) -> dict:
                 if cmt:
                     request_data["comment"] = cmt
 
+                check_result = mt5.order_check(request_data)
+                if check_result is None:
+                    raise HTTPException(
+                        status_code=503,
+                        detail=f"MT5 order preflight failed for {symbol}: {mt5.last_error()}",
+                    )
+                check_retcode = getattr(check_result, "retcode", None)
+                if check_retcode != 0:
+                    logger.warning(
+                        "MT5 order preflight rejected request: retcode=%s (%s), fill=%s, stops=(%s,%s)",
+                        check_retcode,
+                        getattr(check_result, "comment", ""),
+                        fill,
+                        sl_val,
+                        tp_val,
+                    )
+                    check_comment = getattr(check_result, "comment", "")
+                    if (
+                        check_retcode == trade_disabled_ret_code
+                        or "trade disabled" in str(check_comment).lower()
+                    ):
+                        raise HTTPException(
+                            status_code=400,
+                            detail=(
+                                f"MT5 has disabled trading for {symbol} (retcode 10017). "
+                                "Check that the account permits trading and the symbol is enabled "
+                                "for trading in MT5. If both are enabled, contact your broker."
+                            ),
+                        )
+                    if (
+                        check_retcode in auto_trade_disabled_ret_codes
+                        or "autotrading" in str(check_comment).lower()
+                    ):
+                        raise HTTPException(
+                            status_code=400,
+                            detail=(
+                                "MT5 Algo Trading is disabled. Enable the Algo Trading toolbar "
+                                "button and allow algorithmic trading in terminal settings."
+                            ),
+                        )
+                    result = check_result
+                    continue
+
                 result = mt5.order_send(request_data)
                 ret_code = getattr(result, "retcode", None)
                 ret_cmt = getattr(result, "comment", "")
@@ -974,18 +1254,26 @@ def place_trade(payload: TradeRequest, request: Request) -> dict:
                     break
                 else:
                     # If AlgoTrading is disabled, don't waste time trying all combinations - break early
-                    if ret_code in (getattr(mt5, "TRADE_RETCODE_CLIENT_DISABLES_AT", 10027), getattr(mt5, "TRADE_RETCODE_AUTOTRADING_DISABLED", 10026)) or "autotrading" in str(ret_cmt).lower():
-                        logger.error(f"❌ MT5 Algo Trading is disabled in terminal: retcode={ret_code} ({ret_cmt})")
+                    if ret_code in disabled_ret_codes or "trade disabled" in str(ret_cmt).lower() or "autotrading" in str(ret_cmt).lower():
+                        logger.error(f"❌ MT5 trading is disabled: retcode={ret_code} ({ret_cmt})")
                         break
                     logger.warning(f"MT5 order attempt failed: retcode={ret_code} ({ret_cmt}), fill={fill}, cmt={cmt!r}, sl/tp=({sl_val},{tp_val})")
             
             if result is not None and result.retcode in accepted_ret_codes:
                 break
-            if result is not None and getattr(result, "retcode", None) in (getattr(mt5, "TRADE_RETCODE_CLIENT_DISABLES_AT", 10027), getattr(mt5, "TRADE_RETCODE_AUTOTRADING_DISABLED", 10026)):
+            if result is not None and (
+                getattr(result, "retcode", None) in disabled_ret_codes
+                or "trade disabled" in str(getattr(result, "comment", "")).lower()
+                or "autotrading" in str(getattr(result, "comment", "")).lower()
+            ):
                 break
         if result is not None and result.retcode in accepted_ret_codes:
             break
-        if result is not None and getattr(result, "retcode", None) in (getattr(mt5, "TRADE_RETCODE_CLIENT_DISABLES_AT", 10027), getattr(mt5, "TRADE_RETCODE_AUTOTRADING_DISABLED", 10026)):
+        if result is not None and (
+            getattr(result, "retcode", None) in disabled_ret_codes
+            or "trade disabled" in str(getattr(result, "comment", "")).lower()
+            or "autotrading" in str(getattr(result, "comment", "")).lower()
+        ):
             break
 
     if result is None or result.retcode not in accepted_ret_codes:
@@ -998,7 +1286,20 @@ def place_trade(payload: TradeRequest, request: Request) -> dict:
         logger.error(f"   Comment: {comment}")
         logger.error(f"   Last Error: {last_err}")
 
-        if retcode in (getattr(mt5, "TRADE_RETCODE_CLIENT_DISABLES_AT", 10027), getattr(mt5, "TRADE_RETCODE_AUTOTRADING_DISABLED", 10026)) or "autotrading" in str(comment).lower():
+        if retcode == trade_disabled_ret_code or "trade disabled" in str(comment).lower():
+            logger.error("👉 Check that the account permits trading and the symbol is enabled for trading in MT5.")
+            logger.error("👉 If both are enabled, contact your broker; this cannot be overridden by the application.")
+            logger.error("=" * 65)
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"MT5 has disabled trading for {symbol} (retcode 10017). "
+                    "Check that the account permits trading and the symbol is enabled for trading in MT5. "
+                    "If both are enabled, contact your broker."
+                ),
+            )
+
+        if retcode in auto_trade_disabled_ret_codes or "autotrading" in str(comment).lower():
             logger.error("👉 FIX: Enable 'Algo Trading' in your MetaTrader 5 terminal!")
             logger.error("👉 Click the 'Algo Trading' button in MT5 toolbar, or press Ctrl+E")
             logger.error("=" * 65)
@@ -1090,12 +1391,29 @@ def close_position(payload: CloseRequest, request: Request) -> dict:
     info = mt5.symbol_info(position.symbol)
     if tick is None or info is None:
         raise HTTPException(status_code=503, detail=f"No current MT5 quote for {position.symbol!r}.")
+    requested_volume = float(payload.volume if payload.volume is not None else position.volume)
+    symbol_spec = get_symbol_spec(payload.expectedLogin, payload.expectedServer, position.symbol, info)
+    volume_min = symbol_spec["volumeMin"]
+    volume_step = symbol_spec["volumeStep"]
+    if not is_valid_close_volume(
+        requested_volume,
+        float(position.volume),
+        volume_min,
+        volume_step,
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Invalid close volume {requested_volume:g} for {position.symbol}: "
+                f"minimum {volume_min:g}, step {volume_step:g}, open volume {position.volume:g}."
+            ),
+        )
     is_buy = position.type == mt5.POSITION_TYPE_BUY
     filling = resolve_filling_mode(info)
     close_data = {
         "action": mt5.TRADE_ACTION_DEAL,
         "symbol": position.symbol,
-        "volume": float(position.volume),
+        "volume": requested_volume,
         "type": mt5.ORDER_TYPE_SELL if is_buy else mt5.ORDER_TYPE_BUY,
         "position": int(position.ticket),
         "price": float(tick.bid if is_buy else tick.ask),
@@ -1206,4 +1524,4 @@ def modify_position(payload: StopsRequest, request: Request) -> dict:
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run(app, host="127.0.0.1", port=8000)
+    uvicorn.run(app, host="127.0.0.1", port=int(os.environ.get("SMC_BRIDGE_PORT", "8000")))

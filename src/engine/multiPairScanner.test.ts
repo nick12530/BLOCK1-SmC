@@ -6,12 +6,76 @@ import {
   checkCorrelationExposure,
   calculateSmallAccountPositionSize,
   findLiquidityLevels,
+  hasDirectionalMovement,
+  isPrecisionEntryImminent,
+  isPrecisionEntryReady,
 } from './multiPairScanner';
 import { generatePairCandles } from './dataFeed';
 import { getGlobalSessionStatus, evaluateNewsRisk, isSessionPreferredForPair } from './sessionTimezones';
 import { tradingEngine } from './tradingEngine';
 
 describe('Multi-Pair Market Scanner & Instrument System', () => {
+  it('requires direction-aligned movement to qualify a scanner signal', () => {
+    const candles = [100, 100.01, 100.02, 100.03].map((close, index) => ({
+      time: index,
+      timeStr: '12:00',
+      open: close - 0.01,
+      high: close + 0.02,
+      low: close - 0.02,
+      close,
+      volume: 100,
+    }));
+
+    expect(hasDirectionalMovement(candles, 0.2, 0.005, 'BUY')).toBe(false);
+    expect(hasDirectionalMovement(candles, 0.01, 0.001, 'BUY')).toBe(true);
+    expect(hasDirectionalMovement(candles, 0.01, 0.001, 'SELL')).toBe(false);
+    expect(hasDirectionalMovement(candles.slice(0, 3), 0.01, 0, 'BUY')).toBe(false);
+  });
+
+  it('qualifies only fresh A+ setups near their technical entry trigger', () => {
+    const candidate = {
+      symbol: 'XAUUSD' as const,
+      price: 2000.1,
+      atr: 10,
+      spreadAcceptable: true,
+      confluenceScore: 90,
+      scoreBreakdown: {
+        htfAlignment: 20,
+        structureConfirm: 20,
+        liquiditySweep: 15,
+        bosChoch: 15,
+        obFvgReaction: 10,
+        momentumConfirm: 10,
+        sessionConfirm: 5,
+        spreadAcceptable: 5,
+        candleConfirm: 8,
+      },
+      riskRewardRatio: 3,
+      expiryTimestamp: 120_000,
+      status: 'READY' as const,
+      signal: {
+        direction: 'BUY' as const,
+        timeframe: 'M5' as const,
+        score: 4.5,
+        entry: 2000.1,
+        sl: 1990,
+        tp: 2032,
+        reasons: [],
+        atr: 10,
+        timestamp: new Date(0).toISOString(),
+        isSniper: true,
+        sniperGrade: 'A+' as const,
+        optimalTradeEntry: 2000,
+      },
+    };
+
+    expect(isPrecisionEntryReady(candidate, 60_000)).toBe(true);
+    expect(isPrecisionEntryReady({ ...candidate, price: 2002 }, 60_000)).toBe(false);
+    expect(isPrecisionEntryReady(candidate, 120_000)).toBe(false);
+    expect(isPrecisionEntryImminent({ ...candidate, price: 2002 }, 60_000)).toBe(true);
+    expect(isPrecisionEntryImminent({ ...candidate, price: 1999 }, 60_000)).toBe(false);
+  });
+
   it('detects liquidity sweeps only when a wick breaches and closes back inside prior liquidity', () => {
     const candles = Array.from({ length: 30 }, (_, index) => ({
       time: Date.now() - (30 - index) * 60_000,
@@ -52,7 +116,7 @@ describe('Multi-Pair Market Scanner & Instrument System', () => {
     expect(gbpusd.digits).toBe(5);
 
     expect(eurusd.minRR).toBe(2.0);
-    expect(gbpusd.minScore).toBe(80); // Higher volatility requires stronger confirmation
+    expect(gbpusd.minScore).toBe(70); // Higher volatility requires stronger confirmation
   });
 
   it('performs confluence scoring (0 to 100) for all pairs', () => {
@@ -79,6 +143,9 @@ describe('Multi-Pair Market Scanner & Instrument System', () => {
       expect(['READY', 'WAITING', 'BLOCKED']).toContain(analysis.status);
       expect(analysis.riskRewardRatio).toBeGreaterThanOrEqual(0);
       expect(analysis.scoreBreakdown).toBeDefined();
+      expect(analysis.confluenceScore).toBe(
+        Object.values(analysis.scoreBreakdown).reduce((total, score) => total + (score ?? 0), 0)
+      );
     }
   });
 
@@ -163,11 +230,35 @@ describe('Multi-Pair Market Scanner & Instrument System', () => {
       expect(status.kenyaTimeStr).toContain('15:00 EAT'); // 12:00 UTC + 3 = 15:00 EAT
     });
 
-    it('displays NEWS FILTER: DATA UNAVAILABLE when news provider is empty or unavailable', () => {
+    it('displays NEWS FILTER: DATA UNAVAILABLE when the provider is unavailable', () => {
       const risk = evaluateNewsRisk('EURUSD', null);
       expect(risk.hasNewsRisk).toBe(false);
       expect(risk.isDataUnavailable).toBe(true);
       expect(risk.reason).toBe('NEWS FILTER: DATA UNAVAILABLE');
+    });
+
+    it('treats a successfully fetched empty calendar as available with no imminent news', () => {
+      expect(evaluateNewsRisk('EURUSD', [])).toEqual({
+        hasNewsRisk: false,
+        isDataUnavailable: false,
+      });
+    });
+
+    it('blocks when the calendar reports high-impact news for a pair currency', () => {
+      const risk = evaluateNewsRisk('EURUSD', [{
+        id: 'usd-cpi',
+        time: '2026-10-21T12:15:00.000Z',
+        currency: 'USD',
+        event: 'CPI',
+        impact: 'high',
+        forecast: '2.1',
+        previous: '2.0',
+        minutesRemaining: 15,
+      }]);
+
+      expect(risk.hasNewsRisk).toBe(true);
+      expect(risk.isDataUnavailable).toBeUndefined();
+      expect(risk.reason).toContain('HIGH IMPACT NEWS: USD CPI in 15m');
     });
 
     it('identifies preferred sessions per pair', () => {

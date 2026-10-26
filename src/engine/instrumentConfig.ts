@@ -50,7 +50,7 @@ export const INSTRUMENTS: Record<SupportedSymbol, InstrumentConfig> = {
     minSpread: 10,
     maxSpreadPoints: 40,
     minRR: 2.0,
-    minScore: 75,
+    minScore: 65,
     magicNumber: 20261001,
     preferredSessions: ['london', 'new_york'],
     tvSymbol: 'OANDA:XAUUSD',
@@ -77,7 +77,7 @@ export const INSTRUMENTS: Record<SupportedSymbol, InstrumentConfig> = {
     minSpread: 3,
     maxSpreadPoints: 20, // 2.0 pips
     minRR: 2.0,
-    minScore: 75,
+    minScore: 65,
     magicNumber: 10001,
     preferredSessions: ['london', 'new_york'],
     tvSymbol: 'FX:EURUSD',
@@ -104,7 +104,7 @@ export const INSTRUMENTS: Record<SupportedSymbol, InstrumentConfig> = {
     minSpread: 5,
     maxSpreadPoints: 25, // 2.5 pips
     minRR: 2.0,
-    minScore: 70,
+    minScore: 65,
     magicNumber: 10002,
     preferredSessions: ['asian', 'london', 'new_york'],
     tvSymbol: 'FX:USDJPY',
@@ -131,7 +131,7 @@ export const INSTRUMENTS: Record<SupportedSymbol, InstrumentConfig> = {
     minSpread: 6,
     maxSpreadPoints: 25, // 2.5 pips
     minRR: 2.0,
-    minScore: 80, // higher volatility requires stronger confirmation
+    minScore: 70, // higher volatility requires stronger confirmation
     magicNumber: 10003,
     preferredSessions: ['london', 'new_york'],
     tvSymbol: 'FX:GBPUSD',

@@ -16,6 +16,7 @@ export interface WebhookConfig {
   webhookUrl: string;
   minConfluenceScore: number;
   onlySniperSignals: boolean;
+  alertOnApproachingEntry: boolean;
   alertOnExecutions: boolean;
   soundAlerts: boolean;
 }
@@ -28,8 +29,9 @@ export const DEFAULT_WEBHOOK_CONFIG: WebhookConfig = {
   telegramBotToken: '',
   telegramChatId: '',
   webhookUrl: '',
-  minConfluenceScore: 70,
+  minConfluenceScore: 88,
   onlySniperSignals: true,
+  alertOnApproachingEntry: true,
   alertOnExecutions: true,
   soundAlerts: true,
 };
@@ -39,7 +41,15 @@ export function getWebhookConfig(): WebhookConfig {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return DEFAULT_WEBHOOK_CONFIG;
-    return { ...DEFAULT_WEBHOOK_CONFIG, ...JSON.parse(raw) };
+    const stored = JSON.parse(raw) as Partial<WebhookConfig>;
+    const minConfluenceScore = Number(stored.minConfluenceScore);
+    return {
+      ...DEFAULT_WEBHOOK_CONFIG,
+      ...stored,
+      minConfluenceScore: Number.isFinite(minConfluenceScore)
+        ? Math.min(100, Math.max(88, minConfluenceScore))
+        : DEFAULT_WEBHOOK_CONFIG.minConfluenceScore,
+    };
   } catch {
     return DEFAULT_WEBHOOK_CONFIG;
   }
@@ -56,6 +66,7 @@ export function saveWebhookConfig(config: WebhookConfig): void {
 
 // Anti-spam cooldown cache for sent signal IDs (prevents duplicate alerts within 5 minutes)
 const recentlySentSignals = new Map<string, number>();
+const recentlySentApproachingEntries = new Map<string, number>();
 
 export async function sendTelegramMessage(
   botToken: string,
@@ -137,12 +148,20 @@ export async function dispatchSniperAlert(params: {
   sniperGrade?: 'A+' | 'A' | 'B';
   optimalTradeEntry?: number;
   triggerPattern?: string;
+  validUntil: number;
 }): Promise<boolean> {
   const config = getWebhookConfig();
   if (!config.enabled) return false;
 
   // Filter criteria
-  if (params.confluenceScore < config.minConfluenceScore) return false;
+  if (
+    params.confluenceScore < Math.max(88, config.minConfluenceScore) ||
+    params.sniperGrade !== 'A+' ||
+    !params.optimalTradeEntry ||
+    params.validUntil <= Date.now()
+  ) {
+    return false;
+  }
 
   // Deduplication check (cooldown: 5 mins per symbol + direction)
   const signalKey = `${params.symbol}-${params.direction}-${params.timeframe}`;
@@ -152,26 +171,29 @@ export async function dispatchSniperAlert(params: {
     return false; // Skip duplicate notification within 5 mins
   }
   recentlySentSignals.set(signalKey, now);
-
   const cfg = getInstrumentConfig(params.symbol);
   const isBuy = params.direction === 'BUY';
-  const dirBadge = isBuy ? '🟢 BUY NOW' : '🔴 SELL NOW';
+  const dirBadge = isBuy ? '🟢 BUY SETUP' : '🔴 SELL SETUP';
   const gradeLabel = params.sniperGrade ? ` • <b>Grade ${params.sniperGrade}</b>` : '';
-  const oteLine = params.optimalTradeEntry
-    ? `  • <b>Optimal OTE (62%):</b> <code>${params.optimalTradeEntry.toFixed(cfg.digits)}</code>\n`
-    : '';
+  const oteLine = `  • <b>OTE Entry Trigger:</b> <code>${params.optimalTradeEntry.toFixed(cfg.digits)}</code>\n`;
   const triggerLine = params.triggerPattern
     ? `  • <b>Trigger Pattern:</b> ${params.triggerPattern}\n`
     : '';
+  const validUntil = new Date(params.validUntil).toLocaleTimeString('en-GB', {
+    timeZone: 'UTC',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  });
 
   const telegramHtml = `
-⚡️ <b>INSTITUTIONAL SMC TRADE SIGNAL</b> ⚡️
+⚡️ <b>PRECISION ENTRY ALERT</b> ⚡️
 ━━━━━━━━━━━━━━━━━━━━━━━━
 💎 <b>PAIR:</b> #${params.symbol}
-🎯 <b>ACTION:</b> <b>${dirBadge}</b>
-📊 <b>TIMEFRAME:</b> ${params.timeframe}  |  <b>CONFLUENCE:</b> ${params.confluenceScore}%${gradeLabel}
+🎯 <b>SETUP:</b> <b>${dirBadge}</b>
+📊 <b>TIMEFRAME:</b> ${params.timeframe}  |  <b>CONFLUENCE:</b> ${params.confluenceScore}/100${gradeLabel}
 
-📍 <b>ENTRY ZONE:</b> <code>${params.entry.toFixed(cfg.digits)}</code>
+📍 <b>CURRENT QUOTE:</b> <code>${params.entry.toFixed(cfg.digits)}</code>
 ${oteLine}🛑 <b>STOP LOSS:</b> <code>${params.sl.toFixed(cfg.digits)}</code> (-${params.slPips} pips)
 
 🎯 <b>TARGET OBJECTIVES:</b>
@@ -184,7 +206,9 @@ ${oteLine}🛑 <b>STOP LOSS:</b> <code>${params.sl.toFixed(cfg.digits)}</code> (
 ${triggerLine}  • <b>Suggested Sizing:</b> <code>${params.recommendedLot ? `${params.recommendedLot.toFixed(2)} Lots` : '0.01 - 0.05 Lots'}</code>
   • <b>Trade Rule:</b> Move Stop Loss to Break-Even (BE) once TP1 is secured
 ━━━━━━━━━━━━━━━━━━━━━━━━
-🕒 <i>${new Date().toLocaleTimeString()} UTC • NIFTY Terminal</i>
+⏳ <b>Entry window closes:</b> ${validUntil} UTC
+⚠️ <i>High-confluence setup, not a guarantee of profit. Confirm the live quote and risk before execution.</i>
+🕒 <i>${new Date(now).toLocaleTimeString('en-GB', { timeZone: 'UTC' })} UTC • NIFTY Terminal</i>
 `.trim();
 
   let sent = false;
@@ -207,12 +231,83 @@ ${triggerLine}  • <b>Suggested Sizing:</b> <code>${params.recommendedLot ? `${
       tp2: params.tp2,
       tp3: params.tp3,
       confluenceScore: params.confluenceScore,
+      setupType: 'PRECISION_ENTRY',
+      optimalTradeEntry: params.optimalTradeEntry,
+      validUntil: new Date(params.validUntil).toISOString(),
       timestamp: new Date().toISOString(),
     };
     const res = await sendCustomWebhook(config.webhookUrl, payload);
     if (res.ok) sent = true;
   }
 
+  if (!sent) recentlySentSignals.delete(signalKey);
+  return sent;
+}
+
+export async function dispatchApproachingEntryAlert(params: {
+  symbol: SupportedSymbol;
+  direction: 'BUY' | 'SELL';
+  timeframe: string;
+  entry: number;
+  optimalTradeEntry: number;
+  sl: number;
+  tp: number;
+  confluenceScore: number;
+  validUntil: number;
+}): Promise<boolean> {
+  const config = getWebhookConfig();
+  if (
+    !config.enabled ||
+    !config.alertOnApproachingEntry ||
+    params.confluenceScore < Math.max(88, config.minConfluenceScore) ||
+    params.validUntil <= Date.now()
+  ) {
+    return false;
+  }
+
+  const signalKey = `${params.symbol}-${params.direction}-${params.timeframe}`;
+  const now = Date.now();
+  const lastSent = recentlySentApproachingEntries.get(signalKey);
+  if (lastSent && now - lastSent < 300_000) return false;
+  recentlySentApproachingEntries.set(signalKey, now);
+  if (recentlySentApproachingEntries.size > 128) {
+    for (const [key, timestamp] of recentlySentApproachingEntries) {
+      if (now - timestamp > 3_600_000) recentlySentApproachingEntries.delete(key);
+    }
+  }
+
+  const cfg = getInstrumentConfig(params.symbol);
+  const validUntil = new Date(params.validUntil).toLocaleTimeString('en-GB', {
+    timeZone: 'UTC',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  });
+  const message = `
+<b>ENTRY TRIGGER APPROACHING — NOT EXECUTED</b>
+<b>${params.symbol} ${params.direction}</b> · ${params.timeframe} · Confluence ${params.confluenceScore}/100
+Current quote: <code>${params.entry.toFixed(cfg.digits)}</code>
+Trigger zone: <code>${params.optimalTradeEntry.toFixed(cfg.digits)}</code>
+Stop: <code>${params.sl.toFixed(cfg.digits)}</code> · Target: <code>${params.tp.toFixed(cfg.digits)}</code>
+Entry window closes: ${validUntil} UTC
+Wait for the stated trigger and re-check the live quote, spread, and risk. This is not an order or a profit guarantee.
+`.trim();
+
+  let sent = false;
+  if ((config.type === 'telegram' || config.type === 'both') && config.telegramBotToken && config.telegramChatId) {
+    const result = await sendTelegramMessage(config.telegramBotToken, config.telegramChatId, message);
+    sent = sent || result.ok;
+  }
+  if ((config.type === 'webhook' || config.type === 'both') && config.webhookUrl) {
+    const result = await sendCustomWebhook(config.webhookUrl, {
+      event: 'ENTRY_TRIGGER_APPROACHING',
+      ...params,
+      timestamp: new Date(now).toISOString(),
+      message,
+    });
+    sent = sent || result.ok;
+  }
+  if (!sent) recentlySentApproachingEntries.delete(signalKey);
   return sent;
 }
 

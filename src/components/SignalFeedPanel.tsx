@@ -64,6 +64,8 @@ export const SignalFeedPanel: React.FC<SignalFeedPanelProps> = ({ onExecuteTrade
   }, [market.signals]);
 
   const filteredSignals = market.signals.filter((sig) => {
+    const expiry = sig.expiryTimestamp || (new Date(sig.timestamp).getTime() + 5 * 60_000);
+    if (!Number.isFinite(expiry) || expiry <= Date.now()) return false;
     if (gradeFilter === 'ALL') return true;
     return (sig.sniperGrade || (sig.score >= 4.5 ? 'A+' : sig.score >= 3.8 ? 'A' : 'B')) === gradeFilter;
   });
@@ -71,7 +73,7 @@ export const SignalFeedPanel: React.FC<SignalFeedPanelProps> = ({ onExecuteTrade
   const getLotForSignal = (sigId: string, stopDist: number): number => {
     if (customLots[sigId] !== undefined) return customLots[sigId];
     const riskVol = tradingEngine.getRiskBasedVolume(stopDist > 0 ? ticker.bid - stopDist : 10);
-    return riskVol || 0.01;
+    return riskVol ?? 0;
   };
 
   const handleAdjustLot = (sigId: string, delta: number, currentLot: number) => {

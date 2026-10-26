@@ -10,10 +10,11 @@
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { signalAudioNotifier } from '../utils/audioNotification';
-import { useMarket, useTicker, usePositions, useScannerAnalyses } from '../hooks/useTradingStore';
+import { useTicker, usePositions, useScannerAnalyses } from '../hooks/useTradingStore';
 import { tradingEngine } from '../engine/tradingEngine';
 import { getInstrumentConfig, SupportedSymbol } from '../engine/instrumentConfig';
-import { Signal } from '../types/smc';
+import type { Signal } from '../types/smc';
+import { isPrecisionEntryReady } from '../engine/multiPairScanner';
 import { MTFConfluenceRadar } from './MTFConfluenceRadar';
 import {
   Crosshair,
@@ -36,11 +37,15 @@ import {
 } from 'lucide-react';
 
 interface SignalToastNotificationProps {
-  onExecuteSignal?: (customVolume?: number, positionCount?: number, signal?: Signal) => void | Promise<void>;
+  onExecuteSignal?: (
+    customVolume?: number,
+    positionCount?: number,
+    signal?: Signal,
+    symbol?: SupportedSymbol
+  ) => void | Promise<void>;
 }
 
 export const SignalToastNotification: React.FC<SignalToastNotificationProps> = ({ onExecuteSignal }) => {
-  const market = useMarket();
   const ticker = useTicker();
   const { positions } = usePositions();
   const scannerAnalyses = useScannerAnalyses();
@@ -50,53 +55,30 @@ export const SignalToastNotification: React.FC<SignalToastNotificationProps> = (
   const [executing, setExecuting] = useState(false);
   const [feedback, setFeedback] = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
+  const lastPrecisionAlertKeyRef = useRef('');
 
-  // Surface ONLY sniper entries (M15/M5 institutional POI with high confluence score >= 4.0 or score >= 70)
+  // Keep the popup on the same fresh, risk-ready setup used by Telegram precision alerts.
   const targetSniperInfo = useMemo(() => {
-    // 1. Check active chart signal first
-    if (
-      market.signal &&
-      (market.signal.isSniper ||
-        market.signal.score >= 4.0 ||
-        market.signal.timeframe === 'M15' ||
-        market.signal.strategy === 'SMC POI Retest')
-    ) {
-      return {
-        signal: market.signal,
-        symbol: (ticker.symbol || 'XAUUSD') as SupportedSymbol,
-      };
-    }
-
-    // 2. Scan monitored pairs for best high-confluence sniper entry
     const candidatePairs = scannerAnalyses
-      .filter((p) => p.signal && (p.signal.isSniper || p.confluenceScore >= 70 || p.signal.score >= 4.0))
+      .filter((analysis) => isPrecisionEntryReady(analysis))
       .sort((a, b) => b.confluenceScore - a.confluenceScore);
 
     if (candidatePairs.length > 0 && candidatePairs[0].signal) {
       return {
         signal: candidatePairs[0].signal,
         symbol: candidatePairs[0].symbol,
+        safeLotSize: candidatePairs[0].safeLotSize,
       };
     }
 
     return null;
-  }, [market.signal, ticker.symbol, scannerAnalyses]);
+  }, [scannerAnalyses]);
 
   const signal = targetSniperInfo?.signal || null;
   const activeSymbol = (targetSniperInfo?.symbol || ticker.symbol || 'XAUUSD') as SupportedSymbol;
   const cfg = getInstrumentConfig(activeSymbol);
 
-  // Strict sniper qualification
-  const isSniper = Boolean(
-    signal && (
-      signal.isSniper ||
-      signal.score >= 4.0 ||
-      signal.timeframe === 'M15' ||
-      signal.strategy === 'SMC POI Retest'
-    )
-  );
-
-  // Entry countdown timer: countdown towards the entry time window
+  // Count down to the source candle's close so a stale setup cannot remain actionable.
   const [remainingSec, setRemainingSec] = useState<number>(0);
   const [hasPassed, setHasPassed] = useState<boolean>(false);
 
@@ -108,14 +90,9 @@ export const SignalToastNotification: React.FC<SignalToastNotificationProps> = (
     }
 
     const updateTimer = () => {
-      const now = Date.now();
-      const signalTime = new Date(signal.timestamp).getTime();
-      const validityMs = signal.timeframe === 'M15' ? 15 * 60_000 : 5 * 60_000;
-      const expiry = signal.expiryTimestamp || (signalTime + validityMs);
-      const left = Math.max(0, Math.floor((expiry - now) / 1000));
+      const left = Math.max(0, Math.floor(((signal.expiryTimestamp || 0) - Date.now()) / 1000));
       setRemainingSec(left);
 
-      // Once the entry window passes, the signal passes automatically
       if (left <= 0) {
         setHasPassed(true);
         setIsOpen(false);
@@ -128,6 +105,14 @@ export const SignalToastNotification: React.FC<SignalToastNotificationProps> = (
     const interval = setInterval(updateTimer, 1000);
     return () => clearInterval(interval);
   }, [signal]);
+
+  useEffect(() => {
+    if (!signal || !targetSniperInfo) return;
+    const alertKey = `${activeSymbol}:${signal.timestamp}:${signal.direction}:${signal.strategy}`;
+    if (alertKey === lastPrecisionAlertKeyRef.current) return;
+    lastPrecisionAlertKeyRef.current = alertKey;
+    signalAudioNotifier.playPrecisionEntryAlert();
+  }, [activeSymbol, signal, targetSniperInfo]);
 
   // Close when clicking outside popover
   useEffect(() => {
@@ -146,22 +131,21 @@ export const SignalToastNotification: React.FC<SignalToastNotificationProps> = (
 
   // Auto-calculated optimal lot size based on balance and stop distance
   const autoLotSize = useMemo(() => {
-    if (!signal) return 0.01;
-    const calculated = tradingEngine.getRiskBasedVolume(signal.sl, undefined, signal.direction);
-    return calculated || signal.recommendedLot || 0.01;
-  }, [signal, ticker.balance, ticker.equity]);
+    const safeLotSize = targetSniperInfo?.safeLotSize;
+    return typeof safeLotSize === 'number' && safeLotSize > 0 ? safeLotSize : null;
+  }, [targetSniperInfo]);
 
   // Space for adjusting lot size with user overrides
   const [customLot, setCustomLot] = useState<number>(0.01);
   const [isLotCustomized, setIsLotCustomized] = useState<boolean>(false);
 
   useEffect(() => {
-    if (!isLotCustomized && autoLotSize > 0) {
+    if (!isLotCustomized && autoLotSize !== null) {
       setCustomLot(autoLotSize);
     }
   }, [autoLotSize, isLotCustomized]);
 
-  if (!signal || !isSniper || hasPassed) {
+  if (!signal || hasPassed) {
     return null;
   }
 
@@ -171,7 +155,9 @@ export const SignalToastNotification: React.FC<SignalToastNotificationProps> = (
   const activeSL = signal.sl;
 
   // Active lot: either user-customized or optimal auto risk-sized
-  const activeLot = Math.max(0.01, Math.min(100, Number(customLot) || autoLotSize || 0.01));
+  const activeLot = autoLotSize === null
+    ? 0
+    : Math.min(autoLotSize, Math.max(0.01, Number(customLot) || autoLotSize));
 
   // Multi-target TP 1, TP 2, TP 3 values
   const riskDist = Math.abs(activeEntry - activeSL);
@@ -220,6 +206,13 @@ export const SignalToastNotification: React.FC<SignalToastNotificationProps> = (
       });
       return;
     }
+    if (autoLotSize === null || activeLot <= 0) {
+      setFeedback({
+        msg: 'Blocked by risk controls: no valid lot size fits the configured risk budget.',
+        type: 'error',
+      });
+      return;
+    }
 
     setExecuting(true);
     try {
@@ -233,7 +226,7 @@ export const SignalToastNotification: React.FC<SignalToastNotificationProps> = (
       }
 
       if (onExecuteSignal) {
-        await onExecuteSignal(activeLot, 1, orderSignal);
+        await onExecuteSignal(activeLot, 1, orderSignal, activeSymbol);
       } else {
         const res = tradingEngine.sendMarket(
           activeDirection,
@@ -250,7 +243,7 @@ export const SignalToastNotification: React.FC<SignalToastNotificationProps> = (
 
       signalAudioNotifier.playTradeExecutionAlert(activeDirection);
       setFeedback({
-        msg: `🎯 SNIPER FILLED: ${activeDirection} ${activeLot}L ${activeSymbol} @ ${activeEntry} | TP: ${chosenTp} (+${chosenPips}p)`,
+        msg: `🎯 PRECISION ENTRY FILLED: ${activeDirection} ${activeLot}L ${activeSymbol} @ ${activeEntry} | TP: ${chosenTp} (+${chosenPips}p)`,
         type: 'success',
       });
       setTimeout(() => {
@@ -269,7 +262,7 @@ export const SignalToastNotification: React.FC<SignalToastNotificationProps> = (
 
   return (
     <>
-      {/* SNIPER ENTRY FLYOUT COCKPIT - Top-Right Minimal */}
+      {/* Precision entry flyout */}
       {isOpen && (
         <div className="fixed inset-0 sm:inset-auto sm:top-24 sm:right-4 z-[100] font-mono select-none flex items-start justify-center sm:justify-end p-3 sm:p-0 bg-black/70 sm:bg-transparent backdrop-blur-xs sm:backdrop-blur-none animate-in fade-in duration-150">
           <div
@@ -285,13 +278,13 @@ export const SignalToastNotification: React.FC<SignalToastNotificationProps> = (
                 <div>
                   <div className="flex items-center gap-1.5 flex-wrap">
                     <span className="text-[10px] font-black uppercase tracking-wider text-amber-400 flex items-center gap-1">
-                      <span>🎯 SNIPER ENTRY</span>
+                      <span>PRECISION ENTRY</span>
                     </span>
                     <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-zinc-800 text-zinc-200 border border-zinc-700">
                       {signal.timeframe} Setup
                     </span>
                     <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">
-                      Score {signal.score}
+                      {signal.sniperGrade} · {signal.sniperQualityIndex ?? Math.round(signal.score * 20)}%
                     </span>
                   </div>
                   <h3 className="font-extrabold text-sm text-white mt-0.5">
@@ -381,12 +374,15 @@ export const SignalToastNotification: React.FC<SignalToastNotificationProps> = (
               <div className="grid grid-cols-2 gap-2 text-xs">
                 <div className="p-2.5 rounded-xl bg-zinc-900/90 border border-zinc-800">
                   <span className="text-[9px] uppercase tracking-wider text-zinc-400 block font-bold">
-                    Entry Spot
+                    Live Quote
                   </span>
                   <span className="font-black text-white tabular-nums block text-sm mt-0.5">
                     ${activeEntry.toFixed(cfg.digits)}
                   </span>
-                  <span className="text-[9px] text-zinc-500">Live Market Entry</span>
+                  <span className="text-[9px] text-zinc-500">Current market price</span>
+                  <span className="text-[9px] text-amber-300 block">
+                    OTE trigger: ${Number(signal.optimalTradeEntry ?? activeEntry).toFixed(cfg.digits)}
+                  </span>
                 </div>
 
                 <div className="p-2.5 rounded-xl bg-rose-950/20 border border-rose-500/30">
@@ -494,7 +490,11 @@ export const SignalToastNotification: React.FC<SignalToastNotificationProps> = (
                   <ShieldCheck className="w-4 h-4 text-amber-400" />
                   <span>Execution Lot Size</span>
                 </span>
-                {isLotCustomized && customLot !== autoLotSize ? (
+                {autoLotSize === null ? (
+                  <span className="text-[10px] font-bold text-amber-300 bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20">
+                    No Safe Lot for Risk Limit
+                  </span>
+                ) : isLotCustomized && customLot !== autoLotSize ? (
                   <button
                     type="button"
                     onClick={() => {
@@ -600,16 +600,18 @@ export const SignalToastNotification: React.FC<SignalToastNotificationProps> = (
                 <button
                   type="button"
                   onClick={() => {
+                    if (autoLotSize === null) return;
                     setCustomLot(autoLotSize);
                     setIsLotCustomized(false);
                   }}
+                  disabled={autoLotSize === null}
                   className={`px-2 py-1 rounded-lg text-[10px] font-bold border transition-colors cursor-pointer ${
-                    !isLotCustomized || activeLot === autoLotSize
+                    autoLotSize !== null && (!isLotCustomized || activeLot === autoLotSize)
                       ? 'bg-amber-500/20 text-amber-300 border-amber-500/50'
                       : 'bg-zinc-800 text-zinc-400 border-zinc-700 hover:text-white'
                   }`}
                 >
-                  Auto ({autoLotSize.toFixed(2)}L)
+                  Auto ({autoLotSize === null ? 'blocked' : `${autoLotSize.toFixed(2)}L`})
                 </button>
                 {[0.05, 0.1, 0.2, 0.5].map((val) => (
                   <button
@@ -665,10 +667,12 @@ export const SignalToastNotification: React.FC<SignalToastNotificationProps> = (
 
               <button
                 type="button"
-                disabled={executing || !canOpenTrade}
+                disabled={executing || !canOpenTrade || autoLotSize === null || activeLot <= 0}
                 onClick={handleExecuteSniper}
                 className={`flex-1 py-3 sm:py-3.5 rounded-xl font-black text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-2 cursor-pointer shadow-md active:scale-[0.98] ${
                   !canOpenTrade
+                    ? 'bg-zinc-800 text-zinc-500 cursor-not-allowed border border-zinc-700'
+                    : autoLotSize === null || activeLot <= 0
                     ? 'bg-zinc-800 text-zinc-500 cursor-not-allowed border border-zinc-700'
                     : isBuy
                     ? 'bg-emerald-500 hover:bg-emerald-400 text-black font-black'
@@ -681,7 +685,9 @@ export const SignalToastNotification: React.FC<SignalToastNotificationProps> = (
                     ? 'EXECUTING...'
                     : !canOpenTrade
                     ? 'MAX 5 TRADES REACHED'
-                    : `EXECUTE SNIPER ${activeDirection} (${activeLot.toFixed(2)}L · ${selectedTpTarget.toUpperCase()})`}
+                    : autoLotSize === null || activeLot <= 0
+                    ? 'NO SAFE LOT SIZE — RISK LIMIT'
+                    : `EXECUTE PRECISION ${activeDirection} (${activeLot.toFixed(2)}L · ${selectedTpTarget.toUpperCase()})`}
                 </span>
               </button>
             </div>
@@ -689,7 +695,7 @@ export const SignalToastNotification: React.FC<SignalToastNotificationProps> = (
         </div>
       )}
 
-      {/* FLOATING SNIPER ENTRY TRIGGER BUTTON - Top-Right */}
+      {/* Floating precision-entry trigger */}
       <div className="fixed top-14 right-4 z-[90] select-none font-mono">
         <button
           onClick={() => setIsOpen((prev) => !prev)}
@@ -705,7 +711,7 @@ export const SignalToastNotification: React.FC<SignalToastNotificationProps> = (
           {/* Sniper Label & Direction */}
           <span className="font-black text-xs uppercase tracking-wider text-amber-300 flex items-center gap-1.5">
             <Target className="w-3.5 h-3.5 text-amber-400" />
-            <span>SNIPER {activeDirection}</span>
+            <span>PRECISION {activeDirection}</span>
           </span>
 
           {/* Entry Countdown Timer Pill */}

@@ -1,11 +1,11 @@
 /**
  * useAudioNotifications.ts - React hook for SMC Audio & System Sound Notifications
- * Listens for new high-confluence signals (score >= 4.0), trade executions,
+ * Listens for new signal candles, trade executions,
  * profits, losses, and updates reactive UI state.
  */
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { useMarket } from './useTradingStore';
+import { useMarket, useTicker } from './useTradingStore';
 import { signalAudioNotifier } from '../utils/audioNotification';
 import { Signal } from '../types/smc';
 
@@ -16,7 +16,7 @@ export interface UseAudioNotificationsReturn {
   playTradeChime: (direction?: 'BUY' | 'SELL') => void;
   playProfitChime: (profit?: number) => void;
   playLossChime: (loss?: number) => void;
-  playTestSound: (type: 'signal' | 'trade' | 'profit' | 'loss') => void;
+  playTestSound: (type: 'signal' | 'trade' | 'precision' | 'profit' | 'loss') => void;
   lastAlertedSignal: Signal | null;
   hasNewAlert: boolean;
   clearAlert: () => void;
@@ -24,6 +24,7 @@ export interface UseAudioNotificationsReturn {
 
 export function useAudioNotifications(): UseAudioNotificationsReturn {
   const market = useMarket();
+  const ticker = useTicker();
   const [isMuted, setIsMuted] = useState(() => signalAudioNotifier.getMuted());
   const [lastAlertedSignal, setLastAlertedSignal] = useState<Signal | null>(null);
   const [hasNewAlert, setHasNewAlert] = useState(false);
@@ -46,7 +47,7 @@ export function useAudioNotifications(): UseAudioNotificationsReturn {
     signalAudioNotifier.playLossAlert(loss);
   }, []);
 
-  const playTestSound = useCallback((type: 'signal' | 'trade' | 'profit' | 'loss') => {
+  const playTestSound = useCallback((type: 'signal' | 'trade' | 'precision' | 'profit' | 'loss') => {
     signalAudioNotifier.playTestChime(type);
   }, []);
 
@@ -70,7 +71,7 @@ export function useAudioNotifications(): UseAudioNotificationsReturn {
     const minScore = sig.score <= 10 ? 3.0 : 55;
     if (sig.score < minScore) return;
 
-    const currentKey = `${sig.direction}_${sig.entry}_${sig.score}_${sig.timestamp}`;
+    const currentKey = `${ticker.symbol}_${sig.timeframe}_${sig.direction}_${sig.timestamp}`;
     if (currentKey !== lastSignalKeyRef.current) {
       lastSignalKeyRef.current = currentKey;
       setLastAlertedSignal(sig);
@@ -87,7 +88,7 @@ export function useAudioNotifications(): UseAudioNotificationsReturn {
 
       return () => clearTimeout(timer);
     }
-  }, [market.signal]);
+  }, [market.signal, ticker.symbol]);
 
   return {
     isMuted,

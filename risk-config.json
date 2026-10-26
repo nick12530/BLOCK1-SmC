@@ -1,5 +1,6 @@
 {
-  "riskPercentPerTrade": 0.5,
+  "riskPercentPerTrade": 1.25,
+  "maxPortfolioRiskPercent": 3,
   "maxDailyLossPercent": 3,
   "maxConsecutiveLosses": 3,
   "maxOpenPositions": 5,
@@ -9,8 +10,6 @@
   "directionCooldownEnabled": false,
   "hourlyLimitEnabled": false,
   "brokerLeverage": 2000,
-  "smallAccountThresholdUsd": 50,
-  "smallAccountMaxRiskUsd": 2.5,
   "newsBlackoutTimeZone": "America/New_York",
   "newsBlackoutWindows": [
     { "start": "08:20", "end": "09:00" },

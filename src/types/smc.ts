@@ -271,6 +271,7 @@ export interface Scenario {
 
 export interface TickerState {
   time: string;
+  quoteUpdatedAt?: number;
   symbol: string;
   displayName?: string;
   brokerTimeStr?: string;
@@ -285,6 +286,7 @@ export interface TickerState {
   change24h: number;
   change24hPct: number;
   volume24h: string;
+  marketDataAvailable?: boolean;
 }
 
 export type ChartTimeframe = 'M1' | 'M5' | 'M15' | 'H1' | 'H4';
@@ -386,8 +388,6 @@ export interface EngineState {
   leverage?: number;
   allowHighConfluenceOverride?: boolean;
   autoSelectBestScenario?: boolean;
-  tradingViewSynced?: boolean;
-  tradingViewLastSync?: number;
 }
 
 export interface EventsState {

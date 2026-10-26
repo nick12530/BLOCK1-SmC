@@ -1,7 +1,5 @@
 /**
- * candlestickPatterns.ts - Institutional Gold (XAUUSD) Candlestick Pattern Engine
- * Masters all major candlestick reversal & continuation patterns specifically calibrated
- * for Gold volatility, liquidity sweeps, and Smart Money Concepts.
+ * Instrument-neutral candle patterns using pip-scaled price tolerances.
  */
 
 import { Candle } from '../types/smc';
@@ -26,9 +24,9 @@ export interface CandlestickPatternMatch {
   type: CandlestickPatternType;
   name: string;
   bias: 'BULLISH' | 'BEARISH' | 'NEUTRAL';
-  reliability: number; // 0 to 100%
+  reliability: number; // Heuristic pattern score, not a probability of profit.
   description: string;
-  goldInsight: string; // Specific gold volatility & SMC trading guidance
+  marketInsight: string;
   wickRatio: string;
   displacementScore: number; // 1 to 5
 }
@@ -49,30 +47,36 @@ export interface CandlestickAnalysis {
 }
 
 /**
- * Masters and detects all major candlestick patterns on XAUUSD
+ * Detects common candle patterns with tolerances scaled to the instrument.
  */
-export function analyzeGoldCandlestickPatterns(candles: Candle[]): CandlestickAnalysis {
+export function analyzeCandlestickPatterns(
+  candles: Candle[],
+  pipSize: number,
+  instrumentName = 'Market'
+): CandlestickAnalysis {
+  const safePipSize = Number.isFinite(pipSize) && pipSize > 0 ? pipSize : 0.0001;
+  const metricDigits = Math.min(8, Math.max(2, Math.ceil(-Math.log10(safePipSize)) + 1));
   if (candles.length < 4) {
     return {
       activePattern: {
         type: 'NEUTRAL_DOJI',
-        name: 'Neutral Price Action',
+        name: 'Unavailable',
         bias: 'NEUTRAL',
-        reliability: 50,
+        reliability: 0,
         description: 'Insufficient candles for pattern confirmation.',
-        goldInsight: 'Wait for M5/M15 candle close before committing volume.',
-        wickRatio: '50% Body',
-        displacementScore: 1,
+        marketInsight: 'Waiting for verified broker candles.',
+        wickRatio: 'Unavailable',
+        displacementScore: 0,
       },
       recentPatterns: [],
       lastCandleMetrics: {
-        range: 1,
-        body: 0.5,
-        upperWick: 0.25,
-        lowerWick: 0.25,
-        bodyPct: 50,
-        upperWickPct: 25,
-        lowerWickPct: 25,
+        range: 0,
+        body: 0,
+        upperWick: 0,
+        lowerWick: 0,
+        bodyPct: 0,
+        upperWickPct: 0,
+        lowerWickPct: 0,
         isBullish: true,
       },
     };
@@ -84,7 +88,7 @@ export function analyzeGoldCandlestickPatterns(candles: Candle[]): CandlestickAn
   const c3 = candles[candles.length - 4]; // 3 candles ago
 
   // Candle 0 metrics
-  const range0 = Math.max(0.1, c0.high - c0.low);
+  const range0 = Math.max(safePipSize * 0.1, c0.high - c0.low);
   const body0 = Math.abs(c0.close - c0.open);
   const upperWick0 = c0.high - Math.max(c0.open, c0.close);
   const lowerWick0 = Math.min(c0.open, c0.close) - c0.low;
@@ -95,14 +99,14 @@ export function analyzeGoldCandlestickPatterns(candles: Candle[]): CandlestickAn
   const bodyPct0 = Math.round((body0 / range0) * 100);
 
   // Candle 1 metrics
-  const range1 = Math.max(0.1, c1.high - c1.low);
+  const range1 = Math.max(safePipSize * 0.1, c1.high - c1.low);
   const body1 = Math.abs(c1.close - c1.open);
   const isBull1 = c1.close >= c1.open;
   const isBull2 = c2.close >= c2.open;
 
   const detected: CandlestickPatternMatch[] = [];
 
-  // 1. LIQUIDITY SWEEP PINBAR (High Institutional Win-Rate on Gold)
+  // 1. Long-wick rejection bars
   if (lowerWickPct0 >= 55 && bodyPct0 <= 35) {
     detected.push({
       type: 'SWEEP_PINBAR',
@@ -110,7 +114,7 @@ export function analyzeGoldCandlestickPatterns(candles: Candle[]): CandlestickAn
       bias: 'BULLISH',
       reliability: 94,
       description: `Long lower rejection wick (${lowerWickPct0}%) purges sell-side liquidity before strong aggressive buyer recovery.`,
-      goldInsight: 'XAUUSD sweeps Asian or session lows to trigger retail stops into institutional buy limits.',
+      marketInsight: `Check whether the rejection coincides with a confirmed ${instrumentName} liquidity level.`,
       wickRatio: `${lowerWickPct0}% Lower Wick`,
       displacementScore: 5,
     });
@@ -121,7 +125,7 @@ export function analyzeGoldCandlestickPatterns(candles: Candle[]): CandlestickAn
       bias: 'BEARISH',
       reliability: 94,
       description: `Long upper rejection wick (${upperWickPct0}%) sweeps buy-side liquidity into premium institutional supply.`,
-      goldInsight: 'Gold tests psychological round figures (e.g. .00 / .50) before violent supply displacement.',
+      marketInsight: `Check for nearby resistance or swept highs on ${instrumentName}.`,
       wickRatio: `${upperWickPct0}% Upper Wick`,
       displacementScore: 5,
     });
@@ -135,7 +139,7 @@ export function analyzeGoldCandlestickPatterns(candles: Candle[]): CandlestickAn
       bias: 'BULLISH',
       reliability: 91,
       description: 'Massive bullish displacement candle completely engulfs prior bearish range, creating fresh Fair Value Gaps.',
-      goldInsight: 'Indicates interbank algorithmic buy program activation. Enter on 50% retest of the engulfing body.',
+      marketInsight: 'Use higher-timeframe direction and location to distinguish displacement from a late breakout.',
       wickRatio: `${bodyPct0}% Expansion Body`,
       displacementScore: 5,
     });
@@ -146,7 +150,7 @@ export function analyzeGoldCandlestickPatterns(candles: Candle[]): CandlestickAn
       bias: 'BEARISH',
       reliability: 91,
       description: 'Aggressive institutional sell candle completely engulfs prior bullish candle, fracturing lower-timeframe market structure.',
-      goldInsight: 'Classic Gold distribution pattern following premium liquidity grab. Target opposing discount demand.',
+      marketInsight: 'Check whether the displacement breaks structure and leaves room to the next support.',
       wickRatio: `${bodyPct0}% Expansion Body`,
       displacementScore: 5,
     });
@@ -161,7 +165,7 @@ export function analyzeGoldCandlestickPatterns(candles: Candle[]): CandlestickAn
       bias: 'BULLISH',
       reliability: 89,
       description: '3-candle reversal cluster: Bearish impulse followed by absorption doji, followed by aggressive bullish expansion.',
-      goldInsight: 'Signals completion of discount order block mitigation. Very reliable at London/NY open.',
+      marketInsight: 'Confirmation is stronger when the reversal forms at a pre-identified support zone.',
       wickRatio: '3-Bar Cluster',
       displacementScore: 4,
     });
@@ -172,15 +176,16 @@ export function analyzeGoldCandlestickPatterns(candles: Candle[]): CandlestickAn
       bias: 'BEARISH',
       reliability: 89,
       description: '3-candle reversal cluster: Bullish push met by supply exhaustion doji and confirmed by heavy sell displacement.',
-      goldInsight: 'High probability signal when formed at the high of the day (HOD).',
+      marketInsight: 'Confirmation is stronger when the reversal forms at a pre-identified resistance zone.',
       wickRatio: '3-Bar Cluster',
       displacementScore: 4,
     });
   }
 
   // 4. TWEEZER TOPS & BOTTOMS (Equal Highs / Equal Lows Retest)
-  const equalLows = Math.abs(c0.low - c1.low) <= 0.35 && lowerWickPct0 > 30;
-  const equalHighs = Math.abs(c0.high - c1.high) <= 0.35 && upperWickPct0 > 30;
+  const equalLevelTolerance = safePipSize * 3.5;
+  const equalLows = Math.abs(c0.low - c1.low) <= equalLevelTolerance && lowerWickPct0 > 30;
+  const equalHighs = Math.abs(c0.high - c1.high) <= equalLevelTolerance && upperWickPct0 > 30;
   if (equalLows) {
     detected.push({
       type: 'TWEEZER_BOTTOM',
@@ -188,7 +193,7 @@ export function analyzeGoldCandlestickPatterns(candles: Candle[]): CandlestickAn
       bias: 'BULLISH',
       reliability: 87,
       description: 'Consecutive candles rejected at exact same low boundary, confirming institutional limit order defense.',
-      goldInsight: 'Strong floor formed on Gold. Place Stop Loss 1.5 points below tweezer lows.',
+      marketInsight: 'Treat the repeated low as a level to monitor; it is not a confirmed reversal on its own.',
       wickRatio: `${lowerWickPct0}% Defense Wick`,
       displacementScore: 4,
     });
@@ -199,7 +204,7 @@ export function analyzeGoldCandlestickPatterns(candles: Candle[]): CandlestickAn
       bias: 'BEARISH',
       reliability: 87,
       description: 'Consecutive candles testing exact same resistance ceiling, showing repeated rejection of higher prices.',
-      goldInsight: 'Sellers firmly defending resistance level. Look for breakdown below tweezer low.',
+      marketInsight: 'Treat the repeated high as a level to monitor; it is not a confirmed reversal on its own.',
       wickRatio: `${upperWickPct0}% Supply Rejection`,
       displacementScore: 4,
     });
@@ -213,7 +218,7 @@ export function analyzeGoldCandlestickPatterns(candles: Candle[]): CandlestickAn
       bias: 'BULLISH',
       reliability: 86,
       description: 'Three consecutive strong bullish candles with progressive higher closes and minimal upper wicks.',
-      goldInsight: 'Confirms runaway trend regime on Gold. Avoid shorting; buy pullbacks to M5 Order Blocks.',
+      marketInsight: 'Momentum may be extended; check trend context and avoid chasing after a large move.',
       wickRatio: `${bodyPct0}% Momentum`,
       displacementScore: 5,
     });
@@ -224,7 +229,7 @@ export function analyzeGoldCandlestickPatterns(candles: Candle[]): CandlestickAn
       bias: 'BEARISH',
       reliability: 86,
       description: 'Three consecutive strong bearish candles with progressive lower closes, confirming institutional distribution.',
-      goldInsight: 'Violent liquidation phase on Gold. Target HTF discount equilibrium.',
+      marketInsight: 'Momentum may be extended; check trend context and avoid chasing after a large move.',
       wickRatio: `${bodyPct0}% Momentum`,
       displacementScore: 5,
     });
@@ -238,7 +243,7 @@ export function analyzeGoldCandlestickPatterns(candles: Candle[]): CandlestickAn
       bias: 'NEUTRAL',
       reliability: 82,
       description: 'Current candle range completely inside mother bar, signaling institutional order accumulation before breakout.',
-      goldInsight: 'Gold consolidates tightly before NY open or high-impact US economic releases (CPI/NFP).',
+      marketInsight: 'Compression can precede expansion, but the breakout direction is not known until confirmed.',
       wickRatio: 'Coiled Range',
       displacementScore: 3,
     });
@@ -253,7 +258,7 @@ export function analyzeGoldCandlestickPatterns(candles: Candle[]): CandlestickAn
         bias: 'BULLISH',
         reliability: 85,
         description: 'Open, close, and high are virtually identical at top with extreme lower wick.',
-        goldInsight: 'Sellers exhausted all supply during the bar; buyers completely reclaimed territory.',
+        marketInsight: 'A long lower wick indicates rejection; confirm direction with surrounding structure.',
         wickRatio: `${lowerWickPct0}% Reclaim Wick`,
         displacementScore: 4,
       });
@@ -264,7 +269,7 @@ export function analyzeGoldCandlestickPatterns(candles: Candle[]): CandlestickAn
         bias: 'BEARISH',
         reliability: 85,
         description: 'Open, close, and low are virtually identical at bottom with extreme upper wick.',
-        goldInsight: 'Buyers attempted push to highs but were crushed by institutional supply overhead.',
+        marketInsight: 'A long upper wick indicates rejection; confirm direction with surrounding structure.',
         wickRatio: `${upperWickPct0}% Rejection Wick`,
         displacementScore: 4,
       });
@@ -279,7 +284,7 @@ export function analyzeGoldCandlestickPatterns(candles: Candle[]): CandlestickAn
       bias: isBull0 ? 'BULLISH' : 'BEARISH',
       reliability: 68,
       description: `Normal order flow progression (${bodyPct0}% body, ${isBull0 ? lowerWickPct0 : upperWickPct0}% wick).`,
-      goldInsight: 'Standard price delivery within the current dealing range. Await POI touch.',
+      marketInsight: 'A directional candle alone is not a setup; wait for location and trigger confirmation.',
       wickRatio: `${bodyPct0}% Body`,
       displacementScore: 2,
     });
@@ -289,14 +294,18 @@ export function analyzeGoldCandlestickPatterns(candles: Candle[]): CandlestickAn
     activePattern: detected[0],
     recentPatterns: detected,
     lastCandleMetrics: {
-      range: Number(range0.toFixed(2)),
-      body: Number(body0.toFixed(2)),
-      upperWick: Number(upperWick0.toFixed(2)),
-      lowerWick: Number(lowerWick0.toFixed(2)),
+      range: Number(range0.toFixed(metricDigits)),
+      body: Number(body0.toFixed(metricDigits)),
+      upperWick: Number(upperWick0.toFixed(metricDigits)),
+      lowerWick: Number(lowerWick0.toFixed(metricDigits)),
       bodyPct: bodyPct0,
       upperWickPct: upperWickPct0,
       lowerWickPct: lowerWickPct0,
       isBullish: isBull0,
     },
   };
+}
+
+export function analyzeGoldCandlestickPatterns(candles: Candle[]): CandlestickAnalysis {
+  return analyzeCandlestickPatterns(candles, 0.1, 'Gold');
 }

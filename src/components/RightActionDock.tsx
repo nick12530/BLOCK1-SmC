@@ -263,7 +263,7 @@ export const RightActionDock: React.FC<RightActionDockProps> = ({
                 <AlertCircle className="w-5 h-5 text-[#6b7a90] mx-auto" />
                 <div className="font-semibold text-[#94a3b8] text-xs">Awaiting Confluence Setup</div>
                 <div className="text-[11px] text-[#6b7a90]">
-                  SMC engine requires 5.0+ confluence, HTF alignment, a Discount/Premium POI retest, matching candle confirmation, and an active London or New York session.
+                  Scanning SMC retests, trend pullbacks, and breakouts. Neutral-timeframe candidates can qualify; counter-trend setups are excluded from auto-execution and execution remains risk-checked.
                 </div>
               </div>
             )}

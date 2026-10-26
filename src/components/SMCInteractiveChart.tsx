@@ -14,7 +14,7 @@ import { findCorrespondingOrderBlock } from '../engine/tradeJournal';
 import { calculateATR, detectFVGs, detectOrderBlocks, MarketStructureEngine } from '../engine/smcCore';
 import { tradingEngine } from '../engine/tradingEngine';
 import type { SupportedSymbol } from '../engine/instrumentConfig';
-import type { Candle, Zone } from '../types/smc';
+import type { Candle } from '../types/smc';
 
 export type ChartTimeframe = 'M1' | 'M5' | 'M15' | 'H1' | 'H4';
 
@@ -28,8 +28,8 @@ export interface SMCIndicatorConfig {
 
 export const DEFAULT_INDICATOR_CONFIG: SMCIndicatorConfig = {
   orderBlocks: true,
-  fairValueGaps: true,
-  structure: true,
+  fairValueGaps: false,
+  structure: false,
   signals: true,
   trades: true,
 };
@@ -58,7 +58,7 @@ const CandleCountdownBadge: React.FC<{ timeframe: ChartTimeframe }> = React.memo
   const secs = secondsToClose % 60;
 
   return (
-    <span className="text-amber-300 text-[10px] tabular-nums">
+    <span className="text-sky-300 text-[10px] tabular-nums">
       Closes in {String(mins).padStart(2, '0')}:{String(secs).padStart(2, '0')}
     </span>
   );
@@ -94,22 +94,8 @@ export const SMCInteractiveChart: React.FC<SMCInteractiveChartProps> = ({
     if (!selectedPosition) return undefined;
     if (selectedPosition.strategyOrderBlock) return selectedPosition.strategyOrderBlock;
     const found = findCorrespondingOrderBlock(selectedPosition.type, selectedPosition.price_open, market.zones);
-    if (found) return found;
-
-    // Guaranteed fallback: synthesize active trade order block zone around entry so it ALWAYS shows
-    const isBuy = selectedPosition.type === 'BUY';
-    const zoneBuffer = Math.max(0.8, ticker.spread * 0.08 || 1.2);
-    return {
-      kind: 'OB' as const,
-      bullish: isBuy,
-      bottom: isBuy ? selectedPosition.price_open - zoneBuffer * 1.5 : selectedPosition.price_open - zoneBuffer * 0.4,
-      top: isBuy ? selectedPosition.price_open + zoneBuffer * 0.4 : selectedPosition.price_open + zoneBuffer * 1.5,
-      tests: 0,
-      filled: false,
-      mitigated: false,
-      born: 0,
-    } as Zone;
-  }, [market.zones, selectedPosition, ticker.spread]);
+    return found;
+  }, [market.zones, selectedPosition]);
 
   useEffect(() => {
     const container = chartContainerRef.current;
@@ -252,7 +238,7 @@ export const SMCInteractiveChart: React.FC<SMCInteractiveChartProps> = ({
         const distB = Math.abs((b.top + b.bottom) / 2 - currentPrice);
         return distA - distB;
       })
-      .slice(0, 6);
+      .slice(0, 8);
   }, [timeframeZones, market.zones, ticker.bid]);
 
   const candles = useMemo(() => {
@@ -314,36 +300,15 @@ export const SMCInteractiveChart: React.FC<SMCInteractiveChartProps> = ({
   const chartStructure = timeframeStructure;
 
   const chartSignal = useMemo(() => {
-    if (market.signal) return market.signal;
-    if (candles.length < 10) return null;
-    const atrArray = calculateATR(candles, 14);
-    const atr = Number(atrArray[atrArray.length - 1]) || 2.0;
-    const obZones = detectOrderBlocks(candles, atrArray);
-    const struct = timeframeStructure;
-    const lastPrice = candles[candles.length - 1].close;
-
-    if (struct.bos?.direction === 'bullish' && obZones.some((z) => z.bullish && !z.filled)) {
-      return {
-        direction: 'BUY' as const,
-        timeframe: timeframe === 'M1' ? ('M1' as const) : timeframe === 'M15' ? ('M15' as const) : ('M5' as const),
-        score: 75,
-        entry: lastPrice,
-        sl: Number((lastPrice - atr * 1.5).toFixed(2)),
-        tp: Number((lastPrice + atr * 3.0).toFixed(2)),
-        reasons: [`${timeframe} Trend Alignment`, 'Bullish Displacement BOS', 'Demand Order Block Retest'],
-        atr,
-        timestamp: new Date().toISOString(),
-      };
-    }
-    return null;
-  }, [market.signal, candles, timeframeStructure, timeframe]);
+    return market.signal;
+  }, [market.signal]);
 
   // Dealing range equilibrium level
   const eqPrice = timeframeEqPrice;
 
   // Other currency pairs signals linked into SMC Engine
   const otherPairAnalyses = useMemo(() => {
-    return scannerAnalyses.filter((item) => item.symbol !== ticker.symbol);
+    return scannerAnalyses.filter((item) => item.symbol !== ticker.symbol && item.status === 'READY');
   }, [scannerAnalyses, ticker.symbol]);
 
   // Helper to render dotted horizontal line with right-anchored badge that never covers center candlesticks
@@ -449,10 +414,12 @@ export const SMCInteractiveChart: React.FC<SMCInteractiveChartProps> = ({
               <span className="w-2.5 h-2 rounded bg-emerald-500/20 border border-emerald-500" />
               <span>Demand Block (+OB)</span>
             </span>
-            <span className="flex items-center gap-1 text-rose-300">
-              <span className="w-3 border-t-2 border-dotted border-rose-400 inline-block" />
-              <span>Liquidity</span>
-            </span>
+            {indicatorConfig.structure && (
+              <span className="flex items-center gap-1 text-slate-400">
+                <span className="w-3 border-t-2 border-dotted border-slate-400 inline-block" />
+                <span>Structure</span>
+              </span>
+            )}
             {selectedPosition && (
               <span className="flex items-center gap-1 text-cyan-400 font-bold bg-cyan-950/60 px-1.5 py-0.5 rounded border border-cyan-500/40">
                 <span>Trade #{selectedPosition.ticket} OB Focused</span>
@@ -463,7 +430,9 @@ export const SMCInteractiveChart: React.FC<SMCInteractiveChartProps> = ({
 
         <div className="flex items-center gap-2 text-xs">
           <span className="text-zinc-400">Bid:</span>
-          <strong className="text-white tabular-nums">${ticker.bid.toFixed(2)}</strong>
+          <strong className="text-white tabular-nums">
+            {market.brokerMarketData && ticker.bid > 0 ? `$${ticker.bid.toFixed(2)}` : '—'}
+          </strong>
           <CandleCountdownBadge timeframe={timeframe} />
         </div>
       </div>
@@ -563,11 +532,23 @@ export const SMCInteractiveChart: React.FC<SMCInteractiveChartProps> = ({
           {/* 3. ORDER BLOCKS & BREAKER BLOCKS (Institutional translucent shaded zones with crisp right badges) */}
           {showIndicators && indicatorConfig.orderBlocks && (() => {
             const obList = nearestZones.filter((zone) => zone.kind === 'OB');
-            if (selectedOrderBlock && !obList.some((z) => Math.abs(z.bottom - selectedOrderBlock.bottom) < 0.01)) {
-              obList.unshift(selectedOrderBlock);
-            }
+            const nearestOrderBlocks = obList
+              .sort((a, b) =>
+                Math.abs((a.top + a.bottom) / 2 - ticker.bid) -
+                Math.abs((b.top + b.bottom) / 2 - ticker.bid)
+              )
+              .slice(0, 2);
+            const visibleOrderBlocks = selectedOrderBlock
+              ? [
+                  selectedOrderBlock,
+                  ...nearestOrderBlocks.filter(
+                    (zone) => Math.abs(zone.bottom - selectedOrderBlock.bottom) >= 0.01
+                  ),
+                ].slice(0, 2)
+              : nearestOrderBlocks;
 
-            return obList.map((ob, idx) => {
+            return visibleOrderBlocks
+              .map((ob, idx) => {
               const yTop = getY(ob.top);
               const yBottom = getY(ob.bottom);
               const h = Math.max(8, Math.abs(yBottom - yTop));
@@ -623,6 +604,7 @@ export const SMCInteractiveChart: React.FC<SMCInteractiveChartProps> = ({
           {/* 4. FAIR VALUE GAPS (FVG) - Subtle imbalance zone with right badge */}
           {showIndicators && indicatorConfig.fairValueGaps && nearestZones
             .filter((zone) => zone.kind === 'FVG')
+            .slice(0, 2)
             .map((fvg, idx) => {
               const yTop = getY(fvg.top);
               const yBottom = getY(fvg.bottom);
@@ -636,8 +618,8 @@ export const SMCInteractiveChart: React.FC<SMCInteractiveChartProps> = ({
                     y={y}
                     width={plotWidth - 15}
                     height={h}
-                    fill="rgba(234, 179, 8, 0.07)"
-                    stroke="#eab308"
+                    fill="rgba(148, 163, 184, 0.05)"
+                    stroke="#94a3b8"
                     strokeWidth="0.8"
                     strokeDasharray="3 3"
                     rx="2"
@@ -645,7 +627,7 @@ export const SMCInteractiveChart: React.FC<SMCInteractiveChartProps> = ({
                   {renderDottedTextLine(
                     y + h / 2,
                     label,
-                    '#eab308',
+                    '#94a3b8',
                     Math.min(160, label.length * 7 + 14),
                     8.5
                   )}
@@ -827,6 +809,13 @@ export const SMCInteractiveChart: React.FC<SMCInteractiveChartProps> = ({
             </g>
           )}
         </svg>
+        {(!market.brokerMarketData || rawCandles.length === 0) && (
+          <div className="absolute inset-0 flex items-center justify-center bg-black/70 px-4 text-center">
+            <p className="max-w-sm text-sm font-mono text-zinc-300">
+              Waiting for fresh MT5 candles for {ticker.symbol}. Chart analysis is unavailable until verified broker data arrives.
+            </p>
+          </div>
+        )}
       </div>
     </div>
   );

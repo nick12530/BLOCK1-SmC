@@ -17,20 +17,17 @@ import {
   Server,
   Clock,
   Shield,
-  Volume2,
-  VolumeX,
   History,
   Bot,
   Bell,
   BookOpen,
 } from 'lucide-react';
-import { signalAudioNotifier } from '../utils/audioNotification';
 
 interface HeaderViewProps {
   isDark: boolean;
   onToggleTheme: () => void;
   onOpenModal: (
-    modal: 'bridge' | 'settings' | 'closed_trades' | 'daily_report' | 'tradingview' | 'help' | 'phone_pwa' | 'webhook'
+    modal: 'bridge' | 'settings' | 'closed_trades' | 'daily_report' | 'tradingview' | 'help' | 'webhook'
   ) => void;
   onToggleKillSwitchPrompt?: () => void;
 }
@@ -78,7 +75,7 @@ export const HeaderView: React.FC<HeaderViewProps> = React.memo(({
   }, [ticker.brokerTimeStr]);
 
   return (
-    <header className="w-full border-b border-slate-200 dark:border-zinc-800 bg-white/95 dark:bg-[#090b10]/95 backdrop-blur-md z-30 transition-colors">
+    <header className="neo-panel sticky top-0 w-full border-0 bg-[#e8edf4]/95 dark:bg-[#151f2a]/95 backdrop-blur-md z-30 transition-colors">
       {/* Primary Tier: Brand, Currency Switcher, Auto-Trade, MT5, and Utilities */}
       <div className="max-w-[1600px] mx-auto px-3 sm:px-6 py-2.5 flex items-center justify-between gap-3 flex-wrap">
         {/* Left: Brand & Currency Switcher */}
@@ -104,7 +101,7 @@ export const HeaderView: React.FC<HeaderViewProps> = React.memo(({
           <div className="hidden sm:block h-5 w-px bg-slate-200 dark:border-zinc-800" />
 
           {/* Clean Segmented Currency Switcher */}
-          <div className="flex items-center bg-slate-100 dark:bg-zinc-900 p-0.5 rounded-lg border border-slate-200 dark:border-zinc-800 font-mono text-xs">
+          <div className="neo-inset flex items-center bg-slate-100 dark:bg-zinc-900 p-0.5 rounded-lg border border-slate-200 dark:border-zinc-800 font-mono text-xs">
             {SUPPORTED_SYMBOLS.map((sym) => {
               const isActive = sym === ticker.symbol;
               const label = sym === 'XAUUSD' ? 'GOLD' : sym.replace('USD', '');
@@ -113,9 +110,9 @@ export const HeaderView: React.FC<HeaderViewProps> = React.memo(({
                   key={sym}
                   type="button"
                   onClick={() => tradingEngine.switchSymbol(sym)}
-                  className={`px-2.5 py-1 rounded-md font-bold transition-all cursor-pointer text-xs ${
+                  className={`neo-button px-2.5 py-1 rounded-md font-bold transition-all cursor-pointer text-xs ${
                     isActive
-                      ? 'bg-slate-900 text-white dark:bg-white dark:text-black shadow-xs'
+                      ? 'neo-vivid-blue text-white shadow-xs'
                       : 'text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white'
                   }`}
                   title={`Focus ${sym}`}
@@ -128,7 +125,7 @@ export const HeaderView: React.FC<HeaderViewProps> = React.memo(({
         </div>
 
         {/* Center/Right: Account Telemetry (Inline, clean typography, zero pills) */}
-        <div className="hidden md:flex items-center gap-4 text-xs font-mono text-slate-600 dark:text-zinc-400 border-x border-slate-200/80 dark:border-zinc-800 px-4">
+        <div className="hidden md:flex items-center gap-4 text-xs font-mono text-slate-600 dark:text-zinc-400 px-4">
           <div className="flex items-center gap-1.5">
             <span className="text-slate-400 dark:text-zinc-500">Balance:</span>
             <strong className="text-slate-900 dark:text-white tabular-nums font-bold">
@@ -201,7 +198,7 @@ export const HeaderView: React.FC<HeaderViewProps> = React.memo(({
             <button
               type="button"
               onClick={() => onOpenModal('webhook')}
-              className="p-1.5 rounded-md hover:bg-white dark:hover:bg-zinc-800 text-amber-500 transition-colors cursor-pointer"
+              className="p-1.5 rounded-md hover:bg-white dark:hover:bg-zinc-800 text-sky-500 transition-colors cursor-pointer"
               title="Telegram Push Alerts & Webhook Config"
             >
               <Bell className="w-4 h-4" />
@@ -237,23 +234,6 @@ export const HeaderView: React.FC<HeaderViewProps> = React.memo(({
               <BookOpen className="w-4 h-4" />
             </button>
 
-            {/* Sound Toggle */}
-            <button
-              type="button"
-              onClick={() => {
-                const nextMuted = !signalAudioNotifier.getMuted();
-                signalAudioNotifier.setMuted(nextMuted);
-              }}
-              className="p-1.5 rounded-md hover:bg-white dark:hover:bg-zinc-800 text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white transition-colors cursor-pointer"
-              title={signalAudioNotifier.getMuted() ? 'Audio Muted' : 'Audio Active'}
-            >
-              {signalAudioNotifier.getMuted() ? (
-                <VolumeX className="w-4 h-4 text-zinc-400" />
-              ) : (
-                <Volume2 className="w-4 h-4 text-emerald-500" />
-              )}
-            </button>
-
             {/* Theme Toggle */}
             <button
               type="button"
@@ -261,14 +241,14 @@ export const HeaderView: React.FC<HeaderViewProps> = React.memo(({
               className="p-1.5 rounded-md hover:bg-white dark:hover:bg-zinc-800 text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white transition-colors cursor-pointer"
               title="Toggle Light / Dark Mode"
             >
-              {isDark ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4 text-slate-600" />}
+              {isDark ? <Sun className="w-4 h-4 text-sky-400" /> : <Moon className="w-4 h-4 text-slate-600" />}
             </button>
           </div>
         </div>
       </div>
 
       {/* Mobile Telemetry Ribbon (<md only): Clean, non-crowded single row */}
-      <div className="flex md:hidden items-center justify-between px-3 py-1.5 border-t border-slate-100 dark:border-zinc-800/80 text-xs font-mono text-slate-600 dark:text-zinc-400 bg-slate-50 dark:bg-black/40">
+      <div className="flex md:hidden items-center justify-between px-3 py-1.5 text-xs font-mono text-slate-600 dark:text-zinc-400 bg-slate-50/70 dark:bg-black/20">
         <div className="flex items-center gap-1.5">
           <span>Bal:</span>
           <strong className="text-slate-900 dark:text-white font-bold">${formatCurrency(ticker.balance)}</strong>

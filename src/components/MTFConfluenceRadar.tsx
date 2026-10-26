@@ -51,7 +51,7 @@ export const MTFConfluenceRadar: React.FC<MTFConfluenceRadarProps> = ({
     return (
       <div className="flex items-center gap-2 p-2 rounded-xl bg-slate-900/40 dark:bg-black/50 border border-slate-700/50 dark:border-zinc-800 font-mono text-xs select-none">
         <div className="flex items-center gap-1.5 shrink-0">
-          <Layers className="w-3.5 h-3.5 text-amber-400" />
+          <Layers className="w-3.5 h-3.5 text-sky-400" />
           <span className="text-[10px] font-black uppercase text-zinc-300">MTF Alignment:</span>
         </div>
 
@@ -66,7 +66,7 @@ export const MTFConfluenceRadar: React.FC<MTFConfluenceRadarProps> = ({
             className={`px-1.5 py-0.5 rounded font-bold border ${
               m15Aligned
                 ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
-                : 'bg-amber-500/15 text-amber-300 border-amber-500/30'
+                : 'bg-sky-500/15 text-sky-300 border-sky-500/30'
             }`}
           >
             M15: {isBuy ? '+OB Demand' : '-OB Supply'}
@@ -88,7 +88,7 @@ export const MTFConfluenceRadar: React.FC<MTFConfluenceRadarProps> = ({
           className={`text-[10px] font-black px-2 py-0.5 rounded-full shrink-0 ${
             alignmentPercent === 100
               ? 'bg-emerald-500 text-black'
-              : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+              : 'bg-sky-500/20 text-sky-300 border border-sky-500/30'
           }`}
         >
           {alignmentPercent}% Aligned
@@ -102,7 +102,7 @@ export const MTFConfluenceRadar: React.FC<MTFConfluenceRadarProps> = ({
       {/* Header */}
       <div className="flex items-center justify-between border-b border-zinc-800 pb-2 flex-wrap gap-2">
         <div className="flex items-center gap-2">
-          <Layers className="w-4 h-4 text-amber-400" />
+          <Layers className="w-4 h-4 text-sky-400" />
           <span className="font-extrabold text-xs uppercase tracking-wider text-white">
             Top-Down MTF Confluence Matrix
           </span>
@@ -112,13 +112,13 @@ export const MTFConfluenceRadar: React.FC<MTFConfluenceRadarProps> = ({
             className={`text-[10px] font-black px-2 py-0.5 rounded-full uppercase tracking-wider flex items-center gap-1 ${
               alignmentPercent === 100
                 ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
-                : 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                : 'bg-sky-500/20 text-sky-300 border border-sky-500/40'
             }`}
           >
             {alignmentPercent === 100 ? (
               <CheckCircle2 className="w-3 h-3 text-emerald-400" />
             ) : (
-              <AlertTriangle className="w-3 h-3 text-amber-400" />
+              <AlertTriangle className="w-3 h-3 text-sky-400" />
             )}
             <span>{alignmentPercent === 100 ? 'Triple-Aligned (100%)' : `${alignmentPercent}% Confluence`}</span>
           </span>
@@ -149,7 +149,7 @@ export const MTFConfluenceRadar: React.FC<MTFConfluenceRadarProps> = ({
             <span>M15 Structure</span>
             <span
               className={`text-[10px] font-bold ${
-                m15Aligned ? 'text-emerald-400' : 'text-amber-400'
+                m15Aligned ? 'text-emerald-400' : 'text-sky-400'
               }`}
             >
               {m15Aligned ? 'POI TAP' : 'POI PROX'}
@@ -159,7 +159,7 @@ export const MTFConfluenceRadar: React.FC<MTFConfluenceRadarProps> = ({
           <div className="text-[10px] text-zinc-400 leading-tight flex items-center gap-1">
             <span
               className={`w-1.5 h-1.5 rounded-full shrink-0 ${
-                m15Aligned ? 'bg-emerald-400' : 'bg-amber-400'
+                m15Aligned ? 'bg-emerald-400' : 'bg-sky-400'
               }`}
             />
             <span>{m15Status}</span>

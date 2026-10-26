@@ -29,6 +29,7 @@ export const TradeLaunchpad: React.FC<TradeLaunchpadProps> = ({
   const ticker = useTicker();
   const market = useMarket();
   const engine = useEngine();
+  const verifiedMarketData = market.brokerMarketData && engine.connected && engine.mt5Account?.connected;
 
   const [activeTab, setActiveTab] = useState<'signal' | 'manual'>('signal');
   const [lot, setLot] = useState<number>(0.01);
@@ -206,13 +207,13 @@ export const TradeLaunchpad: React.FC<TradeLaunchpadProps> = ({
         <div>
           <span className="text-[9px] uppercase text-slate-400">Current Ask (BUY)</span>
           <div className="font-black text-emerald-500 text-sm">
-            {ticker.ask.toFixed(cfg.digits)}
+            {verifiedMarketData && ticker.ask > 0 ? ticker.ask.toFixed(cfg.digits) : '—'}
           </div>
         </div>
         <div>
           <span className="text-[9px] uppercase text-slate-400">Current Bid (SELL)</span>
           <div className="font-black text-rose-500 text-sm">
-            {ticker.bid.toFixed(cfg.digits)}
+            {verifiedMarketData && ticker.bid > 0 ? ticker.bid.toFixed(cfg.digits) : '—'}
           </div>
         </div>
         <div>
@@ -523,6 +524,7 @@ export const TradeLaunchpad: React.FC<TradeLaunchpadProps> = ({
             <button
               type="button"
               onClick={() => handleExecuteManual('BUY')}
+              disabled={!verifiedMarketData}
               className="py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 active:scale-[0.98] text-white font-black text-sm uppercase tracking-wider shadow-lg shadow-emerald-500/20 transition-all cursor-pointer flex flex-col items-center justify-center gap-1"
             >
               <div className="flex items-center gap-1.5">
@@ -530,13 +532,14 @@ export const TradeLaunchpad: React.FC<TradeLaunchpadProps> = ({
                 <span>BUY {activeSymbol}</span>
               </div>
               <span className="text-[11px] font-mono font-normal opacity-90">
-                Ask @ {ticker.ask.toFixed(cfg.digits)}
+                Ask @ {verifiedMarketData && ticker.ask > 0 ? ticker.ask.toFixed(cfg.digits) : '—'}
               </span>
             </button>
 
             <button
               type="button"
               onClick={() => handleExecuteManual('SELL')}
+              disabled={!verifiedMarketData}
               className="py-3 px-4 rounded-xl bg-rose-600 hover:bg-rose-500 active:scale-[0.98] text-white font-black text-sm uppercase tracking-wider shadow-lg shadow-rose-500/20 transition-all cursor-pointer flex flex-col items-center justify-center gap-1"
             >
               <div className="flex items-center gap-1.5">
@@ -544,7 +547,7 @@ export const TradeLaunchpad: React.FC<TradeLaunchpadProps> = ({
                 <span>SELL {activeSymbol}</span>
               </div>
               <span className="text-[11px] font-mono font-normal opacity-90">
-                Bid @ {ticker.bid.toFixed(cfg.digits)}
+                Bid @ {verifiedMarketData && ticker.bid > 0 ? ticker.bid.toFixed(cfg.digits) : '—'}
               </span>
             </button>
           </div>

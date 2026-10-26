@@ -153,7 +153,7 @@ export const WebhookSettingsModal: React.FC<WebhookSettingsModalProps> = ({ isOp
                 <span>Enable Instant Push Alerts</span>
               </span>
               <p className="text-[11px] text-slate-500 dark:text-zinc-400">
-                Dispatches alerts directly to your phone when confirmed sniper signals appear
+                Sends distinct pre-entry and strict Precision Entry alerts to your configured destination
               </p>
             </div>
 
@@ -291,6 +291,18 @@ export const WebhookSettingsModal: React.FC<WebhookSettingsModalProps> = ({ isOp
               </label>
 
               <label className="flex items-center justify-between cursor-pointer">
+                <span>Alert when an A+ entry trigger is approaching (not an order):</span>
+                <input
+                  type="checkbox"
+                  checked={config.alertOnApproachingEntry}
+                  onChange={(e) =>
+                    setConfig((prev) => ({ ...prev, alertOnApproachingEntry: e.target.checked }))
+                  }
+                  className="rounded border-zinc-700 text-blue-500 focus:ring-blue-400"
+                />
+              </label>
+
+              <label className="flex items-center justify-between cursor-pointer">
                 <span>Notify On Order Fill Executions:</span>
                 <input
                   type="checkbox"
@@ -301,14 +313,14 @@ export const WebhookSettingsModal: React.FC<WebhookSettingsModalProps> = ({ isOp
               </label>
 
               <div className="flex items-center justify-between pt-1">
-                <span>Minimum Confluence Score:</span>
+                <span>Minimum Confluence (precision floor: 88):</span>
                 <span className="font-bold text-amber-500">{config.minConfluenceScore} / 100</span>
               </div>
               <input
                 type="range"
-                min="50"
-                max="90"
-                step="5"
+                min="88"
+                max="100"
+                step="1"
                 value={config.minConfluenceScore}
                 onChange={(e) => setConfig((prev) => ({ ...prev, minConfluenceScore: Number(e.target.value) }))}
                 className="w-full accent-amber-500"

@@ -91,12 +91,12 @@ export const TopNav: React.FC<TopNavProps> = ({
         <div className="flex items-center gap-1.5 font-mono text-xs">
           <span className="text-zinc-500 uppercase text-[10px] font-bold">BID</span>
           <span className="font-bold text-zinc-100 tabular-nums">
-            {ticker.bid.toFixed(instrumentCfg.digits)}
+            {market.brokerMarketData && ticker.bid > 0 ? ticker.bid.toFixed(instrumentCfg.digits) : '—'}
           </span>
           <span className="text-zinc-600">/</span>
           <span className="text-zinc-500 uppercase text-[10px] font-bold">ASK</span>
           <span className="font-bold text-zinc-100 tabular-nums">
-            {ticker.ask.toFixed(instrumentCfg.digits)}
+            {market.brokerMarketData && ticker.ask > 0 ? ticker.ask.toFixed(instrumentCfg.digits) : '—'}
           </span>
         </div>
 

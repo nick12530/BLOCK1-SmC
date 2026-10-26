@@ -152,6 +152,37 @@ describe('SMC signal filters', () => {
 
       expect(structure.events.some((event) => event.kind === 'BOS' && event.direction === 'bullish')).toBe(true);
       expect(structure.events.some((event) => event.kind === 'CHoCH' && event.direction === 'bearish')).toBe(true);
+      expect(structure.events.map((event) => event.bar)).toEqual(
+        [...structure.events].map((event) => event.bar).sort((left, right) => left - right)
+      );
+      expect(structure.events.at(-1)?.direction).toBe('bearish');
+    });
+
+    it('produces only structure events observable at each chronological prefix', () => {
+      const points = [
+        [101, 97, 100], [105, 99, 102], [110, 100, 103], [107, 101, 104],
+        [106, 100, 104], [112, 99, 111], [107, 98, 104], [108, 101, 105],
+        [106, 100, 103], [104, 98, 101], [102, 97, 99], [104, 96, 100],
+        [105, 95, 99], [103, 97, 100], [101, 94, 94], [99, 93, 95],
+      ];
+      const candles: Candle[] = points.map(([high, low, close], index) => ({
+        time: index * 60_000,
+        timeStr: '12:00',
+        open: close,
+        high: Math.max(high, close),
+        low: Math.min(low, close),
+        close,
+        volume: 100,
+      }));
+      const complete = new MarketStructureEngine(1);
+      complete.update(candles);
+
+      for (let length = 6; length < candles.length; length += 1) {
+        const prefix = new MarketStructureEngine(1);
+        prefix.update(candles.slice(0, length));
+        const eventsAvailableByPrefix = complete.events.filter((event) => event.bar < length);
+        expect(prefix.events).toEqual(eventsAvailableByPrefix);
+      }
     });
 
     it('handles varied valid candle sequences without invalid event prices', () => {

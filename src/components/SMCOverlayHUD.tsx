@@ -53,8 +53,12 @@ export const SMCOverlayHUD: React.FC<SMCOverlayHUDProps> = memo(({
   const activePositions = positionsState.positions;
 
   // Calculate Equilibrium & Premium/Discount
-  const eqPrice = dealingRange ? dealingRange.equilibrium : (ticker.high24h + ticker.low24h) / 2;
-  const isPremium = currentPrice >= eqPrice;
+  const eqPrice = dealingRange?.equilibrium ?? (
+    market.brokerMarketData && ticker.high24h > 0 && ticker.low24h > 0
+      ? (ticker.high24h + ticker.low24h) / 2
+      : null
+  );
+  const isPremium = eqPrice !== null && currentPrice >= eqPrice;
 
   // Find selected trade and its corresponding order block (guaranteed fallback to first active trade)
   const selectedPosition =
@@ -63,22 +67,7 @@ export const SMCOverlayHUD: React.FC<SMCOverlayHUDProps> = memo(({
 
   const selectedOrderBlock = selectedPosition
     ? selectedPosition.strategyOrderBlock ||
-      findCorrespondingOrderBlock(selectedPosition.type, selectedPosition.price_open, zones) || {
-        kind: 'OB' as const,
-        bullish: selectedPosition.type === 'BUY',
-        bottom:
-          selectedPosition.type === 'BUY'
-            ? selectedPosition.price_open - (ticker.spread * 0.08 || 1.2)
-            : selectedPosition.price_open - 0.4,
-        top:
-          selectedPosition.type === 'BUY'
-            ? selectedPosition.price_open + 0.4
-            : selectedPosition.price_open + (ticker.spread * 0.08 || 1.2),
-        tests: 0,
-        filled: false,
-        mitigated: false,
-        born: 0,
-      }
+      findCorrespondingOrderBlock(selectedPosition.type, selectedPosition.price_open, zones)
     : undefined;
 
   // Other currency pairs signals linked into the chart
@@ -91,14 +80,14 @@ export const SMCOverlayHUD: React.FC<SMCOverlayHUDProps> = memo(({
         <div className="flex items-center justify-between gap-2 flex-wrap">
           {/* Active Overlay Status & Live Structure */}
           <div className="flex items-center gap-2 text-[10px] sm:text-[11px] font-bold flex-wrap">
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+            <span className={`w-2 h-2 rounded-full ${market.brokerMarketData ? 'bg-emerald-400 animate-pulse' : 'bg-sky-400'}`} />
             <span className="text-sky-300">SMC</span>
             <span className="text-slate-500">|</span>
-            <span className={isPremium ? 'text-rose-400 font-bold' : 'text-emerald-400 font-bold'}>
-              {isPremium ? 'PREMIUM (Sells)' : 'DISCOUNT (Buys)'}
+            <span className={market.brokerMarketData ? (isPremium ? 'text-rose-400 font-bold' : 'text-emerald-400 font-bold') : 'text-sky-300 font-bold'}>
+              {eqPrice === null ? 'WAITING FOR MT5 DATA' : isPremium ? 'PREMIUM (Sells)' : 'DISCOUNT (Buys)'}
             </span>
             <span className="text-slate-500">|</span>
-            <span className="text-slate-300">EQ: <strong className="text-amber-300">${eqPrice.toFixed(2)}</strong></span>
+            <span className="text-slate-300">EQ: <strong className="text-sky-300">{eqPrice === null ? '—' : `$${eqPrice.toFixed(2)}`}</strong></span>
             {demandOB && (
               <>
                 <span className="text-slate-600 hidden sm:inline">|</span>
@@ -178,7 +167,7 @@ export const SMCOverlayHUD: React.FC<SMCOverlayHUDProps> = memo(({
           </div>
         ) : (
           <div className="text-slate-400 font-bold">
-            Spot: <span className="text-white">${ticker.bid.toFixed(2)}</span> · Spread: <span className="text-sky-300">{ticker.spread} pts</span>
+            Spot: <span className="text-white">{market.brokerMarketData && ticker.bid > 0 ? `$${ticker.bid.toFixed(2)}` : '—'}</span> · Spread: <span className="text-sky-300">{market.brokerMarketData ? `${ticker.spread} pts` : '—'}</span>
           </div>
         )}
 

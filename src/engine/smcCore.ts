@@ -68,76 +68,64 @@ export class MarketStructureEngine {
     const n = candles.length;
     const k = this.k;
     const confirmed: Swing[] = [];
-
-    // Fractal swings confirmed after k bars (NO lookahead)
-    for (let i = k; i < n - k; i++) {
-      let isHigh = true;
-      let isLow = true;
-
-      for (let j = i - k; j <= i + k; j++) {
-        if (candles[j].high > candles[i].high) {
-          isHigh = false;
-        }
-        if (candles[j].low < candles[i].low) {
-          isLow = false;
-        }
-      }
-
-      if (isHigh) {
-        confirmed.push({ idx: i, price: candles[i].high, kind: 'H', time: candles[i].time });
-      } else if (isLow) {
-        confirmed.push({ idx: i, price: candles[i].low, kind: 'L', time: candles[i].time });
-      }
-    }
-
-    this.swings = confirmed;
-
     let currentTrend: 'bullish' | 'bearish' | 'ranging' = 'ranging';
     const newEvents: StructureEvent[] = [];
     let lastH: Swing | null = null;
     let lastL: Swing | null = null;
+    let activeHighBroken = false;
+    let activeLowBroken = false;
 
-    for (const sw of confirmed) {
-      const futureCandles = candles.slice(sw.idx + 1);
-      if (futureCandles.length === 0) {
-        if (sw.kind === 'H') lastH = sw;
-        else lastL = sw;
-        continue;
+    // Process pivots and breaks in bar order so event classification cannot use future events.
+    for (let bar = 0; bar < n; bar += 1) {
+      const pivotIndex = bar - k;
+      if (pivotIndex >= k) {
+        let isHigh = true;
+        let isLow = true;
+        for (let index = pivotIndex - k; index <= pivotIndex + k; index += 1) {
+          if (candles[index].high > candles[pivotIndex].high) isHigh = false;
+          if (candles[index].low < candles[pivotIndex].low) isLow = false;
+          if (!isHigh && !isLow) break;
+        }
+
+        if (isHigh) {
+          const swing = { idx: pivotIndex, price: candles[pivotIndex].high, kind: 'H' as const, time: candles[pivotIndex].time };
+          confirmed.push(swing);
+          lastH = swing;
+          activeHighBroken = false;
+        } else if (isLow) {
+          const swing = { idx: pivotIndex, price: candles[pivotIndex].low, kind: 'L' as const, time: candles[pivotIndex].time };
+          confirmed.push(swing);
+          lastL = swing;
+          activeLowBroken = false;
+        }
       }
 
-      if (sw.kind === 'H') {
-        const crossIdx = futureCandles.findIndex((c) => c.close > sw.price);
-        if (crossIdx !== -1) {
-          const bar = sw.idx + 1 + crossIdx;
-          const kind: 'BOS' | 'CHoCH' = currentTrend === 'bearish' ? 'CHoCH' : 'BOS';
-          newEvents.push({
-            kind,
-            direction: 'bullish',
-            price: sw.price,
-            bar,
-            time: candles[bar]?.time,
-          });
-          currentTrend = 'bullish';
-        }
-        lastH = sw;
-      } else {
-        const crossIdx = futureCandles.findIndex((c) => c.close < sw.price);
-        if (crossIdx !== -1) {
-          const bar = sw.idx + 1 + crossIdx;
-          const kind: 'BOS' | 'CHoCH' = currentTrend === 'bullish' ? 'CHoCH' : 'BOS';
-          newEvents.push({
-            kind,
-            direction: 'bearish',
-            price: sw.price,
-            bar,
-            time: candles[bar]?.time,
-          });
-          currentTrend = 'bearish';
-        }
-        lastL = sw;
+      const candle = candles[bar];
+      if (lastH && !activeHighBroken && candle.close > lastH.price) {
+        newEvents.push({
+          kind: currentTrend === 'bearish' ? 'CHoCH' : 'BOS',
+          direction: 'bullish',
+          price: lastH.price,
+          bar,
+          time: candle.time,
+        });
+        currentTrend = 'bullish';
+        activeHighBroken = true;
+      }
+      if (lastL && !activeLowBroken && candle.close < lastL.price) {
+        newEvents.push({
+          kind: currentTrend === 'bullish' ? 'CHoCH' : 'BOS',
+          direction: 'bearish',
+          price: lastL.price,
+          bar,
+          time: candle.time,
+        });
+        currentTrend = 'bearish';
+        activeLowBroken = true;
       }
     }
 
+    this.swings = confirmed;
     this.events = newEvents;
     this.trend = currentTrend;
     this.lastSwingHigh = lastH;
@@ -452,12 +440,11 @@ export function evaluateConfluence(
 ): Signal | null {
   if (dfExec.length < 26 || dfHtf.length < 21) return null;
 
-  // SAFETY-FIX: evaluate signals strictly on closed candles to eliminate repainting
-  const closed = dfExec.slice(0, -1);
-  const closedHtf = dfHtf.slice(0, -1);
+  // Broker snapshots provide completed bars only; consume the latest one without dropping it twice.
+  const closed = dfExec;
+  const closedHtf = dfHtf;
 
   const aExec = calculateATR(closed);
-  const formingCandle = dfExec[dfExec.length - 1];
   const lastCandle = closed[closed.length - 1];
   const price = lastCandle.close;
   const atrNow = aExec[aExec.length - 1];
@@ -468,7 +455,7 @@ export function evaluateConfluence(
   const timeframeMs = { M1: 60_000, M5: 5 * 60_000, M15: 15 * 60_000 }[timeframe];
   const htfTimeframeMs = timeframe === 'M1' ? 5 * 60_000 : timeframe === 'M5' ? 15 * 60_000 : 60 * 60_000;
   if (
-    now - toMilliseconds(formingCandle.time) > timeframeMs * 3 ||
+    now - toMilliseconds(lastCandle.time) > timeframeMs * 3 ||
     now - toMilliseconds(dfHtf[dfHtf.length - 1].time) > htfTimeframeMs * 3 ||
     hasRecentCandleGap(dfExec, timeframeMs) ||
     hasRecentCandleGap(dfHtf, htfTimeframeMs)
@@ -638,8 +625,8 @@ export function evaluateConfluence(
     : `${tf} candle at ${lastCandle.timeStr} tapped discount demand at $${lastCandle.low.toFixed(2)}, soaking up sell-side liquidity with buyers pushing price up to close at $${lastCandle.close.toFixed(2)}. ${zone ? `Rejection confirmed off ${zone.kind} Demand (${zone.bottom}-${zone.top}).` : ''}`;
 
   const actionReason = isBear
-    ? `SELL triggered: ${activePattern.name} swept into premium supply (${zone ? `${zone.bottom.toFixed(1)}-${zone.top.toFixed(1)}` : 'POI'}) with strong sell displacement, rejecting ${wickRatio}. ${activePattern.goldInsight}`
-    : `BUY triggered: ${activePattern.name} absorbed into discount demand (${zone ? `${zone.bottom.toFixed(1)}-${zone.top.toFixed(1)}` : 'POI'}) with aggressive buyer response, rejecting ${wickRatio}. ${activePattern.goldInsight}`;
+    ? `SELL triggered: ${activePattern.name} swept into premium supply (${zone ? `${zone.bottom.toFixed(1)}-${zone.top.toFixed(1)}` : 'POI'}) with strong sell displacement, rejecting ${wickRatio}. ${activePattern.marketInsight}`
+    : `BUY triggered: ${activePattern.name} absorbed into discount demand (${zone ? `${zone.bottom.toFixed(1)}-${zone.top.toFixed(1)}` : 'POI'}) with aggressive buyer response, rejecting ${wickRatio}. ${activePattern.marketInsight}`;
 
   const perfectEntryReason = isBear
     ? `Perfect Entry identified @ $${price.toFixed(2)} on ${tf} confirmation: Tight SL at $${sl.toFixed(2)} (${Math.abs(price - sl).toFixed(1)} pts risk) targeting 1:${rr} RR @ $${tp.toFixed(2)}.`
@@ -680,7 +667,7 @@ export function evaluateConfluence(
   // M1: 90s validity window, M5: 300s validity window, M15: 900s validity window
   const validityDurationMs = timeframe === 'M15' ? 15 * 60_000 : timeframe === 'M5' ? 5 * 60_000 : 90_000;
   const candleTimeMs = toMilliseconds(lastCandle.time);
-  const expiryTimestamp = candleTimeMs + validityDurationMs;
+  const expiryTimestamp = candleTimeMs + timeframeMs + validityDurationMs;
   const validitySeconds = Math.max(0, Math.round((expiryTimestamp - now) / 1000));
 
   // Sniper setup criteria: M15 or M5 timeframe, fresh POI or liquidity sweep, score >= 4.2

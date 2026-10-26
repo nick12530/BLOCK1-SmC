@@ -17,10 +17,10 @@ import {
   usePositions,
   useEngine,
   useScannerAnalyses,
+  useSignalValidations,
 } from './hooks/useTradingStore';
 import { tradingEngine } from './engine/tradingEngine';
 import { mt5Bridge } from './engine/mt5Bridge';
-import { useAudioNotifications } from './hooks/useAudioNotifications';
 import { SupportedSymbol, INSTRUMENTS } from './engine/instrumentConfig';
 import { Signal, TerminalSnapshot } from './types/smc';
 import type { PairAnalysis } from './engine/multiPairScanner';
@@ -42,6 +42,7 @@ import { PairsSignalDeck } from './components/PairsSignalDeck';
 import { TradingViewWidget } from './components/TradingViewWidget';
 import { SignalEngineCard } from './components/SignalEngineCard';
 import { RunningTradesHUD } from './components/RunningTradesHUD';
+import { SignalQualityCard } from './components/SignalQualityCard';
 
 // Floating Notification Beacon
 import { SignalToastNotification } from './components/SignalToastNotification';
@@ -68,9 +69,6 @@ const TradingViewModal = lazy(() =>
 const HelpCenterModal = lazy(() =>
   import('./components/HelpCenterModal').then((m) => ({ default: m.HelpCenterModal }))
 );
-const MobileServerModal = lazy(() =>
-  import('./components/MobileServerModal').then((m) => ({ default: m.MobileServerModal }))
-);
 const WebhookSettingsModal = lazy(() =>
   import('./components/WebhookSettingsModal').then((m) => ({ default: m.WebhookSettingsModal }))
 );
@@ -84,13 +82,14 @@ export default function App() {
   const positionsState = usePositions();
   const engine = useEngine();
   const scannerAnalyses = useScannerAnalyses();
+  const signalValidations = useSignalValidations();
 
   const activeSymbol = (ticker.symbol || 'XAUUSD') as SupportedSymbol;
   const instrumentCfg = INSTRUMENTS[activeSymbol] || INSTRUMENTS.XAUUSD;
 
   // Active modal
   const [activeModal, setActiveModal] = useState<
-    'bridge' | 'settings' | 'closed_trades' | 'daily_report' | 'tradingview' | 'help' | 'phone_pwa' | 'webhook' | null
+    'bridge' | 'settings' | 'closed_trades' | 'daily_report' | 'tradingview' | 'help' | 'webhook' | null
   >(null);
   const [reportDate, setReportDate] = useState(() => localDayKey(new Date()));
 
@@ -104,18 +103,19 @@ export default function App() {
     onConfirm: () => void;
   } | null>(null);
 
-  // Audio alerts hook
-  useAudioNotifications();
-
   // MT5 Bridge event listeners
   useEffect(() => {
     mt5Bridge.setCallback((snapshot) => tradingEngine.syncMt5Snapshot(snapshot));
     mt5Bridge.setClosedTradesCallback((trades) => tradingEngine.syncMt5ClosedTrades(trades));
+    mt5Bridge.setEconomicCalendarCallback((events) => tradingEngine.syncEconomicCalendar(events));
     mt5Bridge.setConnectionChangeCallback((connected, error) =>
       tradingEngine.setMt5BridgeConnectionStatus(connected, error)
     );
 
-    void mt5Bridge.autoConnectIfSaved().catch(() => {});
+    void mt5Bridge.autoConnectIfSaved().catch((error: unknown) => {
+      const message = error instanceof Error ? error.message : String(error);
+      tradingEngine.slog(`Saved MT5 connection could not be restored: ${message}`, 'warn');
+    });
   }, []);
 
   // Request Kill Switch Toggle with confirmation dialog
@@ -137,9 +137,22 @@ export default function App() {
 
   // Execute trade handler from SignalEngineCard
   const handleExecuteSignal = useCallback(
-    (customVolume?: number, positionCount?: number, signal?: Signal) => {
+    (customVolume?: number, positionCount?: number, signal?: Signal, symbol?: SupportedSymbol) => {
       const sig = signal || market.signal;
       if (!sig) return;
+      const executionSymbol = symbol || activeSymbol;
+      const signalCreatedAt = Date.parse(sig.timestamp);
+      const fallbackValidityMs = sig.timeframe === 'M15' ? 15 * 60_000 : sig.timeframe === 'M5' ? 5 * 60_000 : 90_000;
+      const expiresAt = sig.expiryTimestamp ?? signalCreatedAt + fallbackValidityMs;
+      if (!Number.isFinite(expiresAt) || expiresAt <= Date.now()) {
+        setConfirmDialog({
+          title: 'Signal Entry Window Expired',
+          message: 'This setup has passed its valid entry window. Wait for a fresh signal before trading.',
+          confirmLabel: 'Understood',
+          onConfirm: () => setConfirmDialog(null),
+        });
+        return;
+      }
 
       if (engine.kill_switch) {
         setConfirmDialog({
@@ -152,7 +165,22 @@ export default function App() {
       }
 
       const count = positionCount || 1;
-      const vol = customVolume || 0.01;
+      if (typeof customVolume !== 'number' || !Number.isFinite(customVolume) || customVolume <= 0) {
+        const sizing = tradingEngine.getRiskSizingInfo(sig.sl, sig.direction, executionSymbol);
+        setConfirmDialog({
+          title: sizing ? 'Broker Minimum Exceeds Risk Budget' : 'Broker Sizing Data Unavailable',
+          message: sizing
+            ? `The broker minimum (${sizing.minimumLot} lots) would risk about $${sizing.minimumLotRisk.toFixed(2)}, above your ${sizing.riskPercent}% risk budget of $${sizing.riskBudget.toFixed(2)}. No order was sent.`
+            : 'A fresh broker quote or symbol specification is unavailable, so a safe volume cannot be verified. No order was sent.',
+          confirmLabel: 'Understood',
+          onConfirm: () => setConfirmDialog(null),
+        });
+        return;
+      }
+      const vol = customVolume;
+      if (executionSymbol !== activeSymbol) {
+        tradingEngine.switchSymbol(executionSymbol);
+      }
 
       for (let i = 0; i < count; i++) {
         const res = tradingEngine.sendMarket(
@@ -161,7 +189,7 @@ export default function App() {
           sig.sl,
           sig.tp,
           sig.strategy,
-          activeSymbol
+          executionSymbol
         );
 
         if (!res.ok) {
@@ -180,7 +208,7 @@ export default function App() {
 
   // Stable modal callbacks to preserve memoization across child components
   const handleOpenModal = useCallback(
-    (modal: 'bridge' | 'settings' | 'closed_trades' | 'daily_report' | 'tradingview' | 'help' | 'phone_pwa' | 'webhook') => {
+    (modal: 'bridge' | 'settings' | 'closed_trades' | 'daily_report' | 'tradingview' | 'help' | 'webhook') => {
       setActiveModal(modal);
     },
     []
@@ -199,8 +227,17 @@ export default function App() {
 
   const handleExecuteAnalysis = useCallback(
     (analysis: PairAnalysis) => {
-      if (analysis.bias === 'WAITING' || !analysis.signal) return;
-      handleExecuteSignal(analysis.safeLotSize ?? 0.01, 1, analysis.signal);
+      if (analysis.status !== 'READY' || analysis.bias === 'WAITING' || !analysis.signal) return;
+      if (typeof analysis.safeLotSize !== 'number' || analysis.safeLotSize <= 0) {
+        setConfirmDialog({
+          title: 'Risk Limit Blocks This Setup',
+          message: 'No broker-valid lot size fits the current risk budget for this stop. The broker minimum would risk more than allowed, so the order was not sent.',
+          confirmLabel: 'Understood',
+          onConfirm: () => setConfirmDialog(null),
+        });
+        return;
+      }
+      handleExecuteSignal(analysis.safeLotSize, 1, analysis.signal, analysis.symbol);
     },
     [handleExecuteSignal]
   );
@@ -217,7 +254,7 @@ export default function App() {
     tradingEngine.account.daily_drawdown_pct >= tradingEngine.account.max_daily_loss_pct;
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-[#07090e] text-slate-900 dark:text-slate-100 flex flex-col font-sans transition-colors antialiased min-w-0">
+    <div className="neo-app min-h-screen text-slate-900 dark:text-slate-100 flex flex-col font-sans transition-colors antialiased min-w-0">
       {/* 1. Persistent Kill Switch Banner (visible when armed) */}
       <KillSwitchBanner />
 
@@ -225,10 +262,10 @@ export default function App() {
       {isDailyLossExceeded && (
         <div
           role="alert"
-          className="w-full bg-amber-500 text-black px-4 py-2 font-mono text-xs font-bold flex items-center justify-between shrink-0 shadow-md sticky top-0 z-40"
+          className="w-full bg-rose-700 text-white px-4 py-2 font-mono text-xs font-bold flex items-center justify-between shrink-0 shadow-md sticky top-0 z-40"
         >
           <div className="flex items-center gap-2">
-            <AlertTriangle className="w-4 h-4 text-black shrink-0" />
+            <AlertTriangle className="w-4 h-4 text-white shrink-0" />
             <span>
               Daily loss limit reached ({tradingEngine.account.daily_drawdown_pct.toFixed(1)}% /{' '}
               {tradingEngine.account.max_daily_loss_pct.toFixed(1)}%) — trading disabled
@@ -239,7 +276,7 @@ export default function App() {
       )}
 
       {/* 3. Weekend Interbank Schedule Banner (only active when market closed) */}
-      <WeekendMarketBanner onOpenMt5Modal={handleOpenBridge} />
+      <WeekendMarketBanner />
 
       {/* 4. Institutional Top Navigation Header */}
       <HeaderView
@@ -252,9 +289,8 @@ export default function App() {
       {/* 5. Minimal Focused Terminal Workspace */}
       <main className="flex-1 max-w-[1600px] w-full mx-auto px-3 sm:px-6 py-4 space-y-4 min-w-0">
         <WorkspaceErrorBoundary>
-          {/* Utilities Bar (Single row: Auto-Trade, Kill Switch, Audio, Risk, MT5, Alerts) */}
+          {/* Essential safety and sound controls */}
           <TerminalUtilitiesBar
-            onOpenModal={handleOpenModal}
             onToggleKillSwitchPrompt={handleRequestKillSwitchToggle}
           />
 
@@ -266,32 +302,41 @@ export default function App() {
             onExecuteTrade={handleExecuteAnalysis}
           />
 
-          {/* Primary Split Trading Desk: Chart (8 cols) + Execution Deck (4 cols) */}
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start min-w-0">
-            {/* Left 8 Cols: Dual Chart Workstation */}
-            <div className="lg:col-span-8 bg-white dark:bg-[#0c0d12] border border-slate-200 dark:border-zinc-800 rounded-2xl overflow-hidden shadow-xs min-w-0">
-              <TradingViewWidget
-                isDark={isDark}
-                symbol={instrumentCfg.tvSymbol}
-                interval="1"
-                height={540}
-                onExpand={handleOpenTradingView}
-                onOpenHelp={handleOpenHelp}
-              />
-            </div>
-
-            {/* Right 4 Cols: 1-Click Execution & Strategy Signal Deck */}
-            <div className="lg:col-span-4 min-w-0">
-              <SignalEngineCard onExecuteSignal={handleExecuteSignal} />
-            </div>
-          </div>
-
           {/* Live Running Trades & Positions HUD */}
           <div className="min-w-0">
             <RunningTradesHUD
               onOpenTradeStation={handleOpenClosedTrades}
             />
           </div>
+
+          {/* Primary Trading Desk: keep the chart between execution and health diagnostics */}
+          <div className="flex flex-col gap-4 min-w-0">
+            <div className="w-full min-w-0">
+              <SignalEngineCard onExecuteSignal={handleExecuteSignal} />
+            </div>
+
+            <div className="neo-panel w-full border rounded-2xl overflow-hidden min-w-0">
+              <TradingViewWidget
+                isDark={isDark}
+                symbol={instrumentCfg.tvSymbol}
+                interval="1"
+                height={460}
+                onExpand={handleOpenTradingView}
+                onOpenHelp={handleOpenHelp}
+              />
+            </div>
+          </div>
+
+          <SignalQualityCard
+            ticker={ticker}
+            market={market}
+            analyses={scannerAnalyses}
+            closedTrades={positionsState.closedTrades}
+            positions={positionsState.positions}
+            pendingOrders={positionsState.pendingOrders || []}
+            validations={signalValidations}
+          />
+
         </WorkspaceErrorBoundary>
       </main>
 
@@ -350,9 +395,6 @@ export default function App() {
             onClose={handleCloseModal}
             onOpenBridge={handleOpenBridge}
           />
-        )}
-        {activeModal === 'phone_pwa' && (
-          <MobileServerModal isOpen={true} onClose={handleCloseModal} />
         )}
         {activeModal === 'webhook' && (
           <WebhookSettingsModal isOpen={true} onClose={handleCloseModal} />

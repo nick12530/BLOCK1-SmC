@@ -35,9 +35,9 @@ export const MultiPairScannerPanel: React.FC<MultiPairScannerPanelProps> = ({
   onExecuteTrade,
 }) => {
   return (
-    <div className="bg-white dark:bg-[#111216] border border-slate-200 dark:border-zinc-800 rounded-2xl p-4 sm:p-6 shadow-sm flex flex-col gap-4 font-sans transition-colors">
+    <div className="neo-panel neo-card border rounded-2xl p-5 sm:p-6 flex flex-col gap-5 font-sans transition-colors">
       {/* Header with Scanner Title & Summary */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 dark:border-zinc-800/80 pb-3">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-1">
         <div className="flex items-center gap-2.5">
           <div className="p-2 rounded-xl bg-sky-500/10 text-sky-600 dark:text-sky-400 border border-sky-500/20">
             <Activity className="w-5 h-5" />
@@ -97,7 +97,7 @@ export const MultiPairScannerPanel: React.FC<MultiPairScannerPanelProps> = ({
                 <span
                   className={`text-[10px] font-bold font-mono px-2 py-0.5 rounded-full ${
                     item.rank === 1
-                      ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30'
+                      ? 'bg-sky-500/15 text-sky-600 dark:text-sky-400 border border-sky-500/30'
                       : 'bg-slate-200/80 dark:bg-zinc-800/80 text-zinc-600 dark:text-zinc-400'
                   }`}
                 >
@@ -106,7 +106,7 @@ export const MultiPairScannerPanel: React.FC<MultiPairScannerPanelProps> = ({
               </div>
 
               {/* Price & Spread Matrix */}
-              <div className="flex items-baseline justify-between border-b border-slate-200/60 dark:border-zinc-800/60 pb-2.5 font-mono">
+              <div className="flex items-baseline justify-between pb-2.5 font-mono">
                 <div>
                   <span className="text-[11px] text-zinc-400 block">Bid / Ask</span>
                   <span className="text-sm sm:text-base font-extrabold text-slate-900 dark:text-white tabular-nums">

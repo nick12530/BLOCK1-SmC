@@ -107,14 +107,14 @@ export interface NewsRiskResult {
 
 /**
  * Checks economic calendar news risk for a specific pair.
- * Do not invent news if unavailable; displays NEWS FILTER: DATA UNAVAILABLE.
+ * Null means the provider is unavailable; an empty array means it returned no events.
  */
 export function evaluateNewsRisk(
   symbol: SupportedSymbol,
   events: EconomicEvent[] | null | undefined,
   leadMinutes: number = 30
 ): NewsRiskResult {
-  if (!events || events.length === 0) {
+  if (events === null || events === undefined) {
     return {
       hasNewsRisk: false,
       isDataUnavailable: true,

@@ -6,9 +6,11 @@ import { defineConfig } from 'vite';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const bridgeToken = process.env.SMC_BRIDGE_TOKEN;
+const bridgePort = Number(process.env.SMC_BRIDGE_PORT || 8000);
+const previewPort = Number(process.env.SMC_DASHBOARD_PORT || 4173);
 const mt5Proxy = {
   '/mt5-bridge': {
-    target: 'http://127.0.0.1:8000',
+    target: `http://127.0.0.1:${bridgePort}`,
     changeOrigin: true,
     headers: bridgeToken ? { Authorization: `Bearer ${bridgeToken}` } : {},
     rewrite: (requestPath: string) => requestPath.replace(/^\/mt5-bridge/, ''),
@@ -24,8 +26,7 @@ export default defineConfig(() => {
       },
     },
     server: {
-      host: '0.0.0.0',
-      allowedHosts: ['.ts.net'],
+      host: '127.0.0.1',
       proxy: mt5Proxy,
       // HMR is disabled in AI Studio via DISABLE_HMR env var.
       // Do not modify—file watching is disabled to prevent flickering during agent edits.
@@ -35,9 +36,8 @@ export default defineConfig(() => {
     },
     preview: {
       host: '127.0.0.1',
-      port: 4173,
+      port: previewPort,
       strictPort: true,
-      allowedHosts: ['.ts.net'],
       proxy: mt5Proxy,
     },
   };

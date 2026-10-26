@@ -35,7 +35,7 @@ export const MinimalSignalCard: React.FC<MinimalSignalCardProps> = ({
                 </span>
               </div>
               <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 leading-relaxed max-w-xl">
-                Analyzing H1 market structure, order block mitigation, and discount/premium dealing ranges. Qualified setups require a 5.0+ score, candle confirmation, and an active London or New York session.
+                Scanning SMC retests, confirmed trend pullbacks, and breakouts. Neutral-timeframe candidates can qualify; counter-trend candidates are excluded from auto-execution. Score, risk, spread, and news checks still apply.
               </p>
             </div>
           </div>

@@ -4,31 +4,37 @@
 
 @layer base {
   :root {
-    --bg-main: #0A0E14;
-    --card-bg: #10141D;
-    --card-border: rgba(255, 255, 255, 0.06);
-    --surface-subtle: #141923;
+    --bg-main: #e5ebf4;
+    --card-bg: #e8eef7;
+    --card-border: rgba(113, 137, 170, 0.3);
+    --surface-subtle: #dce5f1;
     --text-primary: #F0F3F8;
     --text-secondary: #8B949E;
     --text-muted: #586069;
     --accent-blue: #2979FF;
     --accent-red: #FF5252;
     --accent-green: #00E676;
-    --accent-amber: #FFB300;
+    --accent-amber: #b7791f;
+    --neo-shadow-dark: rgba(106, 127, 158, 0.42);
+    --neo-shadow-light: rgba(255, 255, 255, 0.98);
+    --neo-shadow-color: rgba(41, 121, 255, 0.12);
   }
 
   .dark {
-    --bg-main: #0A0E14;
-    --card-bg: #10141D;
-    --card-border: rgba(255, 255, 255, 0.06);
-    --surface-subtle: #141923;
+    --bg-main: #0d1521;
+    --card-bg: #172335;
+    --card-border: rgba(122, 157, 205, 0.22);
+    --surface-subtle: #111b2a;
     --text-primary: #F0F3F8;
     --text-secondary: #8B949E;
     --text-muted: #586069;
     --accent-blue: #2979FF;
     --accent-red: #FF5252;
     --accent-green: #00E676;
-    --accent-amber: #FFB300;
+    --accent-amber: #d29a45;
+    --neo-shadow-dark: rgba(0, 0, 0, 0.72);
+    --neo-shadow-light: rgba(138, 177, 232, 0.1);
+    --neo-shadow-color: rgba(41, 121, 255, 0.16);
   }
 
   html, body {
@@ -40,7 +46,7 @@
   }
 
   html {
-    color-scheme: dark;
+    color-scheme: light;
   }
 
   html.dark {
@@ -49,12 +55,16 @@
 
   body {
     font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    background-color: #0A0E14;
-    color: #F0F3F8;
+    background-color: var(--bg-main);
+    color: #253244;
     font-size: 13px;
-    font-weight: 400;
+    font-weight: 500;
     line-height: 1.4;
     min-height: 100vh;
+  }
+
+  .dark body {
+    color: #e4ebf4;
   }
 
   #root {
@@ -62,6 +72,89 @@
     width: 100%;
     max-width: 100vw;
     min-height: 100vh;
+  }
+
+  .neo-app {
+    background:
+      radial-gradient(ellipse at 8% 0%, rgba(41, 121, 255, 0.14), transparent 34%),
+      radial-gradient(ellipse at 92% 24%, rgba(0, 230, 180, 0.07), transparent 28%),
+      var(--bg-main);
+    font-weight: 600;
+  }
+
+  .neo-panel {
+    background: var(--card-bg);
+    border-color: var(--card-border);
+    isolation: isolate;
+    box-shadow:
+      12px 12px 26px var(--neo-shadow-dark),
+      -9px -9px 22px var(--neo-shadow-light),
+      0 0 0 1px var(--neo-shadow-color),
+      inset 1px 1px 0 rgba(255, 255, 255, 0.12) !important;
+  }
+
+  .neo-card {
+    transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease;
+  }
+
+  .neo-card:hover {
+    transform: translateY(-2px);
+    box-shadow:
+      15px 16px 30px var(--neo-shadow-dark),
+      -10px -10px 24px var(--neo-shadow-light),
+      0 0 0 1px rgba(41, 121, 255, 0.24),
+      inset 1px 1px 0 rgba(255, 255, 255, 0.14) !important;
+  }
+
+  .neo-inset {
+    box-shadow:
+      inset 5px 5px 10px var(--neo-shadow-dark),
+      inset -4px -4px 9px var(--neo-shadow-light);
+  }
+
+  .neo-button {
+    box-shadow:
+      5px 5px 10px var(--neo-shadow-dark),
+      -4px -4px 9px var(--neo-shadow-light),
+      0 0 0 1px var(--neo-shadow-color);
+    transition: box-shadow 160ms ease, transform 160ms ease, filter 160ms ease;
+  }
+
+  .neo-button:hover:not(:disabled) {
+    filter: brightness(1.04);
+    transform: translateY(-1px);
+  }
+
+  .neo-button:active:not(:disabled) {
+    box-shadow:
+      inset 2px 2px 5px var(--neo-shadow-dark),
+      inset -2px -2px 5px var(--neo-shadow-light);
+    transform: translateY(0);
+  }
+
+  .neo-vivid-blue {
+    background: linear-gradient(135deg, #138bff, #315bff) !important;
+    box-shadow: 0 8px 18px rgba(41, 121, 255, 0.32);
+  }
+
+  .neo-vivid-green {
+    background: linear-gradient(135deg, #00c987, #00a875) !important;
+    box-shadow: 0 8px 18px rgba(0, 200, 135, 0.25);
+  }
+
+  .neo-vivid-red {
+    background: linear-gradient(135deg, #ff426d, #e91e4d) !important;
+    box-shadow: 0 8px 18px rgba(255, 66, 109, 0.24);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .neo-button,
+    .neo-card {
+      transition: none;
+    }
+    .neo-card:hover {
+      transform: none;
+    }
   }
 
   code, pre, .font-mono, .tabular-nums {

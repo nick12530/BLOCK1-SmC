@@ -196,14 +196,21 @@ export const SystemArchitectureExplainer: React.FC = () => {
                   <span>4. Institutional Candlestick Confluence</span>
                 </span>
                 <span className="text-[10px] text-amber-600 dark:text-amber-400 font-bold">
-                  {market.candlestickAnalysis?.activePattern.name || 'Pinbar Sweep'}
+                  {market.brokerMarketData
+                    ? market.candlestickAnalysis?.activePattern.name || 'No confirmed pattern'
+                    : 'Waiting for broker data'}
                 </span>
               </div>
               <p className="text-[11px] text-slate-600 dark:text-slate-400 leading-relaxed">
                 The engine evaluates wicked pinbars, institutional engulfing bars, morning stars, and tweezer tops with Gold-calibrated wick-to-body ratios ($\ge 55\%$ wick rejection) to confirm institutional absorption before trade execution.
               </p>
               <div className="flex items-center justify-between text-[10px] text-slate-500 pt-0.5">
-                <span>Displacement score: 5/5</span>
+                <span>
+                  Displacement score:{' '}
+                  {market.brokerMarketData
+                    ? `${market.candlestickAnalysis?.activePattern.displacementScore ?? 0}/5`
+                    : '—'}
+                </span>
                 <span>Session filter: London & NY Open</span>
                 <span>Max Spread cutoff: 40 points</span>
               </div>

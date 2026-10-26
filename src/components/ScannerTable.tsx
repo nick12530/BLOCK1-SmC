@@ -66,7 +66,7 @@ export const ScannerTable: React.FC = () => {
                   <td className="py-2 px-2">
                     <div className="flex items-center gap-1.5 min-w-[70px]">
                       <span className="text-[10px] tabular-nums text-zinc-400 font-bold w-6">
-                        {item.confluenceScore}%
+                        {item.confluenceScore}/100
                       </span>
                       <div className="flex-1 bg-[#0A0E14] h-1.5 rounded-full overflow-hidden">
                         <div

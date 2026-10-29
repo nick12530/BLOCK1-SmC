@@ -460,3 +460,86 @@ export function localDayKey(value: string | Date): string {
 export function closedTradeDayKey(trade: ClosedTrade): string {
   return trade.closedAt ? localDayKey(trade.closedAt) : '';
 }
+
+export interface JournalExpectancyMetrics {
+  totalTrades: number;
+  winCount: number;
+  lossCount: number;
+  winRate: number;
+  grossProfit: number;
+  estimatedCommissions: number;
+  estimatedSlippage: number;
+  netProfit: number;
+  profitFactor: number;
+  averageTradeNet: number;
+}
+
+/**
+ * Computes realistic forward expectancy modeling execution frictions
+ * (broker commissions, spread drag, and adverse slippage)
+ */
+export function computeJournalExpectancy(trades: JournalTradeRecord[]): JournalExpectancyMetrics {
+  const closed = trades.filter((t) => t.status === 'CLOSED');
+  if (closed.length === 0) {
+    return {
+      totalTrades: 0,
+      winCount: 0,
+      lossCount: 0,
+      winRate: 0,
+      grossProfit: 0,
+      estimatedCommissions: 0,
+      estimatedSlippage: 0,
+      netProfit: 0,
+      profitFactor: 0,
+      averageTradeNet: 0,
+    };
+  }
+
+  let grossProfit = 0;
+  let totalCommissions = 0;
+  let totalSlippage = 0;
+  let grossWins = 0;
+  let grossLosses = 0;
+  let winCount = 0;
+  let lossCount = 0;
+
+  for (const trade of closed) {
+    const profit = trade.profit || 0;
+    const vol = trade.volume || 0.01;
+    // Standard broker commission: $7.00 per full lot round-turn
+    const comm = vol * 7.0;
+    // Estimated slippage friction: ~1.0 pip
+    const slip = vol * 1.0;
+
+    grossProfit += profit;
+    totalCommissions += comm;
+    totalSlippage += slip;
+
+    if (profit > 0) {
+      winCount++;
+      grossWins += profit;
+    } else {
+      lossCount++;
+      grossLosses += Math.abs(profit);
+    }
+  }
+
+  const netProfit = Number((grossProfit - totalCommissions - totalSlippage).toFixed(2));
+  const winRate = Number(((winCount / closed.length) * 100).toFixed(1));
+  const profitFactor = grossLosses > 0 ? Number((grossWins / grossLosses).toFixed(2)) : grossWins > 0 ? 99.9 : 0;
+  const averageTradeNet = Number((netProfit / closed.length).toFixed(2));
+
+  return {
+    totalTrades: closed.length,
+    winCount,
+    lossCount,
+    winRate,
+    grossProfit: Number(grossProfit.toFixed(2)),
+    estimatedCommissions: Number(totalCommissions.toFixed(2)),
+    estimatedSlippage: Number(totalSlippage.toFixed(2)),
+    netProfit,
+    profitFactor,
+    averageTradeNet,
+  };
+}
+

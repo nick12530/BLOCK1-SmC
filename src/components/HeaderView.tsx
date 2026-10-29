@@ -17,6 +17,7 @@ import {
   Server,
   Clock,
   Shield,
+  ShieldAlert,
   History,
   Bot,
   Bell,
@@ -75,7 +76,7 @@ export const HeaderView: React.FC<HeaderViewProps> = React.memo(({
   }, [ticker.brokerTimeStr]);
 
   return (
-    <header className="neo-panel sticky top-0 w-full border-0 bg-[#e8edf4]/95 dark:bg-[#151f2a]/95 backdrop-blur-md z-30 transition-colors">
+    <header className="neo-panel neo-header sticky top-0 w-full border-b backdrop-blur-md z-30 transition-colors">
       {/* Primary Tier: Brand, Currency Switcher, Auto-Trade, MT5, and Utilities */}
       <div className="max-w-[1600px] mx-auto px-3 sm:px-6 py-2.5 flex items-center justify-between gap-3 flex-wrap">
         {/* Left: Brand & Currency Switcher */}
@@ -175,6 +176,27 @@ export const HeaderView: React.FC<HeaderViewProps> = React.memo(({
           >
             <Bot className="w-4 h-4 shrink-0" />
             <span>Auto: {engine.auto_trade ? 'ON' : 'OFF'}</span>
+          </button>
+
+          {/* Daily-Loss Circuit Breaker Toggle */}
+          <button
+            type="button"
+            onClick={() => void tradingEngine.toggleCircuitBreaker()}
+            aria-pressed={engine.circuit_breaker_enabled}
+            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-bold font-mono transition-all cursor-pointer ${
+              engine.circuit_breaker_enabled
+                ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-600 dark:text-emerald-400'
+                : 'bg-amber-500/20 border-amber-500/50 text-amber-700 dark:text-amber-300 font-extrabold shadow-sm'
+            }`}
+            title={
+              engine.circuit_breaker_enabled
+                ? 'Daily-loss Circuit Breaker is active (stops trades at 3% loss). Click to turn OFF.'
+                : 'Daily-loss Circuit Breaker is OFF (lockout bypassed). Click to turn ON.'
+            }
+          >
+            <ShieldAlert className={`w-3.5 h-3.5 shrink-0 ${engine.circuit_breaker_enabled ? 'text-emerald-500' : 'text-amber-500'}`} />
+            <span className="hidden md:inline">Breaker:</span>
+            <span>{engine.circuit_breaker_enabled ? 'ON' : 'OFF'}</span>
           </button>
 
           {/* MT5 Bridge Link */}

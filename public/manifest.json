@@ -1,0 +1,26 @@
+{
+  "id": "/",
+  "start_url": "/",
+  "scope": "/",
+  "name": "SMC Gold Bot — Institutional Terminal",
+  "short_name": "SMC Gold",
+  "description": "Institutional-grade Smart Money Concepts algorithmic trading engine and dashboard for XAUUSD with MT5 execution bridge.",
+  "display": "standalone",
+  "theme_color": "#000000",
+  "background_color": "#000000",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "192x192 512x512",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon.svg",
+      "sizes": "192x192 512x512",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ]
+}

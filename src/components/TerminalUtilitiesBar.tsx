@@ -7,10 +7,12 @@
 import React, { useState } from 'react';
 import { useEngine } from '../hooks/useTradingStore';
 import { useAudioNotifications } from '../hooks/useAudioNotifications';
+import { tradingEngine } from '../engine/tradingEngine';
 import {
   Volume2,
   VolumeX,
   AlertOctagon,
+  ShieldAlert,
   Play,
 } from 'lucide-react';
 
@@ -49,13 +51,39 @@ export const TerminalUtilitiesBar: React.FC<TerminalUtilitiesBarProps> = React.m
           <span className="text-[11px] font-black uppercase opacity-80">{isKill ? 'ARMED' : 'SAFE'}</span>
         </button>
 
+        {/* Daily-Loss Circuit Breaker Toggle */}
+        <button
+          onClick={() => void tradingEngine.toggleCircuitBreaker()}
+          aria-pressed={engine.circuit_breaker_enabled}
+          className={`min-h-11 min-w-0 whitespace-nowrap py-2 px-2.5 sm:px-3 rounded-lg border text-left transition-all cursor-pointer flex items-center justify-center sm:justify-start gap-1.5 ${
+            engine.circuit_breaker_enabled
+              ? 'neo-button bg-slate-50 hover:bg-emerald-50 dark:bg-zinc-900 dark:hover:bg-emerald-950/20 border-slate-200 dark:border-zinc-800 text-slate-700 dark:text-zinc-300'
+              : 'bg-amber-500/20 hover:bg-amber-500/30 border-amber-500/50 text-amber-800 dark:text-amber-200 shadow-inner'
+          }`}
+          title={
+            engine.circuit_breaker_enabled
+              ? 'Daily-loss Circuit Breaker is active (stops trades at 3% loss). Click to turn OFF.'
+              : 'Daily-loss Circuit Breaker is OFF (lockout bypassed). Click to turn ON.'
+          }
+        >
+          <ShieldAlert className={`w-3.5 h-3.5 shrink-0 ${engine.circuit_breaker_enabled ? 'text-emerald-500' : 'text-amber-500'}`} />
+          <span className="font-bold text-xs">Circuit Breaker</span>
+          <span className={`text-[10px] font-black uppercase px-1.5 py-0.5 rounded ${
+            engine.circuit_breaker_enabled
+              ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
+              : 'bg-amber-500 text-black font-extrabold'
+          }`}>
+            {engine.circuit_breaker_enabled ? 'ON' : 'OFF'}
+          </span>
+        </button>
+
         {/* Audio Chime */}
         <button
           onClick={toggleMute}
           aria-pressed={!isMuted}
           className={`col-span-2 min-h-11 px-2.5 rounded-lg border transition-all cursor-pointer flex items-center justify-center gap-1.5 lg:col-span-1 ${
             !isMuted
-              ? 'bg-sky-600 text-white border-sky-600 dark:bg-sky-500 dark:text-slate-950 dark:border-sky-500'
+              ? 'bg-slate-800 text-white border-slate-800 dark:bg-slate-200 dark:text-slate-900 dark:border-slate-200'
               : 'neo-button bg-slate-50 hover:bg-slate-100 dark:bg-zinc-900 dark:hover:bg-zinc-800 border-slate-200 dark:border-zinc-800 text-slate-700 dark:text-zinc-300'
           } disabled:cursor-not-allowed disabled:opacity-60`}
           title="Toggle audio alerts"
@@ -63,10 +91,10 @@ export const TerminalUtilitiesBar: React.FC<TerminalUtilitiesBarProps> = React.m
           {isMuted ? (
             <VolumeX className="w-4 h-4 text-zinc-500" />
           ) : (
-            <Volume2 className="w-4 h-4 text-white" />
+            <Volume2 className="w-4 h-4" />
           )}
           <span className="font-bold text-xs">{isMuted ? 'Sound off' : 'Sound on'}</span>
-          <span className={`h-2.5 w-2.5 rounded-full ${hasNewAlert ? 'bg-amber-400' : isMuted ? 'bg-slate-400' : 'bg-sky-200'}`} />
+          <span className={`h-2 w-2 rounded-full ${hasNewAlert ? 'bg-amber-400' : isMuted ? 'bg-slate-400' : 'bg-emerald-400'}`} />
         </button>
 
         <div className="neo-inset col-span-2 flex min-w-0 items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 p-1 dark:border-zinc-800 dark:bg-zinc-900 lg:col-span-1 lg:max-w-xs">

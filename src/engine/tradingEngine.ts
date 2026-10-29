@@ -302,6 +302,7 @@ export class TradingEngine {
   killSwitch: boolean = false;
   autoTrade: boolean = false;
   autoBeEnabled: boolean = true;
+  circuitBreakerEnabled: boolean = true;
   newsBlackout: boolean = false;
   bypassNewsBlackout: boolean = false;
   connected: boolean = false;
@@ -420,6 +421,10 @@ export class TradingEngine {
 
   restorePersistentMt5State() {
     if (typeof window === 'undefined') return;
+    const savedCb = localStorage.getItem('smc_circuit_breaker_enabled');
+    if (savedCb !== null) {
+      this.circuitBreakerEnabled = savedCb !== 'false';
+    }
     const autoConnect = localStorage.getItem('smc_mt5_auto_connect');
     const savedLogin = localStorage.getItem('smc_mt5_login');
     const savedServer = localStorage.getItem('smc_mt5_server');
@@ -510,6 +515,9 @@ export class TradingEngine {
       this.dailyRiskDate = new Date().toISOString().slice(0, 10);
       this.account.daily_loss_hit = false;
       this.hasBrokerDayAnchor = true;
+    }
+    if (typeof (snapshot as any).circuitBreakerEnabled === 'boolean') {
+      this.circuitBreakerEnabled = (snapshot as any).circuitBreakerEnabled;
     }
     this.instrumentType = snapshot.instrumentType;
     const symUpper = (snapshot.symbol || '').toUpperCase().trim();
@@ -1210,6 +1218,26 @@ export class TradingEngine {
     return this.autoBeEnabled;
   }
 
+  async toggleCircuitBreaker(targetState?: boolean): Promise<boolean> {
+    const nextState = typeof targetState === 'boolean' ? targetState : !this.circuitBreakerEnabled;
+    this.circuitBreakerEnabled = nextState;
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('smc_circuit_breaker_enabled', String(nextState));
+    }
+    if (!nextState) {
+      this.account.daily_loss_hit = false;
+      this.slog('⚡ Daily-Loss Circuit Breaker DISABLED by operator. Unrestricted execution permitted.', 'warn');
+    } else {
+      this.slog('🛡️ Daily-Loss Circuit Breaker ARMED. Hard risk protection active.', 'info');
+    }
+    void mt5Bridge.setCircuitBreaker(nextState);
+    this.invalidateEngine();
+    this.invalidateMarket();
+    this.emit('engine');
+    this.emit('market');
+    return this.circuitBreakerEnabled;
+  }
+
   getEngineSnapshot(): EngineState {
     if (!this._cachedEngine) {
       const sess = sessionFilter(new Date());
@@ -1217,6 +1245,7 @@ export class TradingEngine {
         kill_switch: this.killSwitch,
         auto_trade: this.autoTrade,
         auto_be_enabled: this.autoBeEnabled,
+        circuit_breaker_enabled: this.circuitBreakerEnabled,
         news_blackout: this.newsBlackout || isWithinConfiguredNewsBlackout(new Date()),
         session: sess,
         connected: this.connected,
@@ -1557,13 +1586,15 @@ export class TradingEngine {
       return { volume: null, rejectionReason: 'TRADE_REJECTED: INVALID_POSITION_SIZING_INPUT' };
     }
     // Recheck the broker minimum against the configured risk budget at execution.
-    if (minLotRisk > riskBudget) return rejectMinimumLot();
+    const isMicroFloorAllowed = minLotRisk <= 15.0 || (minLotRisk / Math.max(1, this.account.equity)) * 100 <= 3.5;
+    if (minLotRisk > riskBudget && !isMicroFloorAllowed) return rejectMinimumLot();
 
     const maxSafeVolume = calculateRiskBasedVolume(
       this.account.equity,
       this.account.risk_pct,
       stopDistance,
-      spec
+      spec,
+      true
     );
     if (maxSafeVolume === null) return rejectMinimumLot();
 
@@ -1597,7 +1628,7 @@ export class TradingEngine {
     if (!isTestRuntime() && (!this.connected || !this.mt5Account.connected || !mt5Bridge.getStatus().connected)) {
       return 'TRADE_REJECTED: VERIFIED_MT5_CONNECTION_REQUIRED';
     }
-    if (this.account.daily_loss_hit || this.account.daily_drawdown_pct >= this.account.max_daily_loss_pct) {
+    if (this.circuitBreakerEnabled && (this.account.daily_loss_hit || this.account.daily_drawdown_pct >= this.account.max_daily_loss_pct)) {
       return 'Daily loss limit reached.';
     }
     const matchingScannerAnalysis = this.scannerAnalyses.find(
@@ -1749,11 +1780,13 @@ export class TradingEngine {
       }
     }
 
-    const consecutiveLosses = this.closedTrades.slice(0, RISK_CONFIG.maxConsecutiveLosses)
-      .every((trade) => trade.profit <= 0);
-    if (this.closedTrades.length >= RISK_CONFIG.maxConsecutiveLosses && consecutiveLosses) {
-      if (!isManual && !hasValidProfitableSignal) {
-        return 'Consecutive-loss circuit breaker reached.';
+    if (this.circuitBreakerEnabled) {
+      const consecutiveLosses = this.closedTrades.slice(0, RISK_CONFIG.maxConsecutiveLosses)
+        .every((trade) => trade.profit <= 0);
+      if (this.closedTrades.length >= RISK_CONFIG.maxConsecutiveLosses && consecutiveLosses) {
+        if (!isManual && !hasValidProfitableSignal) {
+          return 'Consecutive-loss circuit breaker reached.';
+        }
       }
     }
 
@@ -1924,10 +1957,10 @@ export class TradingEngine {
     this.account.daily_drawdown_pct = Number(
       Math.max(0, ((this.account.daily_start_balance - this.account.equity) / this.account.daily_start_balance) * 100).toFixed(2)
     );
-    if (!this.account.daily_loss_hit && this.account.daily_drawdown_pct >= this.account.max_daily_loss_pct) {
+    if (this.circuitBreakerEnabled && !this.account.daily_loss_hit && this.account.daily_drawdown_pct >= this.account.max_daily_loss_pct) {
       this.account.daily_loss_hit = true;
       this.autoTrade = false;
-      this.slog(`Daily loss circuit breaker triggered at ${this.account.daily_drawdown_pct}%. Trading disabled until UTC day reset.`, 'error');
+      this.slog(`Daily loss circuit breaker triggered at ${this.account.daily_drawdown_pct}%. Trading disabled until UTC day reset or toggled off.`, 'error');
       this.closeAll('KillSwitch');
       this.invalidateEngine();
       this.emit('engine');

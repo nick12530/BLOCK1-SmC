@@ -33,7 +33,8 @@ export function calculateRiskBasedVolume(
   equity: number,
   riskPercent: number,
   stopDistancePrice: number,
-  spec: Pick<SymbolRiskSpec, 'tickSize' | 'tickValue' | 'contractSize' | 'volumeMin' | 'volumeMax' | 'volumeStep'>
+  spec: Pick<SymbolRiskSpec, 'tickSize' | 'tickValue' | 'contractSize' | 'volumeMin' | 'volumeMax' | 'volumeStep'>,
+  allowMicroFloor: boolean = true
 ): number | null {
   if (
     ![equity, riskPercent, stopDistancePrice, spec.tickSize, spec.tickValue, spec.volumeMin, spec.volumeMax, spec.volumeStep]
@@ -57,6 +58,18 @@ export function calculateRiskBasedVolume(
   const rawVolume = riskAmount / riskPerLot;
 
   if (rawVolume < spec.volumeMin) {
+    // Smart Adaptive Micro-Floor:
+    // If raw volume is below broker minimum (e.g. 0.007 < 0.01L), don't block valid signals
+    // on small or micro accounts if 0.01 lot dollar risk is <= $15.0 or <= 3.5% equity.
+    if (allowMicroFloor) {
+      const minLotDollarRisk = riskPerLot * spec.volumeMin;
+      const maxFloorDollar = (config as Record<string, unknown>).maxMicroFloorRiskDollar
+        ? Number((config as Record<string, unknown>).maxMicroFloorRiskDollar)
+        : 15.0;
+      if (minLotDollarRisk <= maxFloorDollar || (minLotDollarRisk / equity) * 100 <= 3.5) {
+        return spec.volumeMin;
+      }
+    }
     return null;
   }
   const steps = Math.floor((Math.min(rawVolume, spec.volumeMax) - spec.volumeMin) / spec.volumeStep + 1e-9);

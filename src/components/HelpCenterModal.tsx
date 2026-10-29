@@ -29,6 +29,9 @@ import {
   Activity,
   ShieldAlert,
   Crosshair,
+  ShieldCheck,
+  Keyboard,
+  Smartphone,
 } from 'lucide-react';
 
 interface HelpCenterModalProps {
@@ -44,8 +47,11 @@ type TabType =
   | 'indicators_suite'
   | 'pending_orders'
   | 'valid_signals'
+  | 'risk_sizing'
+  | 'hotkeys'
   | 'dealing_range'
   | 'balances'
+  | 'remote_mobile'
   | 'abbreviations'
   | 'mt5';
 
@@ -63,10 +69,13 @@ const TABS: TabItem[] = [
   { id: 'indicators_suite', num: '03', title: 'Indicator Suite', desc: 'ATR, Candles, MTF, Sessions (UTC & EAT)', icon: BarChart3 },
   { id: 'pending_orders', num: '04', title: 'Pending Limit Orders', desc: 'Holding timer & auto-cancel', icon: Clock },
   { id: 'valid_signals', num: '05', title: 'Execution Gates', desc: 'SFP, 1.5R Scale-Out, OB Trailing & Rules', icon: Zap },
-  { id: 'dealing_range', num: '06', title: 'Dealing Range & EQ', desc: 'Discount vs Premium zones', icon: Compass },
-  { id: 'balances', num: '07', title: 'MT5 Balances & Margin', desc: 'Capital & leverage guide', icon: DollarSign },
-  { id: 'abbreviations', num: '08', title: 'Glossary & SMC', desc: 'OB, BOS, CHoCH, FVG, ATR, SFP', icon: Layers },
-  { id: 'mt5', num: '09', title: 'MT5 Live Bridge', desc: 'Broker execution & socket sync', icon: Server },
+  { id: 'risk_sizing', num: '06', title: 'Adaptive Sizing & Risk', desc: 'Micro-floor, % risk modes & liquidation', icon: ShieldCheck },
+  { id: 'hotkeys', num: '07', title: 'Fast Hotkeys', desc: 'Space to execute, Esc, KillSwitch', icon: Keyboard },
+  { id: 'dealing_range', num: '08', title: 'Dealing Range & EQ', desc: 'Discount vs Premium zones', icon: Compass },
+  { id: 'balances', num: '09', title: 'MT5 Balances & Margin', desc: 'Capital & leverage guide', icon: DollarSign },
+  { id: 'remote_mobile', num: '10', title: 'Mobile & Webhooks', desc: 'Tailscale & Discord/Telegram alerts', icon: Smartphone },
+  { id: 'abbreviations', num: '11', title: 'Glossary & SMC', desc: 'OB, BOS, CHoCH, FVG, ATR, SFP', icon: Layers },
+  { id: 'mt5', num: '12', title: 'MT5 Live Bridge', desc: 'Broker execution & socket sync', icon: Server },
 ];
 
 export const HelpCenterModal: React.FC<HelpCenterModalProps> = ({
@@ -755,6 +764,159 @@ export const HelpCenterModal: React.FC<HelpCenterModalProps> = ({
                 >
                   Open MT5 Bridge Setup Window
                 </button>
+              </div>
+            </div>
+          )}
+
+          {/* TAB: ADAPTIVE SIZING & RISK SAFEGUARDS */}
+          {activeTab === 'risk_sizing' && (
+            <div className="space-y-3.5">
+              <div className="p-3.5 rounded-xl bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-800 space-y-1">
+                <span className="font-bold text-zinc-950 dark:text-white font-mono text-xs block">
+                  Smart Adaptive Sizing &amp; Institutional Capital Protection
+                </span>
+                <p className="text-[11px] text-zinc-600 dark:text-zinc-400 leading-relaxed">
+                  Engineered to prevent trade blocking on smaller accounts while strictly bounding downside risk:
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-[11px]">
+                <div className="p-3 rounded-xl bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 space-y-1">
+                  <div className="font-bold text-zinc-950 dark:text-white flex items-center gap-1.5 font-mono text-xs">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
+                    <span>Adaptive Micro-Floor Sizing</span>
+                  </div>
+                  <p className="text-zinc-600 dark:text-zinc-400 leading-relaxed">
+                    On small or micro accounts ($100–$1,000), a rigid 1% rule previously blocked 0.01 lot Gold trades when the stop exceeded 12 pips. The <strong>Smart Micro-Floor</strong> permits the broker minimum 0.01L if the total dollar risk is &le; $15 or within 3.5% equity, preventing false signal rejections.
+                  </p>
+                </div>
+
+                <div className="p-3 rounded-xl bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 space-y-1">
+                  <div className="font-bold text-zinc-950 dark:text-white flex items-center gap-1.5 font-mono text-xs">
+                    <ShieldCheck className="w-3.5 h-3.5 text-sky-500" />
+                    <span>Market Execution Emergency Auto-Liquidation</span>
+                  </div>
+                  <p className="text-zinc-600 dark:text-zinc-400 leading-relaxed">
+                    On Market Execution brokers, Stop Loss must be attached post-fill. If stop modification fails after 3 retries (e.g. freeze level or requote), the bridge <strong>immediately market-liquidates the order</strong>, guaranteeing that a live position can never sit unhedged or naked.
+                  </p>
+                </div>
+
+                <div className="p-3 rounded-xl bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 space-y-1">
+                  <div className="font-bold text-zinc-950 dark:text-white flex items-center gap-1.5 font-mono text-xs">
+                    <ShieldAlert className="w-3.5 h-3.5 text-rose-500" />
+                    <span>Non-Bypassable Hard Circuit Breakers</span>
+                  </div>
+                  <p className="text-zinc-600 dark:text-zinc-400 leading-relaxed">
+                    The 4% daily drawdown limit, 3 consecutive loss limit, and 5 open position ceiling are enforced by the bridge server as absolute walls. Even direct API calls with forceExecute cannot bypass these safeguards.
+                  </p>
+                </div>
+
+                <div className="p-3 rounded-xl bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 space-y-1">
+                  <div className="font-bold text-zinc-950 dark:text-white flex items-center gap-1.5 font-mono text-xs">
+                    <Zap className="w-3.5 h-3.5 text-amber-500" />
+                    <span>Dynamic Sizing Modes (Lots vs % Risk)</span>
+                  </div>
+                  <p className="text-zinc-600 dark:text-zinc-400 leading-relaxed">
+                    Toggle between standard lot presets (0.01L, 0.02L, 0.05L, 0.10L) and institutional % Risk presets (0.5%, 1.0%, 1.5%, 2.0%). The engine computes volume to the exact broker volume step in real time.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* TAB: KEYBOARD HOTKEYS */}
+          {activeTab === 'hotkeys' && (
+            <div className="space-y-3.5">
+              <div className="p-3.5 rounded-xl bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-800 space-y-1">
+                <span className="font-bold text-zinc-950 dark:text-white font-mono text-xs block">
+                  Pro Trader Keyboard Hotkeys
+                </span>
+                <p className="text-[11px] text-zinc-600 dark:text-zinc-400 leading-relaxed">
+                  Execute, manage, and halt trading with high-speed tactile key combinations:
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-[11px]">
+                <div className="p-3 rounded-xl bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-zinc-950 dark:text-white font-mono text-xs">Execute Highest Setup</span>
+                    <kbd className="px-2 py-0.5 rounded bg-zinc-100 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 font-mono font-bold text-xs">Space</kbd>
+                  </div>
+                  <p className="text-zinc-600 dark:text-zinc-400 leading-relaxed">
+                    Instantly executes the highest confluence signal on the active symbol using the configured safe lot size.
+                  </p>
+                </div>
+
+                <div className="p-3 rounded-xl bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-zinc-950 dark:text-white font-mono text-xs">Dismiss / Close Modal</span>
+                    <kbd className="px-2 py-0.5 rounded bg-zinc-100 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 font-mono font-bold text-xs">Esc</kbd>
+                  </div>
+                  <p className="text-zinc-600 dark:text-zinc-400 leading-relaxed">
+                    Closes any active modal window (Bridge, Risk Settings, Help Center) or dismisses confirmation prompts.
+                  </p>
+                </div>
+
+                <div className="p-3 rounded-xl bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-rose-600 dark:text-rose-400 font-mono text-xs">Emergency Kill Switch</span>
+                    <kbd className="px-2 py-0.5 rounded bg-rose-50 dark:bg-rose-950/40 border border-rose-300 dark:border-rose-800 font-mono font-bold text-xs">Ctrl+Shift+K</kbd>
+                  </div>
+                  <p className="text-zinc-600 dark:text-zinc-400 leading-relaxed">
+                    Instantly arms the emergency kill switch, freezing all order execution across every currency pair.
+                  </p>
+                </div>
+
+                <div className="p-3 rounded-xl bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-amber-600 dark:text-amber-400 font-mono text-xs">Emergency Close All</span>
+                    <kbd className="px-2 py-0.5 rounded bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800 font-mono font-bold text-xs">Ctrl+Shift+C</kbd>
+                  </div>
+                  <p className="text-zinc-600 dark:text-zinc-400 leading-relaxed">
+                    Liquidates all open positions across all instruments immediately at current broker market bid/ask prices.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* TAB: MOBILE TRADING & WEBHOOKS */}
+          {activeTab === 'remote_mobile' && (
+            <div className="space-y-3.5">
+              <div className="p-3.5 rounded-xl bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-800 space-y-1">
+                <span className="font-bold text-zinc-950 dark:text-white font-mono text-xs block">
+                  Remote Mobile Trading &amp; Discord / Telegram Push Notifications
+                </span>
+                <p className="text-[11px] text-zinc-600 dark:text-zinc-400 leading-relaxed">
+                  How to run MT5 on your Windows PC or VPS and trade seamlessly from your phone or receive instant alerts:
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-[11px]">
+                <div className="p-3 rounded-xl bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 space-y-1">
+                  <div className="font-bold text-zinc-950 dark:text-white flex items-center gap-1.5 font-mono text-xs">
+                    <Smartphone className="w-3.5 h-3.5 text-sky-500" />
+                    <span>Remote Mobile Trading via Tailscale</span>
+                  </div>
+                  <p className="text-zinc-600 dark:text-zinc-400 leading-relaxed">
+                    1. Install Tailscale on your Windows PC and your phone.
+                    <br />2. Run <code>.\mt5-bridge\start_phone_link.ps1</code> on your PC.
+                    <br />3. Open the web terminal on your phone and enter your Tailscale IP (e.g. <code>http://100.x.y.z:8000</code>).
+                    <br />4. Enjoy real-time broker execution from anywhere over an encrypted private mesh!
+                  </p>
+                </div>
+
+                <div className="p-3 rounded-xl bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 space-y-1">
+                  <div className="font-bold text-zinc-950 dark:text-white flex items-center gap-1.5 font-mono text-xs">
+                    <Zap className="w-3.5 h-3.5 text-emerald-500" />
+                    <span>Discord &amp; Telegram Push Alerts</span>
+                  </div>
+                  <p className="text-zinc-600 dark:text-zinc-400 leading-relaxed">
+                    Configure webhooks in the top bar to receive instant rich alerts:
+                    <br />• <strong>Discord:</strong> Paste your Discord Webhook URL. Alerts format automatically into color-coded embeds with entry, SL, TP, and confluence scores.
+                    <br />• <strong>Telegram:</strong> Add your Bot Token and Chat ID for HTML push alerts.
+                  </p>
+                </div>
               </div>
             </div>
           )}

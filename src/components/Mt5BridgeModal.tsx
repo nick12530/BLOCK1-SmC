@@ -19,6 +19,8 @@ export const Mt5BridgeModal: React.FC<Mt5BridgeModalProps> = ({ isOpen, onClose 
   const [message, setMessage] = useState('');
   const [copied, setCopied] = useState(false);
   const [pingState, setPingState] = useState<{ testing: boolean; ok?: boolean; latencyMs?: number; error?: string } | null>(null);
+  const [token, setToken] = useState(() => mt5Bridge.getBridgeToken());
+  const [showTokenField, setShowTokenField] = useState(() => Boolean(mt5Bridge.getBridgeToken()));
 
   const market = useMarket();
   const [connectionRefresh, setConnectionRefresh] = useState(0);
@@ -45,6 +47,7 @@ export const Mt5BridgeModal: React.FC<Mt5BridgeModalProps> = ({ isOpen, onClose 
 
   const handlePing = async () => {
     setPingState({ testing: true });
+    if (token) mt5Bridge.setBridgeToken(token.trim());
     const res = await mt5Bridge.ping();
     setPingState({ testing: false, ...res });
   };
@@ -64,6 +67,7 @@ export const Mt5BridgeModal: React.FC<Mt5BridgeModalProps> = ({ isOpen, onClose 
         baseUrl: targetUrl,
         symbol: symbol.trim(),
         instrumentType,
+        token: token.trim(),
       });
       tradingEngine.linkMt5Account(
         String(snapshot.account.login),
@@ -75,7 +79,11 @@ export const Mt5BridgeModal: React.FC<Mt5BridgeModalProps> = ({ isOpen, onClose 
       setMessage(`Connected to ${snapshot.accountMode.toUpperCase()} account ${snapshot.account.login} on ${snapshot.account.server}.`);
     } catch (error) {
       setStatus('error');
-      setMessage(error instanceof Error ? error.message : 'Unable to connect to the MT5 bridge.');
+      const errText = error instanceof Error ? error.message : 'Unable to connect to the MT5 bridge.';
+      if (errText.includes('401') || errText.toLowerCase().includes('token')) {
+        setShowTokenField(true);
+      }
+      setMessage(errText);
     }
   };
 
@@ -282,18 +290,90 @@ export const Mt5BridgeModal: React.FC<Mt5BridgeModalProps> = ({ isOpen, onClose 
               />
             </label>
             <p className="mt-2 text-[11px] text-slate-500 dark:text-zinc-500">
-              Use the exact symbol name from MT5 Market Watch. No account password or bridge token is entered here.
+              Use the exact symbol name from MT5 Market Watch.
             </p>
           </section>
 
+          <section className="rounded-xl border border-slate-200 p-4 dark:border-zinc-800 space-y-2">
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <div>
+                <span className="text-xs font-semibold text-slate-900 dark:text-zinc-100 block">
+                  Daily-Loss Circuit Breaker
+                </span>
+                <span className="text-[11px] text-slate-500 dark:text-zinc-400">
+                  {mt5Bridge.getCircuitBreakerEnabled()
+                    ? 'Active · Protects account by locking order submission at 3% max daily loss'
+                    : 'Bypassed · Daily-loss and consecutive-loss protections are turned OFF'}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={async () => {
+                  const curr = mt5Bridge.getCircuitBreakerEnabled();
+                  await tradingEngine.toggleCircuitBreaker(!curr);
+                  setConnectionRefresh((v) => v + 1);
+                }}
+                className={`px-3 py-1.5 rounded-lg font-mono text-xs font-bold transition-all cursor-pointer border ${
+                  mt5Bridge.getCircuitBreakerEnabled()
+                    ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30'
+                    : 'bg-amber-500 text-black border-amber-600 font-extrabold shadow-sm'
+                }`}
+              >
+                {mt5Bridge.getCircuitBreakerEnabled() ? 'ENABLED (ON)' : 'DISABLED (OFF)'}
+              </button>
+            </div>
+          </section>
+
+          <section className="rounded-xl border border-slate-200 p-4 dark:border-zinc-800 space-y-2.5">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-slate-700 dark:text-zinc-300">
+                Bridge Security Token (Optional on localhost)
+              </span>
+              <button
+                type="button"
+                onClick={() => setShowTokenField((prev) => !prev)}
+                className="text-[11px] font-mono text-sky-500 hover:underline cursor-pointer"
+              >
+                {showTokenField ? 'Hide token field' : 'Configure token'}
+              </button>
+            </div>
+            {showTokenField && (
+              <div className="space-y-1.5 pt-1">
+                <input
+                  value={token}
+                  onChange={(e) => setToken(e.target.value)}
+                  placeholder="Paste token from bridge_token.txt if running remotely"
+                  autoComplete="off"
+                  disabled={isConnected}
+                  className="min-h-10 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 font-mono text-xs text-slate-950 outline-none transition-colors focus:border-slate-500 dark:border-zinc-700 dark:bg-zinc-950 dark:text-white dark:focus:border-zinc-400"
+                />
+                <p className="text-[10px] text-slate-500 dark:text-zinc-500 leading-relaxed">
+                  Local requests on 127.0.0.1 connect automatically without a token. If strict auth is enabled or connecting from another device, paste the token saved in <code className="text-[10px]">AppData\Local\SMCBridge\bridge_token.txt</code>.
+                </p>
+              </div>
+            )}
+          </section>
+
           {message && (
-            <div className={`flex items-start gap-2 rounded-lg border p-3 text-sm ${
+            <div className={`space-y-2 rounded-lg border p-3 text-sm ${
               status === 'error'
                 ? 'border-rose-700/20 bg-rose-50 text-rose-800 dark:bg-rose-950/30 dark:text-rose-200'
                 : 'border-slate-200 bg-slate-50 text-slate-700 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300'
             }`}>
-              {status === 'error' ? <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" /> : <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />}
-              <span>{message}</span>
+              <div className="flex items-start gap-2">
+                {status === 'error' ? <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-rose-500" /> : <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-500" />}
+                <span className="flex-1 break-words">{message}</span>
+              </div>
+              {status === 'error' && (message.includes('401') || message.toLowerCase().includes('token')) && (
+                <div className="mt-2 pt-2 border-t border-rose-200/50 dark:border-rose-900/40 text-xs text-rose-700 dark:text-rose-300 space-y-1.5">
+                  <p className="font-medium">To resolve:</p>
+                  <ol className="list-decimal list-inside space-y-1 text-[11px] leading-relaxed">
+                    <li>Close the existing Python bridge PowerShell window to stop the outdated process.</li>
+                    <li>Re-run the launcher to restart with clean token synchronization: <code className="font-mono bg-rose-100 dark:bg-rose-950 px-1 py-0.5 rounded text-[10px]">powershell -ExecutionPolicy Bypass -File .\mt5-bridge\start_pc.ps1 -RestartBridge</code></li>
+                    <li>Alternatively, open <code className="font-mono bg-rose-100 dark:bg-rose-950 px-1 py-0.5 rounded text-[10px]">bridge_token.txt</code> from the path in the error message and paste the token into the field above.</li>
+                  </ol>
+                </div>
+              )}
             </div>
           )}
 

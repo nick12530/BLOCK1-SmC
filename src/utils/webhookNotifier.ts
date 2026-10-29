@@ -111,10 +111,37 @@ export async function sendCustomWebhook(
   }
 
   try {
+    let finalBody: Record<string, any> = payload;
+
+    // Discord Webhook auto-adapter
+    if (webhookUrl.includes('discord.com/api/webhooks')) {
+      const isBuy = payload.direction === 'BUY';
+      const color = isBuy ? 0x00E676 : 0xFF5252;
+      const eventName = payload.event || 'SMC Signal Alert';
+      finalBody = {
+        content: `⚡ **NIFTY Institutional Trading Alert**`,
+        embeds: [
+          {
+            title: `${payload.symbol || 'MARKET'} ${payload.direction || ''} · ${payload.strategy || eventName}`,
+            description: payload.message || `Confluence Score: **${payload.confluenceScore || '—'}**/100`,
+            color,
+            fields: [
+              ...(payload.entry !== undefined ? [{ name: 'Entry', value: `\`${payload.entry}\``, inline: true }] : []),
+              ...(payload.sl !== undefined ? [{ name: 'Stop Loss', value: `\`${payload.sl}\``, inline: true }] : []),
+              ...(payload.tp1 !== undefined || payload.tp !== undefined ? [{ name: 'Target', value: `\`${payload.tp1 || payload.tp}\``, inline: true }] : []),
+              ...(payload.volume !== undefined ? [{ name: 'Volume', value: `\`${payload.volume}L\``, inline: true }] : []),
+            ],
+            footer: { text: 'NIFTY Trading Engine · Risk Guardrails Active' },
+            timestamp: new Date().toISOString(),
+          },
+        ],
+      };
+    }
+
     const res = await fetch(webhookUrl.trim(), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
+      body: JSON.stringify(finalBody),
     });
 
     if (!res.ok) {

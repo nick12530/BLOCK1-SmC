@@ -16,6 +16,8 @@ class RiskMathTests(unittest.TestCase):
     def test_minimum_volume_never_exceeds_risk_budget(self) -> None:
         self.assertIsNone(volume_for_risk(0.1, 20, 0.01, 0.01, 1))
         self.assertEqual(volume_for_risk(1, 20, 0.01, 0.01, 1), 0.05)
+        # Adaptive micro-floor permits 0.01 if dollar risk <= $15
+        self.assertEqual(volume_for_risk(0.1, 20, 0.01, 0.01, 1, allow_micro_floor=True), 0.01)
 
     def test_volume_rounds_down_to_step_and_caps_at_broker_max(self) -> None:
         self.assertEqual(volume_for_risk(0.97, 10, 0.01, 0.01, 1), 0.09)

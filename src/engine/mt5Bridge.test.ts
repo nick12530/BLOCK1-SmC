@@ -90,4 +90,40 @@ describe('PC-local MT5 Bridge', () => {
       'dashboard proxy at http://127.0.0.1:4173/mt5-bridge cannot reach the Python MT5 bridge'
     );
   });
+
+  describe('bridge token authentication', () => {
+    it('stores and retrieves bridge token from localStorage', () => {
+      const connector = new MT5BridgeConnector();
+      expect(connector.getBridgeToken()).toBe('');
+      connector.setBridgeToken('test-secret-token-123');
+      expect(connector.getBridgeToken()).toBe('test-secret-token-123');
+      expect(localStorage.getItem('smc_mt5_bridge_token')).toBe('test-secret-token-123');
+
+      connector.setBridgeToken('');
+      expect(connector.getBridgeToken()).toBe('');
+      expect(localStorage.getItem('smc_mt5_bridge_token')).toBeNull();
+    });
+
+    it('attaches Bearer Authorization header when token is configured', async () => {
+      const fetchSpy = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        headers: { get: () => 'application/json' },
+        json: async () => ({ status: 'ok' }),
+      } as any);
+      global.fetch = fetchSpy;
+
+      const connector = new MT5BridgeConnector();
+      connector.setBridgeToken('my-auth-token');
+      await connector.ping('http://127.0.0.1:8000');
+
+      expect(fetchSpy).toHaveBeenCalled();
+      const lastCall = fetchSpy.mock.calls[0];
+      expect(lastCall[1].headers).toEqual(
+        expect.objectContaining({
+          Authorization: 'Bearer my-auth-token',
+        })
+      );
+    });
+  });
 });

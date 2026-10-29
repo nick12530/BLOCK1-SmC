@@ -1,7 +1,24 @@
+param(
+    [switch]$RestartBridge = $false
+)
+
 $ErrorActionPreference = 'Stop'
 
 $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 Set-Location $projectRoot
+
+# Preload bridge security token from AppData if present
+$basePath = if ($env:LOCALAPPDATA) { $env:LOCALAPPDATA } else { $env:USERPROFILE }
+$tokenFile = Join-Path $basePath "SMCBridge\bridge_token.txt"
+if (Test-Path $tokenFile) {
+    try {
+        $loadedToken = (Get-Content $tokenFile -Raw).Trim()
+        if ($loadedToken) {
+            $env:SMC_BRIDGE_TOKEN = $loadedToken
+            Write-Host "Loaded bridge security token from $tokenFile"
+        }
+    } catch {}
+}
 
 foreach ($command in @('npm', 'py')) {
     if (-not (Get-Command $command -ErrorAction SilentlyContinue)) {
@@ -57,14 +74,16 @@ if ($env:SMC_DASHBOARD_PORT -match '^\d+$' -and [int]$env:SMC_DASHBOARD_PORT -ge
     $dashboardStartPort = [int]$env:SMC_DASHBOARD_PORT
 }
 $reuseBridge = $false
-try {
-    $existingBridge = Invoke-RestMethod -Uri "http://127.0.0.1:$bridgeStartPort/ping" -TimeoutSec 1
-    if ($existingBridge.status -eq 'ok' -and $null -ne $existingBridge.connected) {
-        $env:SMC_BRIDGE_PORT = [string]$bridgeStartPort
-        $reuseBridge = $true
-        Write-Host "Reusing the active MT5 bridge on port $bridgeStartPort."
+if (-not $RestartBridge) {
+    try {
+        $existingBridge = Invoke-RestMethod -Uri "http://127.0.0.1:$bridgeStartPort/ping" -TimeoutSec 1
+        if ($existingBridge.status -eq 'ok' -and $null -ne $existingBridge.connected) {
+            $env:SMC_BRIDGE_PORT = [string]$bridgeStartPort
+            $reuseBridge = $true
+            Write-Host "Reusing the active MT5 bridge on port $bridgeStartPort."
+        }
+    } catch {
     }
-} catch {
 }
 if (-not $reuseBridge) {
     $env:SMC_BRIDGE_PORT = [string](Get-AvailableLoopbackPort -PreferredPort $bridgeStartPort)
@@ -76,9 +95,13 @@ Write-Host 'Building the optimized dashboard...'
 if ($LASTEXITCODE -ne 0) { throw 'Dashboard build failed.' }
 
 if (-not $reuseBridge) {
+    $bridgeEnvCmd = "`$env:SMC_BRIDGE_PORT='$($env:SMC_BRIDGE_PORT)'; "
+    if ($env:SMC_BRIDGE_TOKEN) {
+        $bridgeEnvCmd += "`$env:SMC_BRIDGE_TOKEN='$($env:SMC_BRIDGE_TOKEN)'; "
+    }
     Start-Process powershell.exe `
         -WorkingDirectory $projectRoot `
-        -ArgumentList @('-NoExit', '-Command', 'py .\mt5-bridge\server.py') | Out-Null
+        -ArgumentList @('-NoExit', '-Command', "$bridgeEnvCmd py .\mt5-bridge\server.py") | Out-Null
 }
 
 $bridgeReady = $false
@@ -95,9 +118,13 @@ if (-not $bridgeReady) {
     throw 'The local MT5 bridge did not become ready. Inspect its PowerShell window and confirm MT5 Desktop is running.'
 }
 
+$previewEnvCmd = "`$env:SMC_BRIDGE_PORT='$($env:SMC_BRIDGE_PORT)'; "
+if ($env:SMC_BRIDGE_TOKEN) {
+    $previewEnvCmd += "`$env:SMC_BRIDGE_TOKEN='$($env:SMC_BRIDGE_TOKEN)'; "
+}
 Start-Process powershell.exe `
     -WorkingDirectory $projectRoot `
-    -ArgumentList @('-NoExit', '-Command', "npm run preview -- --host 127.0.0.1 --port $($env:SMC_DASHBOARD_PORT) --strictPort") | Out-Null
+    -ArgumentList @('-NoExit', '-Command', "$previewEnvCmd npm run preview -- --host 127.0.0.1 --port $($env:SMC_DASHBOARD_PORT) --strictPort") | Out-Null
 
 $dashboardUrl = "http://127.0.0.1:$($env:SMC_DASHBOARD_PORT)/"
 $dashboardReady = $false

@@ -48,7 +48,7 @@ import { SignalQualityCard } from './components/SignalQualityCard';
 import { SignalToastNotification } from './components/SignalToastNotification';
 
 // Icons
-import { AlertTriangle } from 'lucide-react';
+import { AlertTriangle, ShieldAlert, Power } from 'lucide-react';
 
 // Lazy-loaded Modals
 const Mt5BridgeModal = lazy(() =>
@@ -116,6 +116,34 @@ export default function App() {
       const message = error instanceof Error ? error.message : String(error);
       tradingEngine.slog(`Saved MT5 connection could not be restored: ${message}`, 'warn');
     });
+  }, []);
+
+  // Keyboard Execution Hotkeys: Space (Execute), Esc (Close/Reset), Ctrl+Shift+K (Kill Switch)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const activeTag = (e.target as HTMLElement)?.tagName;
+      if (['INPUT', 'TEXTAREA', 'SELECT'].includes(activeTag)) {
+        return;
+      }
+      if (e.code === 'Space' && !e.repeat) {
+        const executeBtn = document.querySelector('[data-hotkey-execute="true"]') as HTMLButtonElement | null;
+        if (executeBtn && !executeBtn.disabled) {
+          e.preventDefault();
+          executeBtn.click();
+        }
+      } else if (e.key === 'Escape') {
+        setActiveModal(null);
+        setConfirmDialog(null);
+      } else if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.code === 'KeyK') {
+        e.preventDefault();
+        tradingEngine.toggleKillSwitch();
+      } else if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.code === 'KeyC') {
+        e.preventDefault();
+        tradingEngine.closeAll('Manual');
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
   // Request Kill Switch Toggle with confirmation dialog
@@ -258,20 +286,40 @@ export default function App() {
       {/* 1. Persistent Kill Switch Banner (visible when armed) */}
       <KillSwitchBanner />
 
-      {/* 2. Daily Loss Circuit Breaker Amber Banner */}
+      {/* 2. Daily Loss Circuit Breaker Banner with Direct Toggle */}
       {isDailyLossExceeded && (
         <div
           role="alert"
-          className="w-full bg-rose-700 text-white px-4 py-2 font-mono text-xs font-bold flex items-center justify-between shrink-0 shadow-md sticky top-0 z-40"
+          className={`w-full px-4 py-2 font-mono text-xs font-bold flex flex-wrap items-center justify-between shrink-0 shadow-md sticky top-0 z-40 gap-2 transition-colors ${
+            engine.circuit_breaker_enabled
+              ? 'bg-rose-700 text-white'
+              : 'bg-amber-600 text-slate-950 font-bold'
+          }`}
         >
           <div className="flex items-center gap-2">
-            <AlertTriangle className="w-4 h-4 text-white shrink-0" />
+            <AlertTriangle className={`w-4 h-4 shrink-0 ${engine.circuit_breaker_enabled ? 'text-white' : 'text-slate-950'}`} />
             <span>
               Daily loss limit reached ({tradingEngine.account.daily_drawdown_pct.toFixed(1)}% /{' '}
-              {tradingEngine.account.max_daily_loss_pct.toFixed(1)}%) — trading disabled
+              {tradingEngine.account.max_daily_loss_pct.toFixed(1)}%) —{' '}
+              {engine.circuit_breaker_enabled ? 'Trading Locked' : 'Circuit Breaker BYPASSED (Trading Active)'}
             </span>
           </div>
-          <span className="text-[10px] uppercase tracking-wider font-mono">Circuit Breaker Active</span>
+          <div className="flex items-center gap-2.5">
+            <button
+              onClick={() => void tradingEngine.toggleCircuitBreaker()}
+              className={`px-3 py-1 rounded text-xs font-black uppercase tracking-wider flex items-center gap-1.5 cursor-pointer shadow-sm transition-all ${
+                engine.circuit_breaker_enabled
+                  ? 'bg-white text-rose-800 hover:bg-rose-50'
+                  : 'bg-slate-950 text-white hover:bg-slate-800'
+              }`}
+            >
+              <Power className="w-3.5 h-3.5" />
+              <span>{engine.circuit_breaker_enabled ? 'Turn OFF Breaker (Unlock)' : 'Re-Arm Breaker (Lock)'}</span>
+            </button>
+            <span className="text-[10px] uppercase tracking-wider font-mono opacity-85">
+              {engine.circuit_breaker_enabled ? 'Lockout Active' : 'Breaker Override'}
+            </span>
+          </div>
         </div>
       )}
 
@@ -310,7 +358,7 @@ export default function App() {
           </div>
 
           {/* Primary Trading Desk: keep the chart between execution and health diagnostics */}
-          <div className="flex flex-col gap-4 min-w-0">
+          <div className="grid grid-cols-1 2xl:grid-cols-[minmax(400px,0.9fr)_minmax(0,1.55fr)] gap-4 min-w-0 items-start">
             <div className="w-full min-w-0">
               <SignalEngineCard onExecuteSignal={handleExecuteSignal} />
             </div>

@@ -1,6 +1,8 @@
 {
-  "name": "SMC Gold Bot — Institutional XAUUSD Terminal",
-  "description": "Institutional-grade Smart Money Concepts (SMC) algorithmic trading engine and dashboard for XAUUSD with order blocks, fair value gaps, market structure, and confluence scoring.",
+  "name": "NIFTY — Institutional Multi-Asset Trading Terminal",
+  "description": "NIFTY — Institutional multi-asset trading terminal with order-flow confluence, liquidity sweeps, and MT5 bridge execution.",
   "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
 }

@@ -370,6 +370,7 @@ export interface EngineState {
   news_blackout: boolean;
   session: SessionInfo;
   connected: boolean;
+  circuit_breaker_enabled: boolean;
   max_spread_points: number;
   daily_loss_pct: number;
   daily_drawdown_pct: number;

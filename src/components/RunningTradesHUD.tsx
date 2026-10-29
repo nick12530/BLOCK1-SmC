@@ -30,7 +30,7 @@ export const RunningTradesHUD: React.FC<RunningTradesHUDProps> = ({ onOpenTradeS
 
   if (totalPositions === 0) {
     return (
-      <div className="w-full bg-slate-50 dark:bg-[#0c0e12] border border-dashed border-slate-200 dark:border-zinc-800 rounded-xl p-3 sm:p-4 flex items-center justify-between gap-3 font-mono text-xs">
+      <div className="neo-panel w-full border border-dashed rounded-xl p-3 sm:p-4 flex items-center justify-between gap-3 font-mono text-xs">
         <div className="flex items-center gap-2.5">
           <div className="w-2.5 h-2.5 rounded-full bg-slate-300 dark:bg-slate-700" />
           <div>

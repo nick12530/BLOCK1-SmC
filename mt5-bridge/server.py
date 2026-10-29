@@ -29,6 +29,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from risk_math import is_valid_close_volume, stop_risk, volume_for_risk
 from broker_time import future_broker_clock_offset_seconds
+from signal_freshness import is_signal_stale
 from calendar_feed import normalize_finnhub_calendar, normalize_forexfactory_calendar
 
 app = FastAPI(title="Local MT5 Bridge", docs_url=None, redoc_url=None)
@@ -93,6 +94,9 @@ def initialize_state_database() -> None:
         )
         connection.execute(
             "INSERT OR IGNORE INTO control_state (state_key, state_value) VALUES ('auto_trade', 'false')"
+        )
+        connection.execute(
+            "INSERT OR IGNORE INTO control_state (state_key, state_value) VALUES ('circuit_breaker_enabled', 'true')"
         )
         columns = {row[1] for row in connection.execute("PRAGMA table_info(order_requests)")}
         if "poi_key" not in columns:
@@ -285,6 +289,7 @@ class TradeRequest(BaseModel):
     signalTimestamp: str = Field(default="", max_length=40)
     magic: int | None = None
     bypassCooldown: bool = False
+    bypassCircuitBreaker: bool = False
     forceExecute: bool = False
 
 
@@ -294,6 +299,10 @@ class TradingControlRequest(BaseModel):
 
 class AutoTradeControlRequest(BaseModel):
     autoTrade: bool
+
+
+class CircuitBreakerControlRequest(BaseModel):
+    enabled: bool
 
 
 class CloseRequest(BaseModel):
@@ -311,15 +320,114 @@ class StopsRequest(BaseModel):
     expectedServer: str = Field(min_length=1, max_length=128)
 
 
+INSTRUMENT_MAX_SPREADS: dict[str, float] = {
+    "XAUUSD": 40.0,
+    "EURUSD": 20.0,
+    "GBPUSD": 25.0,
+    "USDJPY": 25.0,
+}
+
+
+def get_persisted_bridge_token() -> str:
+    token = os.environ.get("SMC_BRIDGE_TOKEN", "").strip()
+    if token:
+        return token
+    token_file = STATE_DIRECTORY / "bridge_token.txt"
+    if token_file.exists():
+        try:
+            stored = token_file.read_text(encoding="utf-8").strip()
+            if stored:
+                return stored
+        except Exception:
+            pass
+    import secrets
+    generated = secrets.token_hex(24)
+    try:
+        token_file.write_text(generated, encoding="utf-8")
+    except Exception:
+        pass
+    return generated
+
+
 def require_bridge_token(request: Request) -> None:
-    expected = os.environ.get("SMC_BRIDGE_TOKEN", "")
-    if not expected:
-        # Allow open access if bridge token is not configured on the host
-        return
+    expected = get_persisted_bridge_token()
     authorization = request.headers.get("authorization", "")
     scheme, _, supplied = authorization.partition(" ")
-    if scheme.lower() != "bearer" or not hmac.compare_digest(supplied, expected):
-        raise HTTPException(status_code=401, detail="A valid MT5 bridge token is required.")
+    if scheme.lower() == "bearer" and hmac.compare_digest(supplied.strip(), expected.strip()):
+        return
+
+    custom_header = request.headers.get("x-bridge-token", "").strip()
+    if custom_header and hmac.compare_digest(custom_header, expected.strip()):
+        return
+
+    query_token = request.query_params.get("token", "").strip()
+    if query_token and hmac.compare_digest(query_token, expected.strip()):
+        return
+
+    # Allow loopback requests (127.0.0.1, ::1, localhost, testclient) without token
+    # by default for seamless single-PC terminal usage.
+    # Users can set STRICT_BRIDGE_AUTH=true to enforce token verification even on localhost.
+    client_host = getattr(request.client, "host", "") if request.client else ""
+    is_loopback = client_host in ("127.0.0.1", "::1", "localhost", "testclient")
+    strict_auth = os.environ.get("STRICT_BRIDGE_AUTH", "false").lower() == "true"
+    if is_loopback and not strict_auth:
+        return
+
+    raise HTTPException(
+        status_code=401,
+        detail=f"A valid MT5 bridge token is required. Stored token in {STATE_DIRECTORY / 'bridge_token.txt'}.",
+    )
+
+
+def emergency_close_position(ticket: int, symbol: str, volume: float, direction: str) -> bool:
+    try:
+        is_buy = direction == "BUY"
+        tick = mt5.symbol_info_tick(symbol)
+        if tick is None:
+            return False
+        price = tick.bid if is_buy else tick.ask
+        close_req = {
+            "action": mt5.TRADE_ACTION_DEAL,
+            "symbol": symbol,
+            "volume": volume,
+            "type": mt5.ORDER_TYPE_SELL if is_buy else mt5.ORDER_TYPE_BUY,
+            "position": ticket,
+            "price": price,
+            "deviation": 500,
+            "magic": 999999,
+            "comment": "EMERGENCY_UNPROTECTED_SL",
+        }
+        res = mt5.order_send(close_req)
+        return res is not None and getattr(res, "retcode", None) in (
+            getattr(mt5, "TRADE_RETCODE_DONE", 10009),
+            getattr(mt5, "TRADE_RETCODE_PLACED", 10008),
+        )
+    except Exception as e:
+        logger.error(f"Failed executing emergency close on #{ticket}: {e}")
+        return False
+
+
+def reconstruct_day_starting_balance(login: int, server: str, current_balance: float, now: datetime) -> float:
+    try:
+        today_utc = datetime(now.year, now.month, now.day, 0, 0, 0, tzinfo=timezone.utc)
+        deals = mt5.history_deals_get(today_utc, now)
+        closed_pnl = 0.0
+        if deals:
+            for deal in deals:
+                entry_type = getattr(deal, "entry", None)
+                if entry_type in (getattr(mt5, "DEAL_ENTRY_OUT", 1), getattr(mt5, "DEAL_ENTRY_INOUT", 2)):
+                    profit = float(getattr(deal, "profit", 0.0) or 0.0)
+                    commission = float(getattr(deal, "commission", 0.0) or 0.0)
+                    swap = float(getattr(deal, "swap", 0.0) or 0.0)
+                    fee = float(getattr(deal, "fee", 0.0) or 0.0)
+                    closed_pnl += (profit + commission + swap + fee)
+        # Baseline = current_balance minus today's closed PnL
+        baseline = current_balance - closed_pnl
+        return max(1.0, float(baseline))
+    except Exception as e:
+        logger.warning(f"Could not reconstruct day start balance from MT5 deals: {e}")
+        return current_balance
+
 
 
 def require_account() -> dict:
@@ -410,6 +518,10 @@ def read_snapshot(symbol: str) -> dict:
         auto_trade = connection.execute(
             "SELECT state_value FROM control_state WHERE state_key = 'auto_trade'"
         ).fetchone()[0] == "true"
+        cb_row = connection.execute(
+            "SELECT state_value FROM control_state WHERE state_key = 'circuit_breaker_enabled'"
+        ).fetchone()
+        circuit_breaker_enabled = cb_row[0].lower() != "false" if cb_row else True
 
     def candles(timeframe: int) -> list[dict]:
         rates = mt5.copy_rates_from_pos(resolved_symbol, timeframe, 0, 100)
@@ -438,6 +550,7 @@ def read_snapshot(symbol: str) -> dict:
          "accountMode": account_mode,
          "tradingHalted": trading_halted,
          "autoTrade": auto_trade,
+         "circuitBreakerEnabled": circuit_breaker_enabled,
          "symbolSpec": symbol_spec,
         "bid": float(tick.bid),
         "ask": float(tick.ask),
@@ -728,6 +841,20 @@ def reset_circuit_breakers(request: Request) -> dict:
     return {"status": "ok", "message": "Circuit breakers and kill switch reset successfully."}
 
 
+@app.post("/api/circuit-breaker-control")
+def set_circuit_breaker_control(payload: CircuitBreakerControlRequest, request: Request) -> dict:
+    require_bridge_token(request)
+    with sqlite3.connect(STATE_DATABASE) as connection:
+        connection.execute(
+            "INSERT OR REPLACE INTO control_state (state_key, state_value) VALUES ('circuit_breaker_enabled', ?)",
+            ("true" if payload.enabled else "false",),
+        )
+        if not payload.enabled:
+            connection.execute("UPDATE control_state SET state_value = 'false' WHERE state_key = 'trading_halted'")
+    logger.info(f"⚡ Circuit breaker protection {'ENABLED' if payload.enabled else 'DISABLED'} by user.")
+    return {"circuitBreakerEnabled": payload.enabled}
+
+
 @app.get("/api/history")
 def history(
     request: Request,
@@ -792,10 +919,8 @@ def place_trade(payload: TradeRequest, request: Request) -> dict:
         signal_bar_time = now
 
     if not payload.bypassCooldown and not payload.forceExecute:
-        tf_mins = 1 if payload.signalTimeframe == "M1" else 15 if payload.signalTimeframe == "M15" else 5
-        # SAFETY-FIX: signal_age_limit must be timedelta(minutes=tf_mins), not multiplied by 60
-        signal_age_limit = timedelta(minutes=tf_mins)
-        if now - signal_bar_time > signal_age_limit:
+        # Signal timestamps identify the candle open; allow the candle to close plus its entry window.
+        if is_signal_stale(signal_bar_time, now, payload.signalTimeframe):
             raise HTTPException(status_code=409, detail="Signal candle is stale; wait for a new broker-confirmed setup.")
     with sqlite3.connect(STATE_DATABASE) as connection:
         trading_halted = connection.execute(
@@ -843,6 +968,18 @@ def place_trade(payload: TradeRequest, request: Request) -> dict:
     price = tick.ask if payload.direction == "BUY" else tick.bid
     if not all(math.isfinite(value) for value in (payload.volume, payload.sl, payload.tp)):
         raise HTTPException(status_code=400, detail="Volume and protective levels must be finite numbers.")
+
+    # BRIDGE-LEVEL SPREAD GATE: Protect against spread blowout during rollover or news spikes
+    point_size = float(getattr(info, "point", symbol_spec["tickSize"])) or symbol_spec["tickSize"]
+    spread_points = abs(tick.ask - tick.bid) / point_size if point_size > 0 else 0.0
+    max_allowed_spread = INSTRUMENT_MAX_SPREADS.get(symbol.upper(), 45.0)
+    if spread_points > max_allowed_spread:
+        logger.warning(f"🚫 [423 Locked] Spread {spread_points:.1f}pts exceeds max allowable {max_allowed_spread:.1f}pts on {symbol}.")
+        raise HTTPException(
+            status_code=423,
+            detail=f"TRADE_REJECTED: SPREAD_TOO_WIDE ({spread_points:.1f} points exceeds maximum allowable {max_allowed_spread:.1f} points). Wait for normal liquidity.",
+        )
+
     vol_min = symbol_spec["volumeMin"]
     vol_max = symbol_spec["volumeMax"]
     vol_step = symbol_spec["volumeStep"]
@@ -857,43 +994,65 @@ def place_trade(payload: TradeRequest, request: Request) -> dict:
     open_positions = read_positions()
     max_positions = max(5, int(RISK_CONFIG.get("maxOpenPositions", 5)))
     if len(open_positions) >= max_positions:
-        if not payload.forceExecute:
-            logger.warning(f"🚫 [423 Locked] Maximum open-position limit reached ({len(open_positions)}/{max_positions}).")
-            raise HTTPException(status_code=423, detail=f"Maximum open-position limit reached ({len(open_positions)}/{max_positions}).")
-        else:
-            logger.info(f"⚡ forceExecute active: bypassing max positions limit ({len(open_positions)}/{max_positions}).")
+        logger.warning(f"🚫 [423 Locked] Maximum open-position limit reached ({len(open_positions)}/{max_positions}).")
+        raise HTTPException(
+            status_code=423,
+            detail=f"Maximum open-position limit reached ({len(open_positions)}/{max_positions}). Non-bypassable hard risk protection."
+        )
 
     with sqlite3.connect(STATE_DATABASE) as connection:
-        connection.execute(
-            """
-            INSERT OR IGNORE INTO daily_risk (account_login, account_server, utc_date, start_balance)
-            VALUES (?, ?, ?, ?)
-            """,
-            (account["login"], account["server"], now.date().isoformat(), account["balance"]),
-        )
-        day_start = connection.execute(
+        day_row = connection.execute(
             """
             SELECT start_balance FROM daily_risk
             WHERE account_login = ? AND account_server = ? AND utc_date = ?
             """,
             (account["login"], account["server"], now.date().isoformat()),
         ).fetchone()
-    if day_start and account["equity"] <= day_start[0] * (1 - RISK_CONFIG["maxDailyLossPercent"] / 100):
-        if not payload.forceExecute:
-            logger.warning("🚫 [423 Locked] Broker account daily-loss circuit breaker reached.")
-            raise HTTPException(status_code=423, detail="Broker account daily-loss circuit breaker reached.")
-        else:
-            logger.info("⚡ forceExecute active: bypassing daily-loss circuit breaker.")
 
-    recent_losses = read_closed_trades(1, symbol)
-    if len(recent_losses) >= RISK_CONFIG["maxConsecutiveLosses"] and all(
-        trade["profit"] <= 0 for trade in recent_losses[:RISK_CONFIG["maxConsecutiveLosses"]]
-    ):
-        if not payload.forceExecute:
-            logger.warning("🚫 [423 Locked] Consecutive-loss circuit breaker reached.")
-            raise HTTPException(status_code=423, detail="Consecutive-loss circuit breaker reached.")
+        if day_row is None:
+            # Deterministically reconstruct the day's baseline from broker deals to survive midday restarts
+            reconstructed_baseline = reconstruct_day_starting_balance(account["login"], account["server"], account["balance"], now)
+            connection.execute(
+                """
+                INSERT OR REPLACE INTO daily_risk (account_login, account_server, utc_date, start_balance)
+                VALUES (?, ?, ?, ?)
+                """,
+                (account["login"], account["server"], now.date().isoformat(), reconstructed_baseline),
+            )
+            day_start = (reconstructed_baseline,)
         else:
-            logger.info("⚡ forceExecute active: bypassing consecutive-loss circuit breaker.")
+            day_start = day_row
+
+    circuit_breaker_enabled = True
+    with sqlite3.connect(STATE_DATABASE) as connection:
+        cb_row = connection.execute(
+            "SELECT state_value FROM control_state WHERE state_key = 'circuit_breaker_enabled'"
+        ).fetchone()
+        if cb_row and cb_row[0].lower() == "false":
+            circuit_breaker_enabled = False
+
+    enforce_circuit_breaker = circuit_breaker_enabled and not payload.bypassCircuitBreaker and not payload.forceExecute
+
+    if enforce_circuit_breaker:
+        if day_start and account["equity"] <= day_start[0] * (1 - RISK_CONFIG["maxDailyLossPercent"] / 100):
+            limit_val = day_start[0] * (1 - RISK_CONFIG["maxDailyLossPercent"] / 100)
+            logger.warning(f"🚫 [423 Locked] Broker account daily-loss circuit breaker reached (Equity ${account['equity']:.2f} <= Limit ${limit_val:.2f}).")
+            raise HTTPException(
+                status_code=423,
+                detail=f"Broker account daily-loss circuit breaker reached (Equity ${account['equity']:.2f} <= Limit ${limit_val:.2f}). You can toggle this protection off from the dashboard.",
+            )
+
+        recent_losses = read_closed_trades(1, symbol)
+        if len(recent_losses) >= RISK_CONFIG["maxConsecutiveLosses"] and all(
+            trade["profit"] <= 0 for trade in recent_losses[:RISK_CONFIG["maxConsecutiveLosses"]]
+        ):
+            logger.warning("🚫 [423 Locked] Consecutive-loss circuit breaker reached.")
+            raise HTTPException(
+                status_code=423,
+                detail=f"Consecutive-loss circuit breaker reached ({RISK_CONFIG['maxConsecutiveLosses']} losses in a row). You can toggle this protection off from the dashboard.",
+            )
+    else:
+        logger.info(f"⚡ [Circuit Breaker Bypassed] Order #{payload.clientOrderId} permitted (Circuit Breaker toggled off by operator).")
 
     with sqlite3.connect(STATE_DATABASE) as connection:
         recent_count = connection.execute(
@@ -1331,23 +1490,42 @@ def place_trade(payload: TradeRequest, request: Request) -> dict:
         if deal_matches:
             position_ticket = int(deal_matches[0].position_id)
 
-    # If order was filled with sl=0, tp=0, attach protective stops now
+    # If order was filled with sl=0, tp=0 (Market Execution brokers), attach protective stops now
     if applied_sl_tp_afterwards and position_ticket and (desired_sl > 0 or desired_tp > 0):
-        try:
-            sltp_req = {
-                "action": mt5.TRADE_ACTION_SLTP,
-                "symbol": symbol,
-                "position": position_ticket,
-                "sl": desired_sl,
-                "tp": desired_tp,
-            }
-            sltp_res = mt5.order_send(sltp_req)
-            if sltp_res is not None and sltp_res.retcode in accepted_ret_codes:
-                logger.info(f"🛡️ [MT5 Stops Attached] Position #{position_ticket} SL={desired_sl}, TP={desired_tp}")
-            else:
-                logger.warning(f"Could not attach initial SL/TP to #{position_ticket}: {getattr(sltp_res, 'comment', 'N/A')}")
-        except Exception as exc:
-            logger.warning(f"Error attaching initial SL/TP to #{position_ticket}: {exc}")
+        stops_attached = False
+        last_sltp_error = "Unknown"
+        for attempt in range(3):
+            try:
+                sltp_req = {
+                    "action": mt5.TRADE_ACTION_SLTP,
+                    "symbol": symbol,
+                    "position": position_ticket,
+                    "sl": desired_sl,
+                    "tp": desired_tp,
+                }
+                sltp_res = mt5.order_send(sltp_req)
+                if sltp_res is not None and sltp_res.retcode in accepted_ret_codes:
+                    logger.info(f"🛡️ [MT5 Stops Attached] Position #{position_ticket} SL={desired_sl}, TP={desired_tp} on attempt {attempt+1}")
+                    stops_attached = True
+                    break
+                else:
+                    last_sltp_error = getattr(sltp_res, "comment", f"retcode {getattr(sltp_res, 'retcode', 'N/A')}")
+                    logger.warning(f"Stop attachment attempt {attempt+1} failed for #{position_ticket}: {last_sltp_error}")
+                    time.sleep(0.15)
+            except Exception as exc:
+                last_sltp_error = str(exc)
+                time.sleep(0.15)
+
+        if not stops_attached:
+            logger.critical(f"🚨 CRITICAL: FAILED TO ATTACH PROTECTIVE STOPS TO #{position_ticket} ({last_sltp_error}). EXECUTING EMERGENCY LIQUIDATION TO AVOID NAKED RISK.")
+            closed = emergency_close_position(position_ticket, symbol, payload.volume, payload.direction)
+            raise HTTPException(
+                status_code=500,
+                detail=(
+                    f"EMERGENCY_CLOSE_TRIGGERED: Broker accepted market order but rejected Stop Loss attachment ({last_sltp_error}). "
+                    f"Position #{position_ticket} was {'immediately liquidated' if closed else 'flagged for manual liquidation'} to prevent catastrophic naked risk."
+                ),
+            )
 
     response_ticket = int(result.order or result.deal)
     execution_price = float(result.price or price)
@@ -1524,4 +1702,14 @@ def modify_position(payload: StopsRequest, request: Request) -> dict:
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run(app, host="127.0.0.1", port=int(os.environ.get("SMC_BRIDGE_PORT", "8000")))
+    bridge_port = int(os.environ.get("SMC_BRIDGE_PORT", "8000"))
+    token = get_persisted_bridge_token()
+    token_path = STATE_DIRECTORY / "bridge_token.txt"
+    print("=" * 64)
+    print("🚀 SMC MT5 Local Python Bridge Ready")
+    print(f"📡 Listening on: http://127.0.0.1:{bridge_port}")
+    print(f"🔑 Security Token: {token}")
+    print(f"📄 Stored in: {token_path}")
+    print("=" * 64)
+
+    uvicorn.run(app, host="127.0.0.1", port=bridge_port)

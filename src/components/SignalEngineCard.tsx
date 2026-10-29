@@ -10,7 +10,7 @@
  */
 
 import React, { useState, useMemo } from 'react';
-import { useMarket, useTicker } from '../hooks/useTradingStore';
+import { useMarket, useTicker, useEngine } from '../hooks/useTradingStore';
 import { tradingEngine } from '../engine/tradingEngine';
 import {
   ArrowRight,
@@ -45,18 +45,32 @@ function formatSignalCountdown(seconds?: number): string {
 export const SignalEngineCard: React.FC<SignalEngineCardProps> = React.memo(({ onExecuteSignal }) => {
   const market = useMarket();
   const ticker = useTicker();
+  const engine = useEngine();
+
+  // Filter to only show READY signals (executable) - BLOCKED signals should be hidden
+  const readySignals = useMemo(() => {
+    return market.signals.filter((signal) => {
+      const analysis = market.scannerAnalyses?.find(
+        (candidate) =>
+          candidate.symbol === ticker.symbol &&
+          candidate.signal?.timestamp === signal.timestamp
+      );
+      return !analysis || analysis.status === 'READY';
+    });
+  }, [market.signals, market.scannerAnalyses, ticker.symbol]);
 
   // Execution parameters
   const [lotSize, setLotSize] = useState<number>(0.01);
+  const [sizingMode, setSizingMode] = useState<'lots' | 'risk'>('lots');
   const positionCount = 1;
   const [copied, setCopied] = useState(false);
   const [executedFeedback, setExecutedFeedback] = useState<string | null>(null);
   const [selectedSignalId, setSelectedSignalId] = useState<string | null>(null);
 
-  const selectedSignal = market.signals.find(
+  const selectedSignal = readySignals.find(
     (signal) => `${signal.strategy}:${signal.direction}:${signal.timeframe}:${signal.timestamp}` === selectedSignalId
   );
-  const rawSig = selectedSignal ?? market.signal;
+  const rawSig = selectedSignal ?? (readySignals.length > 0 ? readySignals[0] : null);
   const scannerAnalysis = rawSig
     ? market.scannerAnalyses?.find(
         (analysis) =>
@@ -201,13 +215,13 @@ export const SignalEngineCard: React.FC<SignalEngineCardProps> = React.memo(({ o
         </div>
       </div>
 
-      {/* 2. Setup Candidate Selector Pills (if multiple signals exist) */}
-      {market.signals.length > 1 && (
+      {/* 2. Setup Candidate Selector Pills (if multiple READY signals exist) */}
+      {readySignals.length > 1 && (
         <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5">
           <span className="text-[10px] text-slate-400 dark:text-zinc-500 font-bold uppercase shrink-0">
             Setups:
           </span>
-          {market.signals.slice(0, 3).map((sig, idx) => {
+          {readySignals.slice(0, 3).map((sig, idx) => {
             const sigId = `${sig.strategy}:${sig.direction}:${sig.timeframe}:${sig.timestamp}`;
             const isSelected = rawSig === sig;
             return (
@@ -340,34 +354,95 @@ export const SignalEngineCard: React.FC<SignalEngineCardProps> = React.memo(({ o
         </div>
       )}
 
-      {/* 5. Volume & Risk-Reward Configuration Row */}
-      <div className="p-3 rounded-xl border border-slate-200 dark:border-zinc-800 bg-slate-50/70 dark:bg-zinc-900/60 flex items-center justify-between gap-3 min-w-0 flex-wrap">
-        <div>
-          <span className="text-[10px] text-slate-400 dark:text-zinc-500 uppercase font-bold tracking-wider block">
-            Risk &amp; Reward
-          </span>
-          <span className="font-black text-xs text-slate-900 dark:text-white">
-            1:{tradeMetrics.rrRatio} RR · {riskLimitedLotSize && riskLimitedLotSize > 0 ? `${riskLimitedLotSize.toFixed(2)}L safe` : 'Sizing blocked'}
-          </span>
+      {/* 5. Volume & Risk-Reward Configuration Row with Dynamic % / $ Sizing Mode */}
+      <div className="p-3 rounded-xl border border-slate-200 dark:border-zinc-800 bg-slate-50/70 dark:bg-zinc-900/60 flex flex-col gap-2.5 min-w-0">
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          <div>
+            <span className="text-[10px] text-slate-400 dark:text-zinc-500 uppercase font-bold tracking-wider block">
+              Risk &amp; Reward
+            </span>
+            <span className="font-black text-xs text-slate-900 dark:text-white">
+              1:{tradeMetrics.rrRatio} RR · {riskLimitedLotSize && riskLimitedLotSize > 0 ? `${riskLimitedLotSize.toFixed(2)}L safe ($${tradeMetrics.riskDollar})` : 'Sizing blocked'}
+            </span>
+          </div>
+
+          {/* Sizing Mode Toggle */}
+          <div className="flex items-center gap-1 bg-slate-200/80 dark:bg-zinc-800/80 p-0.5 rounded-lg text-[10px] font-bold">
+            <button
+              type="button"
+              onClick={() => setSizingMode('lots')}
+              className={`px-2 py-0.5 rounded transition-colors ${
+                sizingMode === 'lots'
+                  ? 'bg-white dark:bg-zinc-700 text-slate-900 dark:text-white shadow-xs'
+                  : 'text-slate-500 dark:text-zinc-400 hover:text-slate-900'
+              }`}
+            >
+              Lot Size
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setSizingMode('risk');
+                // Calculate dynamic lot for 1% risk
+                const equity = tradingEngine.account.equity || 1000;
+                const budget = equity * 0.01;
+                const spec = market.symbolSpec;
+                const pointVal = (spec && spec.tickSize > 0 && spec.tickValue > 0) ? (spec.tickValue / spec.tickSize) : instrumentConfig.contractSize;
+                if (riskPts > 0 && pointVal > 0) {
+                  const calculated = Math.max(0.01, Math.min(5.0, Number((budget / (riskPts * pointVal)).toFixed(2))));
+                  setLotSize(calculated);
+                }
+              }}
+              className={`px-2 py-0.5 rounded transition-colors ${
+                sizingMode === 'risk'
+                  ? 'bg-white dark:bg-zinc-700 text-slate-900 dark:text-white shadow-xs'
+                  : 'text-slate-500 dark:text-zinc-400 hover:text-slate-900'
+              }`}
+            >
+              % Risk
+            </button>
+          </div>
         </div>
 
-        {/* Preset Volume Pills + Stepper */}
-        <div className="flex items-center gap-1.5 flex-wrap">
-          <div className="hidden sm:flex items-center gap-1">
-            {LOT_PRESETS.map((preset) => (
-              <button
-                key={preset}
-                type="button"
-                onClick={() => setLotSize(preset)}
-                className={`px-2 py-0.5 rounded text-[10px] font-bold border transition-colors cursor-pointer ${
-                  lotSize === preset
-                    ? 'bg-slate-900 text-white dark:bg-white dark:text-black border-slate-900 dark:border-white'
-                    : 'bg-white dark:bg-zinc-800 text-slate-600 dark:text-zinc-300 border-slate-200 dark:border-zinc-700 hover:border-slate-400'
-                }`}
-              >
-                {preset.toFixed(2)}
-              </button>
-            ))}
+        {/* Preset Volume / Risk Pills + Stepper */}
+        <div className="flex items-center justify-between gap-1.5 flex-wrap pt-1 border-t border-slate-200/60 dark:border-zinc-800/60">
+          <div className="flex items-center gap-1 flex-wrap">
+            {sizingMode === 'lots' ? (
+              LOT_PRESETS.map((preset) => (
+                <button
+                  key={preset}
+                  type="button"
+                  onClick={() => setLotSize(preset)}
+                  className={`px-2 py-0.5 rounded text-[10px] font-bold border transition-colors cursor-pointer ${
+                    lotSize === preset
+                      ? 'bg-slate-900 text-white dark:bg-white dark:text-black border-slate-900 dark:border-white'
+                      : 'bg-white dark:bg-zinc-800 text-slate-600 dark:text-zinc-300 border-slate-200 dark:border-zinc-700 hover:border-slate-400'
+                  }`}
+                >
+                  {preset.toFixed(2)}L
+                </button>
+              ))
+            ) : (
+              [0.5, 1.0, 1.5, 2.0].map((pct) => (
+                <button
+                  key={pct}
+                  type="button"
+                  onClick={() => {
+                    const equity = tradingEngine.account.equity || 1000;
+                    const budget = equity * (pct / 100);
+                    const spec = market.symbolSpec;
+                    const pointVal = (spec && spec.tickSize > 0 && spec.tickValue > 0) ? (spec.tickValue / spec.tickSize) : instrumentConfig.contractSize;
+                    if (riskPts > 0 && pointVal > 0) {
+                      const calculated = Math.max(0.01, Math.min(5.0, Number((budget / (riskPts * pointVal)).toFixed(2))));
+                      setLotSize(calculated);
+                    }
+                  }}
+                  className="px-2 py-0.5 rounded text-[10px] font-bold border border-sky-500/30 bg-sky-50 dark:bg-sky-950/40 text-sky-700 dark:text-sky-300 hover:bg-sky-100 transition-colors cursor-pointer"
+                >
+                  {pct}% Risk
+                </button>
+              ))
+            )}
           </div>
 
           <div className="flex items-center gap-1 bg-white dark:bg-zinc-800 px-2 py-1 rounded-lg border border-slate-200 dark:border-zinc-700">
@@ -378,8 +453,8 @@ export const SignalEngineCard: React.FC<SignalEngineCardProps> = React.memo(({ o
             >
               <Minus className="w-3 h-3" />
             </button>
-            <span className="font-black text-xs text-slate-900 dark:text-white tabular-nums w-10 text-center">
-              {riskLimitedLotSize === null ? lotSize.toFixed(2) : riskLimitedLotSize.toFixed(2)}
+            <span className="font-black text-xs text-slate-900 dark:text-white tabular-nums w-12 text-center">
+              {riskLimitedLotSize === null ? lotSize.toFixed(2) : riskLimitedLotSize.toFixed(2)}L
             </span>
             <button
               type="button"
@@ -399,33 +474,41 @@ export const SignalEngineCard: React.FC<SignalEngineCardProps> = React.memo(({ o
         </div>
       )}
 
-      {/* 7. High-Contrast 1-Click Execution Button */}
-      <button
-        onClick={handleExecute}
-        disabled={isWideSpread || !rawSig || !sizingInfo || !hasSafeLot || Boolean(scannerBlockReason)}
-        className={`w-full py-4 px-4 rounded-xl font-black text-sm sm:text-base tracking-wider uppercase transition-all flex items-center justify-center gap-2 cursor-pointer min-w-0 ${
-          isWideSpread || !rawSig || !sizingInfo || !hasSafeLot || Boolean(scannerBlockReason)
-            ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/50 dark:text-amber-200 cursor-not-allowed border border-amber-300/70 dark:border-amber-800/70'
-            : activeDirection === 'SELL'
-              ? 'neo-vivid-red text-white shadow-md active:scale-[0.99] border border-rose-400'
-              : 'neo-vivid-green text-white shadow-md active:scale-[0.99] border border-emerald-400'
-        }`}
-      >
-        <span className="truncate">
-          {!rawSig
-            ? 'WAITING FOR CONFIRMED SETUP'
-            : isWideSpread
-              ? `SPREAD TOO WIDE (${ticker.spread} PTS)`
-              : !sizingInfo
-                ? 'WAITING FOR BROKER SIZING DATA'
-              : !hasSafeLot
-                ? 'RISK LIMIT: MINIMUM LOT TOO LARGE'
-                  : scannerBlockReason
-                    ? 'SETUP NOT EXECUTION-READY'
-                  : `${activeDirection} ${riskLimitedLotSize.toFixed(2)} LOTS @ ${entryPrice.toFixed(instrumentConfig.digits)}`}
-        </span>
-        <ArrowRight className="w-4 h-4 shrink-0" />
-      </button>
+      {/* 7. High-Contrast 1-Click Execution Button with Hotkey Trigger */}
+      <div className="space-y-1.5">
+        <button
+          data-hotkey-execute="true"
+          onClick={handleExecute}
+          disabled={isWideSpread || !rawSig || !sizingInfo || !hasSafeLot || Boolean(scannerBlockReason)}
+          className={`w-full py-4 px-4 rounded-xl font-black text-sm sm:text-base tracking-wider uppercase transition-all flex items-center justify-center gap-2 cursor-pointer min-w-0 ${
+            isWideSpread || !rawSig || !sizingInfo || !hasSafeLot || Boolean(scannerBlockReason)
+              ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/50 dark:text-amber-200 cursor-not-allowed border border-amber-300/70 dark:border-amber-800/70'
+              : activeDirection === 'SELL'
+                ? 'neo-vivid-red text-white shadow-md active:scale-[0.99] border border-rose-400'
+                : 'neo-vivid-green text-white shadow-md active:scale-[0.99] border border-emerald-400'
+          }`}
+        >
+          <span className="truncate">
+            {!rawSig
+              ? 'WAITING FOR CONFIRMED SETUP'
+              : isWideSpread
+                ? `SPREAD TOO WIDE (${ticker.spread} PTS)`
+                : !sizingInfo
+                  ? 'WAITING FOR BROKER SIZING DATA'
+                : !hasSafeLot
+                  ? 'RISK LIMIT: MINIMUM LOT TOO LARGE'
+                    : scannerBlockReason
+                      ? 'SETUP NOT EXECUTION-READY'
+                    : `${activeDirection} ${riskLimitedLotSize.toFixed(2)} LOTS @ ${entryPrice.toFixed(instrumentConfig.digits)}`}
+          </span>
+          <ArrowRight className="w-4 h-4 shrink-0" />
+        </button>
+
+        <div className="flex items-center justify-between text-[10px] text-slate-400 dark:text-zinc-500 font-bold px-1">
+          <span>⚡ Press [Space] to execute · [Esc] to reset</span>
+          <span>Broker Safety Gate Active</span>
+        </div>
+      </div>
     </div>
   );
 });

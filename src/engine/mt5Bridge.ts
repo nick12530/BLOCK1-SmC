@@ -28,6 +28,7 @@ export interface BridgeAccountSnapshot {
   accountMode: 'demo' | 'live' | 'contest' | 'unknown';
   tradingHalted: boolean;
   autoTrade: boolean;
+  circuitBreakerEnabled?: boolean;
   symbolSpec: SymbolRiskSpec;
   bid: number;
   ask: number;
@@ -94,9 +95,17 @@ export class MT5BridgeConnector {
   private lastPing: number | null = null;
   private lastError: string | null = null;
   private consecutiveErrors = 0;
+  private bridgeToken: string | null = null;
+  private circuitBreakerEnabled = true;
 
   constructor() {
     if (typeof window !== 'undefined') {
+      const savedToken = localStorage.getItem('smc_mt5_bridge_token');
+      if (savedToken) this.bridgeToken = savedToken.trim();
+
+      const savedCb = localStorage.getItem('smc_circuit_breaker_enabled');
+      if (savedCb !== null) this.circuitBreakerEnabled = savedCb !== 'false';
+
       // Rehydrate persistent connection state on terminal refresh so it does not disconnect
       const auto = localStorage.getItem('smc_mt5_auto_connect');
       if (auto === 'true') {
@@ -179,6 +188,9 @@ export class MT5BridgeConnector {
     const start = performance.now();
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 6_000);
+    const authHeaders: Record<string, string> = this.bridgeToken
+      ? { Authorization: `Bearer ${this.bridgeToken}` }
+      : {};
     try {
       // First attempt /ping, fallback to /api/health
       let res: Response;
@@ -186,12 +198,14 @@ export class MT5BridgeConnector {
         res = await fetch(`${url}/ping`, {
           method: 'GET',
           cache: 'no-store',
+          headers: authHeaders,
           signal: controller.signal,
         });
       } catch {
         res = await fetch(`${url}/api/health`, {
           method: 'GET',
           cache: 'no-store',
+          headers: authHeaders,
           signal: controller.signal,
         });
       }
@@ -212,6 +226,22 @@ export class MT5BridgeConnector {
       };
     } finally {
       clearTimeout(timeout);
+    }
+  }
+
+  getBridgeToken(): string {
+    return this.bridgeToken || '';
+  }
+
+  setBridgeToken(token: string | null) {
+    const clean = token?.trim() || null;
+    this.bridgeToken = clean;
+    if (typeof window !== 'undefined') {
+      if (clean) {
+        localStorage.setItem('smc_mt5_bridge_token', clean);
+      } else {
+        localStorage.removeItem('smc_mt5_bridge_token');
+      }
     }
   }
 
@@ -256,9 +286,13 @@ export class MT5BridgeConnector {
       baseUrl: string;
       symbol: string;
       instrumentType: InstrumentType;
+      token?: string;
     },
     isAutoReconnect = false
   ): Promise<BridgeAccountSnapshot> {
+    if (credentials.token !== undefined) {
+      this.setBridgeToken(credentials.token);
+    }
     this.serverUrl = normalizeLocalBridgeUrl(credentials.baseUrl);
     this.symbol = credentials.symbol.trim();
     this.instrumentType = credentials.instrumentType;
@@ -392,6 +426,28 @@ export class MT5BridgeConnector {
        method: 'POST',
      });
    }
+
+   getCircuitBreakerEnabled(): boolean {
+     return this.circuitBreakerEnabled;
+   }
+
+   async setCircuitBreaker(enabled: boolean): Promise<boolean> {
+     this.circuitBreakerEnabled = enabled;
+     if (typeof window !== 'undefined') {
+       localStorage.setItem('smc_circuit_breaker_enabled', String(enabled));
+     }
+     try {
+       const res = await this.request<{ circuitBreakerEnabled: boolean }>('/api/circuit-breaker-control', {
+         method: 'POST',
+         body: JSON.stringify({ enabled }),
+       });
+       this.circuitBreakerEnabled = res.circuitBreakerEnabled ?? enabled;
+       return this.circuitBreakerEnabled;
+     } catch (err) {
+       console.warn('[MT5 Bridge] Could not sync circuit breaker state with bridge server:', err);
+       return enabled;
+     }
+   }
    async setAutoTrade(autoTrade: boolean): Promise<void> {
      await this.request<{ autoTrade: boolean }>('/api/auto-trade-control', {
        method: 'POST',
@@ -413,6 +469,7 @@ export class MT5BridgeConnector {
     signalTimestamp: string;
     magic?: number;
     forceExecute?: boolean;
+    bypassCircuitBreaker?: boolean;
     bypassCooldown?: boolean;
   }): Promise<{
     ok: true;
@@ -470,9 +527,9 @@ export class MT5BridgeConnector {
         poiKey: trade.poiKey,
         expectedLogin: this.expectedAccount.login,
         expectedServer: this.expectedAccount.server,
-        // SAFETY-FIX: Pass through caller's actual flags instead of hardcoded true bypasses
         bypassCooldown: trade.bypassCooldown ?? false,
-        forceExecute: trade.forceExecute ?? false,
+        bypassCircuitBreaker: trade.bypassCircuitBreaker ?? !this.circuitBreakerEnabled,
+        forceExecute: trade.forceExecute ?? !this.circuitBreakerEnabled,
       }),
     });
     this.lastPing = Date.now();
@@ -591,6 +648,9 @@ export class MT5BridgeConnector {
       this.onConnectionChangeCallback?.(true);
       this.accountMode = snapshot.accountMode;
       this.consecutiveErrors = 0;
+      if (typeof snapshot.circuitBreakerEnabled === 'boolean') {
+        this.circuitBreakerEnabled = snapshot.circuitBreakerEnabled;
+      }
       this.onDataCallback?.({ ...snapshot, instrumentType: this.instrumentType });
     } catch (error) {
       failed = true;
@@ -662,12 +722,16 @@ export class MT5BridgeConnector {
     const start = performance.now();
     const baseUrl = this.serverUrl.replace(/\/+$/, '');
     try {
+      const authHeaders: Record<string, string> = this.bridgeToken
+        ? { Authorization: `Bearer ${this.bridgeToken}` }
+        : {};
       const response = await fetch(`${baseUrl}${path}`, {
         ...init,
         cache: 'no-store',
         signal: controller.signal,
         headers: {
           'Content-Type': 'application/json',
+          ...authHeaders,
           ...init.headers,
         },
       });

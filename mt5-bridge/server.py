@@ -327,6 +327,23 @@ INSTRUMENT_MAX_SPREADS: dict[str, float] = {
     "USDJPY": 25.0,
 }
 
+INSTRUMENT_MAX_DEVIATIONS: dict[str, int] = {
+    "XAUUSD": 50,  # 50 points = 5.0 pips / $0.50 on Gold
+    "EURUSD": 20,  # 20 points = 2.0 pips on EURUSD
+    "GBPUSD": 25,  # 25 points = 2.5 pips on GBPUSD
+    "USDJPY": 20,  # 20 points = 2.0 pips on USDJPY
+}
+
+
+def resolve_slippage_deviation(symbol_name: str) -> int:
+    sym_u = (symbol_name or "").strip().upper()
+    for key, val in INSTRUMENT_MAX_DEVIATIONS.items():
+        if key in sym_u:
+            return val
+    if "XAU" in sym_u or "GOLD" in sym_u:
+        return 50
+    return 30
+
 
 def get_persisted_bridge_token() -> str:
     token = os.environ.get("SMC_BRIDGE_TOKEN", "").strip()
@@ -1351,7 +1368,7 @@ def place_trade(payload: TradeRequest, request: Request) -> dict:
                     "price": cur_price,
                     "sl": sl_val,
                     "tp": tp_val,
-                    "deviation": 300,  # 300 points slippage tolerance for fast broker fills
+                    "deviation": resolve_slippage_deviation(symbol),  # Asset-scaled slippage protection
                     "magic": magic_num,
                     "type_time": mt5.ORDER_TIME_GTC,
                     "type_filling": fill,

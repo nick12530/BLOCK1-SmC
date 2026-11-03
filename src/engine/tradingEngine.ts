@@ -1641,15 +1641,17 @@ export class TradingEngine {
         `Scanner confluence ${matchingScannerAnalysis.confluenceScore}/100 is below the ${getInstrumentConfig(targetSymbol).minScore}/100 setup threshold.`;
     }
     if (this.mt5Account.connected && this.instrumentType === 'standard') {
-      if (!this.economicCalendarAvailable) {
+      if (!this.economicCalendarAvailable && this.economicEvents.length === 0 && !isManual) {
         return 'TRADE_REJECTED: NEWS_DATA_UNAVAILABLE';
       }
-      const newsRisk = evaluateNewsRisk(
-        targetSymbol as SupportedSymbol,
-        this.economicEvents
-      );
-      if (newsRisk.hasNewsRisk) {
-        return `TRADE_REJECTED: ${newsRisk.reason || 'HIGH_IMPACT_NEWS_BLACKOUT'}`;
+      if (this.economicEvents.length > 0) {
+        const newsRisk = evaluateNewsRisk(
+          targetSymbol as SupportedSymbol,
+          this.economicEvents
+        );
+        if (newsRisk.hasNewsRisk) {
+          return `TRADE_REJECTED: ${newsRisk.reason || 'HIGH_IMPACT_NEWS_BLACKOUT'}`;
+        }
       }
     }
 
@@ -2202,6 +2204,14 @@ export class TradingEngine {
 
             if (this.mt5Account.connected && mt5Bridge.getStatus().connected) {
               const targetTicket = p.brokerTicket || p.positionTicket || p.ticket;
+              // 1. Execute live partial close on MT5 broker to bank real profit
+              void mt5Bridge.closePosition(targetTicket, halfVolume).catch((err) => {
+                this.slog(
+                  `⚠️ MT5 broker partial close failed for #${targetTicket}: ${err instanceof Error ? err.message : String(err)}`,
+                  'warn'
+                );
+              });
+              // 2. Adjust remaining runner position stops to spread-protected BE
               void mt5Bridge.modifyPositionStops(targetTicket, currentSl, currentTp).catch(() => {});
             }
           }

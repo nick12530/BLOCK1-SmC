@@ -435,7 +435,7 @@ export function evaluateConfluence(
   dfExec: Candle[],
   dfHtf: Candle[],
   rr: number = 2.0,
-  minScoreThreshold: number = 5.0,
+  minScoreThreshold: number = 4.5,
   timeframe: 'M1' | 'M5' | 'M15' = 'M5'
 ): Signal | null {
   if (dfExec.length < 26 || dfHtf.length < 21) return null;
@@ -463,8 +463,13 @@ export function evaluateConfluence(
     return null;
   }
 
+  // Dual-Speed Structure: Macro swing structure (k=3) on HTF
   const ms = new MarketStructureEngine(3);
   ms.update(closedHtf);
+
+  // Micro internal structure (k=1) on execution timeframe for immediate reaction at POI
+  const internalMs = new MarketStructureEngine(1);
+  internalMs.update(closed);
 
   // Unmitigated recent zones from execution timeframe (analyzed on closed candles)
   const fvgs = detectFVGs(closed, aExec).filter((z) => !z.filled).slice(-8);
@@ -484,10 +489,23 @@ export function evaluateConfluence(
   const dr = ms.dealingRange();
   let inDiscount = false;
   let inPremium = false;
+  let inOteZone = false;
 
   if (dr) {
     inDiscount = price < dr.equilibrium;
     inPremium = price > dr.equilibrium;
+    const delta = dr.high - dr.low;
+    if (delta > 0) {
+      if (ms.trend === 'bullish') {
+        const ote62 = dr.high - 0.618 * delta;
+        const ote79 = dr.high - 0.786 * delta;
+        inOteZone = price <= ote62 && price >= ote79;
+      } else if (ms.trend === 'bearish') {
+        const ote62 = dr.low + 0.618 * delta;
+        const ote79 = dr.low + 0.786 * delta;
+        inOteZone = price >= ote62 && price <= ote79;
+      }
+    }
   }
 
   let direction: 'BUY' | 'SELL' | null = null;
@@ -496,6 +514,10 @@ export function evaluateConfluence(
   if (ms.trend === 'bullish' && inDiscount) {
     score += 1.0;
     reasons.push('Price in DISCOUNT of HTF dealing range (< Equilibrium) (+1.0)');
+    if (inOteZone) {
+      score += 1.0;
+      reasons.push('⭐ Price in Golden OTE Zone (61.8% – 78.6% institutional Fibonacci sweet spot) (+1.0)');
+    }
     for (const z of zones) {
       // Prioritize fresh zones (tests <= 1) for highest win rate
       if (z.bullish && z.tests <= 2 && z.bottom - 0.25 * atrNow <= price && price <= z.top + 0.25 * atrNow) {
@@ -506,6 +528,10 @@ export function evaluateConfluence(
   } else if (ms.trend === 'bearish' && inPremium) {
     score += 1.0;
     reasons.push('Price in PREMIUM of HTF dealing range (> Equilibrium) (+1.0)');
+    if (inOteZone) {
+      score += 1.0;
+      reasons.push('⭐ Price in Golden OTE Zone (61.8% – 78.6% institutional Fibonacci sweet spot) (+1.0)');
+    }
     for (const z of zones) {
       if (!z.bullish && z.tests <= 2 && z.bottom - 0.25 * atrNow <= price && price <= z.top + 0.25 * atrNow) {
         zone = z;
@@ -563,6 +589,16 @@ export function evaluateConfluence(
     }
   }
 
+  // Micro internal structure confirmation at POI
+  if (internalMs.events.length > 0) {
+    const recentInternal = internalMs.events.filter((e) => closed.length - 1 - e.bar <= 6);
+    const lastInternal = recentInternal[recentInternal.length - 1];
+    if (lastInternal && lastInternal.direction === (direction === 'BUY' ? 'bullish' : 'bearish')) {
+      score += 1.0;
+      reasons.push(`Micro internal ${lastInternal.kind} (${lastInternal.direction}) confirms institutional displacement at POI (+1.0)`);
+    }
+  }
+
   // Liquidity Sweep / Swing Failure Pattern (SFP) Gate Engine (analyzed on closed candles)
   const sweep = detectLiquiditySweep(closed, ms.swings, direction);
   if (sweep.hasSweep) {
@@ -610,10 +646,19 @@ export function evaluateConfluence(
   const upperWick = lastCandle.high - Math.max(lastCandle.open, lastCandle.close);
   const lowerWick = Math.min(lastCandle.open, lastCandle.close) - lastCandle.low;
   const body = Math.abs(lastCandle.close - lastCandle.open);
-  const rejectionConfirmed = direction === 'BUY'
-    ? lastCandle.close > lastCandle.open && lowerWick > body
-    : lastCandle.close < lastCandle.open && upperWick > body;
-  if (!rejectionConfirmed || score < minScoreThreshold) return null;
+  const prevCandle = closed.length >= 2 ? closed[closed.length - 2] : lastCandle;
+
+  // Dual-Track Trigger: Absorption Wick (Rejection) OR Displacement Body (Expansion / Engulfing)
+  const isAbsorptionWick = direction === 'BUY'
+    ? (lowerWick >= 0.40 * range) || (lastCandle.close > lastCandle.open && lowerWick >= body * 0.8)
+    : (upperWick >= 0.40 * range) || (lastCandle.close < lastCandle.open && upperWick >= body * 0.8);
+
+  const isDisplacementBody = direction === 'BUY'
+    ? lastCandle.close > lastCandle.open && (body >= 0.50 * range || lastCandle.close > prevCandle.high)
+    : lastCandle.close < lastCandle.open && (body >= 0.50 * range || lastCandle.close < prevCandle.low);
+
+  const triggerConfirmed = isAbsorptionWick || isDisplacementBody;
+  if (!triggerConfirmed || score < minScoreThreshold) return null;
   const wickRatio = isBear
     ? `${((upperWick / range) * 100).toFixed(0)}% Upper Wick`
     : `${((lowerWick / range) * 100).toFixed(0)}% Lower Wick`;

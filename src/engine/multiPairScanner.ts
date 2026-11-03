@@ -199,7 +199,7 @@ function hasPrecisionEntryConfirmation(analysis: PrecisionEntryCandidate): boole
   const hasLocationConfirmation =
     scoreBreakdown.liquiditySweep >= 10 || scoreBreakdown.obFvgReaction >= 10;
   const hasTriggerConfirmation =
-    scoreBreakdown.momentumConfirm >= 10 || (scoreBreakdown.candleConfirm ?? 0) >= 7;
+    scoreBreakdown.momentumConfirm >= 10 || (scoreBreakdown.candleConfirm ?? 0) >= 3;
 
   return (
     scoreBreakdown.structureConfirm >= 15 &&

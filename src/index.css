@@ -4,41 +4,41 @@
 
 @layer base {
   :root {
-    --bg-main: #f3f5f4;
+    --bg-main: #f8fafc;
     --card-bg: #ffffff;
-    --card-border: #e2e8e5;
-    --surface-subtle: #f7f9f8;
-    --text-primary: #18211f;
-    --text-secondary: #687571;
-    --text-muted: #87928e;
-    --accent-blue: #287c6d;
-    --accent-red: #c65a5a;
-    --accent-green: #398873;
-    --accent-amber: #a77a3b;
-    --bg-glow: rgba(40, 124, 109, 0.055);
-    --header-bg: rgba(255, 255, 255, 0.94);
-    --neo-shadow-dark: rgba(31, 48, 42, 0.035);
+    --card-border: #e2e8f0;
+    --surface-subtle: #f1f5f9;
+    --text-primary: #0f172a;
+    --text-secondary: #475569;
+    --text-muted: #94a3b8;
+    --accent-blue: #0284c7;
+    --accent-red: #e11d48;
+    --accent-green: #059669;
+    --accent-amber: #d97706;
+    --bg-glow: rgba(2, 132, 199, 0.04);
+    --header-bg: rgba(255, 255, 255, 0.95);
+    --neo-shadow-dark: rgba(15, 23, 42, 0.04);
     --neo-shadow-light: rgba(255, 255, 255, 0.8);
-    --neo-shadow-color: rgba(40, 124, 109, 0.06);
+    --neo-shadow-color: rgba(2, 132, 199, 0.05);
   }
 
   .dark {
-    --bg-main: #0b100f;
-    --card-bg: #121917;
-    --card-border: #222d29;
-    --surface-subtle: #0f1513;
-    --text-primary: #edf2ef;
-    --text-secondary: #9aa8a2;
-    --text-muted: #6d7a74;
-    --accent-blue: #59a995;
-    --accent-red: #d27676;
-    --accent-green: #65ab91;
-    --accent-amber: #c29a5b;
-    --bg-glow: rgba(89, 169, 149, 0.07);
-    --header-bg: rgba(18, 25, 23, 0.94);
-    --neo-shadow-dark: rgba(0, 0, 0, 0.12);
-    --neo-shadow-light: rgba(255, 255, 255, 0.015);
-    --neo-shadow-color: rgba(89, 169, 149, 0.05);
+    --bg-main: #090a0f;
+    --card-bg: #0f1118;
+    --card-border: #1e2230;
+    --surface-subtle: #141722;
+    --text-primary: #f8fafc;
+    --text-secondary: #94a3b8;
+    --text-muted: #64748b;
+    --accent-blue: #38bdf8;
+    --accent-red: #f43f5e;
+    --accent-green: #10b981;
+    --accent-amber: #f59e0b;
+    --bg-glow: rgba(56, 189, 248, 0.05);
+    --header-bg: rgba(15, 17, 24, 0.95);
+    --neo-shadow-dark: rgba(0, 0, 0, 0.25);
+    --neo-shadow-light: rgba(255, 255, 255, 0.02);
+    --neo-shadow-color: rgba(56, 189, 248, 0.04);
   }
 
   html, body {
@@ -63,7 +63,7 @@
     color: var(--text-primary);
     font-size: 13px;
     font-weight: 500;
-    line-height: 1.4;
+    line-height: 1.5;
     min-height: 100vh;
   }
 
@@ -75,10 +75,7 @@
   }
 
   .neo-app {
-    background:
-      radial-gradient(ellipse at 12% 0%, var(--bg-glow), transparent 36%),
-      var(--bg-main);
-    font-weight: 500;
+    background-color: var(--bg-main);
   }
 
   .neo-header {
@@ -90,48 +87,27 @@
     background: var(--card-bg);
     border-color: var(--card-border);
     isolation: isolate;
-    box-shadow: 0 1px 2px var(--neo-shadow-dark) !important;
-    transition: background-color 160ms ease, border-color 160ms ease;
+    transition: background-color 150ms ease, border-color 150ms ease;
   }
 
   .neo-card {
-    transition: box-shadow 160ms ease, border-color 160ms ease;
-  }
-
-  .neo-card:hover {
-    box-shadow: 0 4px 14px var(--neo-shadow-dark) !important;
-  }
-
-  .neo-inset {
-    box-shadow: none;
+    transition: border-color 150ms ease;
   }
 
   .neo-button {
-    box-shadow: none;
     transition: background-color 140ms ease, border-color 140ms ease, color 140ms ease;
-  }
-
-  .neo-button:hover:not(:disabled) {
-    filter: brightness(1.06);
-  }
-
-  .neo-button:active:not(:disabled) {
-    filter: brightness(0.96);
   }
 
   .neo-vivid-blue {
     background: var(--accent-blue) !important;
-    box-shadow: none !important;
   }
 
   .neo-vivid-green {
     background: var(--accent-green) !important;
-    box-shadow: none !important;
   }
 
   .neo-vivid-red {
     background: var(--accent-red) !important;
-    box-shadow: none !important;
   }
 
   button,
@@ -156,98 +132,24 @@
     accent-color: var(--accent-blue);
   }
 
-  @media (prefers-reduced-motion: reduce) {
-    .neo-button,
-    .neo-panel,
-    .neo-card {
-      transition: none;
-    }
-    .neo-card:hover {
-      box-shadow: none !important;
-    }
-  }
-
   code, pre, .font-mono, .tabular-nums {
     font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
     font-variant-numeric: tabular-nums;
   }
 }
 
-@media (max-width: 640px) {
-  html, body {
-    font-size: 16.5px;
-    font-weight: 500;
-    overflow-x: hidden;
-    -webkit-text-size-adjust: 100%;
-  }
-
-  /* Increase text readability across all mobile screens */
-  .text-xs,
-  [class*="text-xs"] {
-    font-size: 0.875rem !important;
-    line-height: 1.3rem !important;
-  }
-
-  [class*="text-[9px]"],
-  [class*="text-[10px]"] {
-    font-size: 0.825rem !important;
-    line-height: 1.2rem !important;
-  }
-
-  [class*="text-[11px]"] {
-    font-size: 0.875rem !important;
-    line-height: 1.25rem !important;
-  }
-
-  .text-sm,
-  [class*="text-sm"] {
-    font-size: 0.95rem !important;
-    line-height: 1.4rem !important;
-  }
-
-  .text-base,
-  [class*="text-base"] {
-    font-size: 1.05rem !important;
-    line-height: 1.5rem !important;
-  }
-
-  .font-mono {
-    font-weight: 600;
-    letter-spacing: -0.01em;
-  }
-
-  button {
-    font-weight: 700;
-  }
-
-  .tabular-nums {
-    font-variant-numeric: tabular-nums;
-    font-weight: 700;
-  }
-}
-
 /* Custom scrollbars */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 5px;
+  height: 5px;
 }
 ::-webkit-scrollbar-track {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(148, 163, 184, 0.25);
+  background: rgba(148, 163, 184, 0.2);
   border-radius: 4px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(148, 163, 184, 0.45);
-}
-
-/* Enhanced mobile button touch targets and readability */
-@media (max-width: 640px) {
-  .font-mono {
-    font-weight: 600;
-  }
-  button {
-    font-weight: 700;
-  }
+  background: rgba(148, 163, 184, 0.4);
 }

@@ -1,10 +1,10 @@
 /**
  * ClosedTradesModal.tsx (AuditJournalModal)
  * Minimalist, high-performance Trade & Signal Audit Journal.
- * In full sync with the system:
+ * In full sync with real-time system:
  * - Records all trades taken (both live RUNNING positions & CLOSED trade history)
  * - Records all signals logged by the engine (both EXECUTED and REJECTED with full reasons)
- * - Clean, non-glowing minimalistic dark mode without neon outlines.
+ * - Clean typography, zero pill-badge sandwiching, refined dark institutional aesthetics.
  */
 
 import React, { useState, useEffect, useMemo } from 'react';
@@ -18,7 +18,6 @@ import {
 import {
   clearJournalSignals,
   clearJournalTrades,
-  clearAllJournal,
   updateTradeClosedInJournal,
 } from '../engine/tradeJournal';
 import { tradingEngine } from '../engine/tradingEngine';
@@ -29,15 +28,12 @@ import {
   ArrowLeft,
   CheckCircle2,
   XCircle,
-  TrendingUp,
-  TrendingDown,
   Download,
   Trash2,
-  Filter,
   Search,
   Zap,
 } from 'lucide-react';
-import type { JournalSignalRecord, JournalTradeRecord } from '../types/smc';
+import type { JournalTradeRecord } from '../types/smc';
 
 interface ClosedTradesModalProps {
   isOpen: boolean;
@@ -269,61 +265,57 @@ export const ClosedTradesModal: React.FC<ClosedTradesModalProps> = ({
     <div
       role="dialog"
       aria-modal="true"
-      className="fixed inset-0 z-[170] flex items-center justify-center p-2.5 sm:p-4 bg-black/75 backdrop-blur-xs font-mono text-xs select-none animate-in fade-in duration-150"
+      className="fixed inset-0 z-[170] flex items-center justify-center p-3 sm:p-5 bg-black/80 backdrop-blur-xs font-mono text-xs select-none animate-in fade-in duration-150"
     >
-      <div className="w-full max-w-4xl max-h-[92dvh] sm:max-h-[88dvh] rounded-2xl bg-white dark:bg-[#111216] border border-slate-200 dark:border-zinc-800 shadow-xl flex flex-col overflow-hidden transition-colors">
+      <div className="w-full max-w-4xl max-h-[90dvh] rounded-2xl bg-white dark:bg-[#0f1118] border border-slate-200 dark:border-[#1e2230] shadow-2xl flex flex-col overflow-hidden transition-colors">
         {/* Header: Title, Tabs and Top Close Button */}
-        <div className="px-4 sm:px-6 py-3.5 border-b border-slate-200 dark:border-zinc-800 flex items-center justify-between bg-slate-50/80 dark:bg-[#16171d] shrink-0 gap-3 flex-wrap">
-          <div className="flex items-center gap-2.5">
-            <span className="p-1.5 rounded-lg bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700">
-              <History className="w-4 h-4 text-zinc-700 dark:text-zinc-300" />
-            </span>
+        <div className="px-5 py-3.5 border-b border-slate-200 dark:border-[#1e2230] flex items-center justify-between bg-slate-50/60 dark:bg-[#141722]/80 shrink-0 gap-3 flex-wrap">
+          <div className="flex items-center gap-2">
+            <History className="w-4 h-4 text-slate-700 dark:text-slate-300" />
             <div>
-              <h2 className="font-extrabold text-sm text-slate-900 dark:text-white uppercase tracking-wider">
-                System Audit Journal
+              <h2 className="font-bold text-sm text-slate-900 dark:text-white uppercase tracking-wider">
+                Trade &amp; Signal Journal
               </h2>
-              <span className="text-[11px] text-zinc-500">
-                Synced with real-time trading engine &amp; signal filters
-              </span>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                Synchronized with broker execution &amp; algorithmic risk filters
+              </p>
             </div>
           </div>
 
           {/* Mode Switcher: Trades Taken vs Signals Audit */}
-          <div className="flex items-center bg-slate-200/80 dark:bg-zinc-900 p-1 rounded-xl border border-slate-300/80 dark:border-zinc-800 gap-1">
+          <div className="flex items-center bg-slate-200/70 dark:bg-[#090a0f] p-0.5 rounded-lg border border-slate-200 dark:border-[#1e2230] gap-0.5">
             <button
               type="button"
               onClick={() => setActiveTab('trades')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+              className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
                 activeTab === 'trades'
-                  ? 'bg-white text-slate-900 dark:bg-zinc-800 dark:text-white shadow-xs'
-                  : 'text-slate-600 dark:text-zinc-400 hover:text-slate-950 dark:hover:text-white'
+                  ? 'bg-white text-slate-900 dark:bg-[#1e2230] dark:text-white shadow-xs'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
               }`}
             >
-              <Zap className="w-3.5 h-3.5 text-amber-500" />
               <span>Trades Taken ({totalTradesCount})</span>
               {runningCount > 0 && (
-                <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-emerald-500 text-slate-950 font-black">
-                  {runningCount}
+                <span className="text-[10px] text-emerald-500 font-bold">
+                  · {runningCount} active
                 </span>
               )}
             </button>
             <button
               type="button"
               onClick={() => setActiveTab('signals')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+              className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
                 activeTab === 'signals'
-                  ? 'bg-white text-slate-900 dark:bg-zinc-800 dark:text-white shadow-xs'
-                  : 'text-slate-600 dark:text-zinc-400 hover:text-slate-950 dark:hover:text-white'
+                  ? 'bg-white text-slate-900 dark:bg-[#1e2230] dark:text-white shadow-xs'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
               }`}
             >
-              <Filter className="w-3.5 h-3.5 text-sky-500" />
               <span>Signals Audit ({totalSignalsCount})</span>
             </button>
           </div>
 
           <button
             onClick={onClose}
-            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-200 dark:hover:bg-zinc-800 transition-colors cursor-pointer"
+            className="p-1 rounded-lg text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-200 dark:hover:bg-[#1e2230] transition-colors cursor-pointer"
             title="Close Window"
           >
             <X className="w-5 h-5" />
@@ -331,32 +323,32 @@ export const ClosedTradesModal: React.FC<ClosedTradesModalProps> = ({
         </div>
 
         {/* Content Body */}
-        <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4">
+        <div className="flex-1 overflow-y-auto p-5 space-y-4">
           {/* Summary Metric Strip */}
           {activeTab === 'trades' ? (
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-center">
-              <div className="p-2.5 rounded-xl border border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900/50">
-                <span className="text-[10px] uppercase font-bold text-zinc-500 block">Total Taken</span>
-                <strong className="text-sm sm:text-base font-black text-slate-900 dark:text-white tabular-nums">
+              <div className="p-2.5 rounded-xl border border-slate-200 dark:border-[#1e2230] bg-slate-50/50 dark:bg-[#141722]/50">
+                <span className="text-[10px] uppercase font-bold text-slate-400 block">Total Taken</span>
+                <strong className="text-sm font-bold text-slate-900 dark:text-white tabular-nums block mt-0.5">
                   {totalTradesCount} Orders
                 </strong>
               </div>
-              <div className="p-2.5 rounded-xl border border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900/50">
-                <span className="text-[10px] uppercase font-bold text-zinc-500 block">Active Running</span>
-                <strong className="text-sm sm:text-base font-black text-sky-600 dark:text-sky-400 tabular-nums">
+              <div className="p-2.5 rounded-xl border border-slate-200 dark:border-[#1e2230] bg-slate-50/50 dark:bg-[#141722]/50">
+                <span className="text-[10px] uppercase font-bold text-slate-400 block">Active Running</span>
+                <strong className="text-sm font-bold text-sky-600 dark:text-sky-400 tabular-nums block mt-0.5">
                   {runningCount} Open
                 </strong>
               </div>
-              <div className="p-2.5 rounded-xl border border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900/50">
-                <span className="text-[10px] uppercase font-bold text-zinc-500 block">Win Rate (Closed)</span>
-                <strong className="text-sm sm:text-base font-black text-slate-900 dark:text-white tabular-nums">
+              <div className="p-2.5 rounded-xl border border-slate-200 dark:border-[#1e2230] bg-slate-50/50 dark:bg-[#141722]/50">
+                <span className="text-[10px] uppercase font-bold text-slate-400 block">Win Rate (Closed)</span>
+                <strong className="text-sm font-bold text-slate-900 dark:text-white tabular-nums block mt-0.5">
                   {winRate}% ({wins}W / {closedCount - wins}L)
                 </strong>
               </div>
-              <div className="p-2.5 rounded-xl border border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900/50">
-                <span className="text-[10px] uppercase font-bold text-zinc-500 block">Realized Net P&amp;L</span>
+              <div className="p-2.5 rounded-xl border border-slate-200 dark:border-[#1e2230] bg-slate-50/50 dark:bg-[#141722]/50">
+                <span className="text-[10px] uppercase font-bold text-slate-400 block">Realized Net P&amp;L</span>
                 <strong
-                  className={`text-sm sm:text-base font-black tabular-nums ${
+                  className={`text-sm font-bold tabular-nums block mt-0.5 ${
                     totalNet >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'
                   }`}
                 >
@@ -366,25 +358,25 @@ export const ClosedTradesModal: React.FC<ClosedTradesModalProps> = ({
             </div>
           ) : (
             <div className="grid grid-cols-3 gap-2.5 text-center">
-              <div className="p-2.5 rounded-xl border border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900/50">
-                <span className="text-[10px] uppercase font-bold text-zinc-500 block">Total Processed</span>
-                <strong className="text-sm sm:text-base font-black text-slate-900 dark:text-white tabular-nums">
+              <div className="p-2.5 rounded-xl border border-slate-200 dark:border-[#1e2230] bg-slate-50/50 dark:bg-[#141722]/50">
+                <span className="text-[10px] uppercase font-bold text-slate-400 block">Total Ingested</span>
+                <strong className="text-sm font-bold text-slate-900 dark:text-white tabular-nums block mt-0.5">
                   {totalSignalsCount} Signals
                 </strong>
               </div>
-              <div className="p-2.5 rounded-xl border border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900/50">
+              <div className="p-2.5 rounded-xl border border-slate-200 dark:border-[#1e2230] bg-slate-50/50 dark:bg-[#141722]/50">
                 <span className="text-[10px] uppercase font-bold text-emerald-600 dark:text-emerald-400 block">
                   Executed by System
                 </span>
-                <strong className="text-sm sm:text-base font-black text-emerald-600 dark:text-emerald-400 tabular-nums">
+                <strong className="text-sm font-bold text-emerald-600 dark:text-emerald-400 tabular-nums block mt-0.5">
                   {executedSignalsCount}
                 </strong>
               </div>
-              <div className="p-2.5 rounded-xl border border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900/50">
+              <div className="p-2.5 rounded-xl border border-slate-200 dark:border-[#1e2230] bg-slate-50/50 dark:bg-[#141722]/50">
                 <span className="text-[10px] uppercase font-bold text-rose-600 dark:text-rose-400 block">
-                  Filtered / Rejected
+                  Filtered / Blocked
                 </span>
-                <strong className="text-sm sm:text-base font-black text-rose-600 dark:text-rose-400 tabular-nums">
+                <strong className="text-sm font-bold text-rose-600 dark:text-rose-400 tabular-nums block mt-0.5">
                   {rejectedSignalsCount}
                 </strong>
               </div>
@@ -399,10 +391,10 @@ export const ClosedTradesModal: React.FC<ClosedTradesModalProps> = ({
                   <button
                     type="button"
                     onClick={() => setTradeFilter('all')}
-                    className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
+                    className={`px-2.5 py-1 rounded text-xs font-bold transition-colors cursor-pointer ${
                       tradeFilter === 'all'
-                        ? 'bg-slate-900 text-white dark:bg-zinc-200 dark:text-zinc-900'
-                        : 'bg-slate-100 dark:bg-zinc-800/80 text-zinc-600 dark:text-zinc-400 hover:text-white'
+                        ? 'bg-slate-900 text-white dark:bg-white dark:text-black'
+                        : 'bg-slate-100 dark:bg-[#141722] text-slate-600 dark:text-slate-400 hover:text-white'
                     }`}
                   >
                     All ({totalTradesCount})
@@ -410,10 +402,10 @@ export const ClosedTradesModal: React.FC<ClosedTradesModalProps> = ({
                   <button
                     type="button"
                     onClick={() => setTradeFilter('running')}
-                    className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
+                    className={`px-2.5 py-1 rounded text-xs font-bold transition-colors cursor-pointer ${
                       tradeFilter === 'running'
-                        ? 'bg-slate-900 text-white dark:bg-zinc-200 dark:text-zinc-900'
-                        : 'bg-slate-100 dark:bg-zinc-800/80 text-zinc-600 dark:text-zinc-400 hover:text-white'
+                        ? 'bg-slate-900 text-white dark:bg-white dark:text-black'
+                        : 'bg-slate-100 dark:bg-[#141722] text-slate-600 dark:text-slate-400 hover:text-white'
                     }`}
                   >
                     Running ({runningCount})
@@ -421,10 +413,10 @@ export const ClosedTradesModal: React.FC<ClosedTradesModalProps> = ({
                   <button
                     type="button"
                     onClick={() => setTradeFilter('closed')}
-                    className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
+                    className={`px-2.5 py-1 rounded text-xs font-bold transition-colors cursor-pointer ${
                       tradeFilter === 'closed'
-                        ? 'bg-slate-900 text-white dark:bg-zinc-200 dark:text-zinc-900'
-                        : 'bg-slate-100 dark:bg-zinc-800/80 text-zinc-600 dark:text-zinc-400 hover:text-white'
+                        ? 'bg-slate-900 text-white dark:bg-white dark:text-black'
+                        : 'bg-slate-100 dark:bg-[#141722] text-slate-600 dark:text-slate-400 hover:text-white'
                     }`}
                   >
                     Closed ({closedCount})
@@ -435,10 +427,10 @@ export const ClosedTradesModal: React.FC<ClosedTradesModalProps> = ({
                   <button
                     type="button"
                     onClick={() => setSignalFilter('all')}
-                    className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
+                    className={`px-2.5 py-1 rounded text-xs font-bold transition-colors cursor-pointer ${
                       signalFilter === 'all'
-                        ? 'bg-slate-900 text-white dark:bg-zinc-200 dark:text-zinc-900'
-                        : 'bg-slate-100 dark:bg-zinc-800/80 text-zinc-600 dark:text-zinc-400 hover:text-white'
+                        ? 'bg-slate-900 text-white dark:bg-white dark:text-black'
+                        : 'bg-slate-100 dark:bg-[#141722] text-slate-600 dark:text-slate-400 hover:text-white'
                     }`}
                   >
                     All ({totalSignalsCount})
@@ -446,10 +438,10 @@ export const ClosedTradesModal: React.FC<ClosedTradesModalProps> = ({
                   <button
                     type="button"
                     onClick={() => setSignalFilter('executed')}
-                    className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
+                    className={`px-2.5 py-1 rounded text-xs font-bold transition-colors cursor-pointer ${
                       signalFilter === 'executed'
                         ? 'bg-emerald-600 text-white'
-                        : 'bg-slate-100 dark:bg-zinc-800/80 text-zinc-600 dark:text-zinc-400 hover:text-white'
+                        : 'bg-slate-100 dark:bg-[#141722] text-slate-600 dark:text-slate-400 hover:text-white'
                     }`}
                   >
                     Executed ({executedSignalsCount})
@@ -457,37 +449,37 @@ export const ClosedTradesModal: React.FC<ClosedTradesModalProps> = ({
                   <button
                     type="button"
                     onClick={() => setSignalFilter('rejected')}
-                    className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
+                    className={`px-2.5 py-1 rounded text-xs font-bold transition-colors cursor-pointer ${
                       signalFilter === 'rejected'
                         ? 'bg-rose-600 text-white'
-                        : 'bg-slate-100 dark:bg-zinc-800/80 text-zinc-600 dark:text-zinc-400 hover:text-white'
+                        : 'bg-slate-100 dark:bg-[#141722] text-slate-600 dark:text-slate-400 hover:text-white'
                     }`}
                   >
-                    Rejected ({rejectedSignalsCount})
+                    Filtered ({rejectedSignalsCount})
                   </button>
                 </>
               )}
             </div>
 
             {/* Search Bar */}
-            <div className="relative min-w-[180px] sm:min-w-[240px]">
-              <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-zinc-400" />
+            <div className="relative min-w-[200px]">
+              <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
               <input
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Search symbol, ticket, reason..."
-                className="w-full pl-8 pr-3 py-1.5 rounded-lg border border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900 text-slate-900 dark:text-white placeholder:text-zinc-500 text-xs outline-none focus:border-zinc-400"
+                className="w-full pl-8 pr-3 py-1 rounded-lg border border-slate-200 dark:border-[#1e2230] bg-slate-50 dark:bg-[#141722] text-slate-900 dark:text-white placeholder:text-slate-500 text-xs outline-none focus:border-slate-400"
               />
             </div>
           </div>
 
           {/* TAB 1: TRADES TAKEN TABLE */}
           {activeTab === 'trades' && (
-            <div className="rounded-xl border border-slate-200 dark:border-zinc-800 overflow-x-auto max-h-[420px]">
+            <div className="rounded-xl border border-slate-200 dark:border-[#1e2230] overflow-x-auto max-h-[420px]">
               {filteredTrades.length > 0 ? (
                 <table className="w-full text-left border-collapse text-xs">
-                  <thead className="sticky top-0 bg-slate-50 dark:bg-[#0f1217] border-b border-slate-200 dark:border-zinc-800 text-[10px] text-zinc-500 uppercase z-10">
+                  <thead className="sticky top-0 bg-slate-50 dark:bg-[#090a0f] border-b border-slate-200 dark:border-[#1e2230] text-[10px] text-slate-400 uppercase z-10">
                     <tr>
                       <th className="py-2.5 px-3">Ticket / Time</th>
                       <th className="py-2.5 px-2">Instrument</th>
@@ -497,36 +489,36 @@ export const ClosedTradesModal: React.FC<ClosedTradesModalProps> = ({
                       <th className="py-2.5 px-3 text-right">Net P&amp;L</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-100 dark:divide-zinc-800/60">
+                  <tbody className="divide-y divide-slate-100 dark:divide-[#1e2230]">
                     {filteredTrades.map((t) => {
                       const isRunning = t.status === 'RUNNING';
                       return (
                         <tr
                           key={`${t.ticket}_${t.openTime}`}
-                          className="hover:bg-slate-50 dark:hover:bg-zinc-800/20 transition-colors"
+                          className="hover:bg-slate-50 dark:hover:bg-[#141722]/50 transition-colors"
                         >
                           <td className="py-2.5 px-3">
-                            <span className="font-bold text-slate-900 dark:text-zinc-200 block">
+                            <span className="font-bold text-slate-900 dark:text-slate-200 block">
                               #{t.ticket}
                             </span>
-                            <span className="text-[10px] text-zinc-500 block">
+                            <span className="text-[10px] text-slate-400 block">
                               {t.openTime ? new Date(t.openTime).toLocaleTimeString() : 'N/A'}
                             </span>
                           </td>
-                          <td className="py-2.5 px-2 font-bold text-slate-800 dark:text-zinc-300">
+                          <td className="py-2.5 px-2 font-bold text-slate-800 dark:text-slate-200">
                             {t.symbol || 'XAUUSD'}
                           </td>
                           <td className="py-2.5 px-2">
                             <span
-                              className={`font-black ${
+                              className={`font-bold ${
                                 t.type === 'BUY' ? 'text-emerald-500' : 'text-rose-500'
                               }`}
                             >
                               {t.type}
                             </span>{' '}
-                            <span className="text-zinc-500">{t.volume}L</span>
+                            <span className="text-slate-400">{t.volume}L</span>
                           </td>
-                          <td className="py-2.5 px-2 text-slate-700 dark:text-zinc-300 tabular-nums">
+                          <td className="py-2.5 px-2 text-slate-700 dark:text-slate-300 tabular-nums">
                             {(() => {
                               const symCfg = getInstrumentConfig((t.symbol || 'XAUUSD') as SupportedSymbol);
                               const d = symCfg.digits;
@@ -542,26 +534,25 @@ export const ClosedTradesModal: React.FC<ClosedTradesModalProps> = ({
                           <td className="py-2.5 px-2">
                             {isRunning ? (
                               <div className="flex items-center gap-1.5 flex-wrap">
-                                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-bold border border-emerald-500/20">
-                                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                                <span className="text-emerald-600 dark:text-emerald-400 font-bold text-[11px]">
                                   RUNNING
                                 </span>
                                 <button
                                   type="button"
                                   onClick={() => handleCloseRunningTrade(t.ticket)}
-                                  className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-rose-500/10 hover:bg-rose-500/20 text-rose-500 border border-rose-500/30 transition-colors cursor-pointer"
+                                  className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 text-rose-500 transition-colors cursor-pointer"
                                   title="Close this trade at market"
                                 >
                                   Close
                                 </button>
                               </div>
                             ) : (
-                              <span className="px-1.5 py-0.5 rounded text-[10px] bg-slate-100 dark:bg-zinc-800 text-slate-700 dark:text-zinc-300">
+                              <span className="text-slate-500 dark:text-slate-400 text-[11px]">
                                 {t.reason || 'Closed'}
                               </span>
                             )}
                           </td>
-                          <td className="py-2.5 px-3 text-right font-black tabular-nums">
+                          <td className="py-2.5 px-3 text-right font-bold tabular-nums">
                             <span
                               className={
                                 t.profit >= 0
@@ -571,7 +562,7 @@ export const ClosedTradesModal: React.FC<ClosedTradesModalProps> = ({
                             >
                               {t.profit >= 0 ? '+' : ''}${t.profit.toFixed(2)}
                             </span>
-                            <span className="text-[10px] text-zinc-500 block font-normal">
+                            <span className="text-[10px] text-slate-400 block font-normal">
                               {t.pips >= 0 ? '+' : ''}{t.pips.toFixed(1)} pips
                             </span>
                           </td>
@@ -581,7 +572,7 @@ export const ClosedTradesModal: React.FC<ClosedTradesModalProps> = ({
                   </tbody>
                 </table>
               ) : (
-                <div className="py-12 text-center text-zinc-500 space-y-1">
+                <div className="py-12 text-center text-slate-400 space-y-1">
                   <span className="font-bold text-xs uppercase tracking-wider block">
                     No matching trade records
                   </span>
@@ -595,10 +586,10 @@ export const ClosedTradesModal: React.FC<ClosedTradesModalProps> = ({
 
           {/* TAB 2: SIGNALS AUDIT TABLE */}
           {activeTab === 'signals' && (
-            <div className="rounded-xl border border-slate-200 dark:border-zinc-800 overflow-x-auto max-h-[420px]">
+            <div className="rounded-xl border border-slate-200 dark:border-[#1e2230] overflow-x-auto max-h-[420px]">
               {filteredSignals.length > 0 ? (
                 <table className="w-full text-left border-collapse text-xs">
-                  <thead className="sticky top-0 bg-slate-50 dark:bg-[#0f1217] border-b border-slate-200 dark:border-zinc-800 text-[10px] text-zinc-500 uppercase z-10">
+                  <thead className="sticky top-0 bg-slate-50 dark:bg-[#090a0f] border-b border-slate-200 dark:border-[#1e2230] text-[10px] text-slate-400 uppercase z-10">
                     <tr>
                       <th className="py-2.5 px-3">Time / Pair</th>
                       <th className="py-2.5 px-2">Setup</th>
@@ -607,52 +598,50 @@ export const ClosedTradesModal: React.FC<ClosedTradesModalProps> = ({
                       <th className="py-2.5 px-3">Audit Outcome / Reason</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-100 dark:divide-zinc-800/60">
+                  <tbody className="divide-y divide-slate-100 dark:divide-[#1e2230]">
                     {filteredSignals.map((sig) => {
                       const isExecuted = sig.status === 'EXECUTED';
                       return (
                         <tr
                           key={sig.id}
-                          className="hover:bg-slate-50 dark:hover:bg-zinc-800/20 transition-colors"
+                          className="hover:bg-slate-50 dark:hover:bg-[#141722]/50 transition-colors"
                         >
                           <td className="py-2.5 px-3">
-                            <span className="font-bold text-slate-900 dark:text-zinc-200 block">
+                            <span className="font-bold text-slate-900 dark:text-slate-200 block">
                               {sig.symbol}
                             </span>
-                            <span className="text-[10px] text-zinc-500 block">
+                            <span className="text-[10px] text-slate-400 block">
                               {new Date(sig.timestamp).toLocaleTimeString()}
                             </span>
                           </td>
                           <td className="py-2.5 px-2">
                             <span
-                              className={`font-black ${
+                              className={`font-bold ${
                                 sig.direction === 'BUY' ? 'text-emerald-500' : 'text-rose-500'
                               }`}
                             >
                               {sig.direction}
                             </span>{' '}
-                            <span className="text-zinc-700 dark:text-zinc-300 font-medium">
+                            <span className="text-slate-700 dark:text-slate-300 font-medium">
                               {sig.strategy}
                             </span>
-                            <span className="text-[10px] text-zinc-500 block">
+                            <span className="text-[10px] text-slate-400 block">
                               Score: {sig.score} • {sig.timeframe}
                             </span>
                           </td>
-                          <td className="py-2.5 px-2 tabular-nums text-slate-700 dark:text-zinc-300 text-[11px]">
+                          <td className="py-2.5 px-2 tabular-nums text-slate-700 dark:text-slate-300 text-[11px]">
                             <div>E: ${sig.entry.toFixed(2)}</div>
-                            <div className="text-zinc-500">
+                            <div className="text-slate-400">
                               SL: ${sig.sl.toFixed(2)} | TP: ${sig.tp.toFixed(2)}
                             </div>
                           </td>
                           <td className="py-2.5 px-2">
                             {isExecuted ? (
-                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
-                                <CheckCircle2 className="w-3 h-3 text-emerald-500" />
+                              <span className="text-emerald-600 dark:text-emerald-400 font-bold text-[11px]">
                                 EXECUTED
                               </span>
                             ) : (
-                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20">
-                                <XCircle className="w-3 h-3 text-rose-500" />
+                              <span className="text-rose-600 dark:text-rose-400 font-bold text-[11px]">
                                 REJECTED
                               </span>
                             )}
@@ -668,7 +657,7 @@ export const ClosedTradesModal: React.FC<ClosedTradesModalProps> = ({
                               </div>
                             )}
                             {sig.rationale && (
-                              <span className="text-[10px] text-zinc-500 line-clamp-1 mt-0.5">
+                              <span className="text-[10px] text-slate-400 line-clamp-1 mt-0.5">
                                 {sig.rationale}
                               </span>
                             )}
@@ -679,7 +668,7 @@ export const ClosedTradesModal: React.FC<ClosedTradesModalProps> = ({
                   </tbody>
                 </table>
               ) : (
-                <div className="py-12 text-center text-zinc-500 space-y-1">
+                <div className="py-12 text-center text-slate-400 space-y-1">
                   <span className="font-bold text-xs uppercase tracking-wider block">
                     No matching signal records
                   </span>
@@ -693,19 +682,19 @@ export const ClosedTradesModal: React.FC<ClosedTradesModalProps> = ({
         </div>
 
         {/* Footer: Bottom Controls and Actions */}
-        <div className="p-3 sm:p-4 border-t border-slate-200 dark:border-zinc-800 bg-slate-50/80 dark:bg-[#16171d] flex items-center justify-between gap-3 flex-wrap shrink-0">
+        <div className="p-4 border-t border-slate-200 dark:border-[#1e2230] bg-slate-50/60 dark:bg-[#141722]/80 flex items-center justify-between gap-3 flex-wrap shrink-0">
           <div className="flex items-center gap-2">
             <button
               onClick={onClose}
-              className="px-3.5 py-2 rounded-xl text-xs font-bold text-slate-700 dark:text-zinc-300 hover:text-slate-950 dark:hover:text-white bg-slate-200/80 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 transition-colors cursor-pointer flex items-center gap-1.5"
+              className="px-3 py-1.5 rounded-lg text-xs font-bold text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white bg-slate-200/80 hover:bg-slate-200 dark:bg-[#1e2230] transition-colors cursor-pointer flex items-center gap-1.5"
             >
               <ArrowLeft className="w-3.5 h-3.5" />
-              <span>Back to Terminal</span>
+              <span>Back</span>
             </button>
 
             <button
               onClick={handleExportCSV}
-              className="px-3 py-2 rounded-xl text-xs font-bold text-slate-700 dark:text-zinc-300 hover:text-slate-950 dark:hover:text-white bg-slate-200/80 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 transition-colors cursor-pointer flex items-center gap-1.5"
+              className="px-3 py-1.5 rounded-lg text-xs font-bold text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white bg-slate-200/80 hover:bg-slate-200 dark:bg-[#1e2230] transition-colors cursor-pointer flex items-center gap-1.5"
               title="Download Journal data as CSV"
             >
               <Download className="w-3.5 h-3.5" />
@@ -717,7 +706,7 @@ export const ClosedTradesModal: React.FC<ClosedTradesModalProps> = ({
             {activeTab === 'trades' && runningCount > 0 && (
               <button
                 onClick={handleCloseAllRunningTrades}
-                className="px-3 py-2 rounded-xl text-xs font-bold bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/30 transition-colors cursor-pointer flex items-center gap-1.5"
+                className="px-3 py-1.5 rounded-lg text-xs font-bold bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/30 transition-colors cursor-pointer flex items-center gap-1.5"
                 title="Close and reconcile all running positions"
               >
                 <Zap className="w-3.5 h-3.5 fill-current" />
@@ -727,10 +716,10 @@ export const ClosedTradesModal: React.FC<ClosedTradesModalProps> = ({
 
             <button
               onClick={handleClearCurrent}
-              className={`px-3 py-2 rounded-xl text-xs font-bold transition-colors cursor-pointer flex items-center gap-1.5 ${
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors cursor-pointer flex items-center gap-1.5 ${
                 confirmClear
-                  ? 'bg-rose-600 text-white border border-rose-500'
-                  : 'text-rose-600 dark:text-rose-400 hover:bg-rose-500/10 border border-rose-500/20'
+                  ? 'bg-rose-600 text-white'
+                  : 'text-rose-600 dark:text-rose-400 hover:bg-rose-500/10'
               }`}
               title="Clear journal history for current view"
             >
@@ -740,7 +729,7 @@ export const ClosedTradesModal: React.FC<ClosedTradesModalProps> = ({
 
             <button
               onClick={onClose}
-              className="px-4 py-2 rounded-xl text-xs font-bold bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900 hover:bg-zinc-800 dark:hover:bg-white transition-colors cursor-pointer"
+              className="px-4 py-1.5 rounded-lg text-xs font-bold bg-slate-900 text-white dark:bg-white dark:text-slate-950 transition-colors cursor-pointer"
             >
               Done
             </button>

@@ -5,14 +5,7 @@ import { getInstrumentConfig } from '../engine/instrumentConfig';
 import {
   TrendingUp,
   TrendingDown,
-  Shield,
   X,
-  Zap,
-  Target,
-  ArrowRight,
-  Clock,
-  Layers,
-  Sparkles,
 } from 'lucide-react';
 
 interface RunningTradesHUDProps {
@@ -30,60 +23,52 @@ export const RunningTradesHUD: React.FC<RunningTradesHUDProps> = ({ onOpenTradeS
 
   if (totalPositions === 0) {
     return (
-      <div className="neo-panel w-full border border-dashed rounded-xl p-3 sm:p-4 flex items-center justify-between gap-3 font-mono text-xs">
-        <div className="flex items-center gap-2.5">
-          <div className="w-2.5 h-2.5 rounded-full bg-slate-300 dark:bg-slate-700" />
-          <div>
-            <span className="font-bold text-slate-700 dark:text-slate-300">0 Running Trades</span>
-            <span className="text-[11px] text-slate-400 dark:text-slate-500 ml-2 hidden sm:inline">
-              Terminal idle • Continuous multi-pair scanner monitoring market structure
-            </span>
-          </div>
+      <div className="w-full border border-slate-200 dark:border-[#222d29] rounded-xl px-4 py-2.5 bg-white dark:bg-[#121917] flex items-center justify-between gap-3 font-mono text-xs transition-colors">
+        <div className="flex items-center gap-2">
+          <span className="w-2 h-2 rounded-full bg-slate-300 dark:bg-slate-700" />
+          <span className="text-slate-600 dark:text-slate-400 font-medium">0 Open Positions</span>
+          <span className="text-slate-400 dark:text-slate-500 hidden sm:inline">· Standing by for confirmed SMC setups</span>
         </div>
         <button
           type="button"
           onClick={onOpenTradeStation}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-sky-500 hover:bg-sky-400 text-slate-950 font-bold font-sans text-xs shadow-xs transition-colors cursor-pointer"
+          className="text-xs text-sky-600 dark:text-sky-400 hover:underline font-bold"
         >
-          <Zap className="w-3.5 h-3.5 fill-current" />
-          <span>Start Trade</span>
+          View Trade Journal
         </button>
       </div>
     );
   }
 
   return (
-    <div className="neo-panel neo-card w-full border rounded-2xl p-4 sm:p-5 font-mono text-xs">
-      {/* Top Banner Header: Aggregate Running P&L */}
-      <div className="flex items-center justify-between pb-1 flex-wrap gap-3">
+    <div className="w-full border border-slate-200 dark:border-[#222d29] rounded-xl px-4 py-3 bg-white dark:bg-[#121917] font-mono text-xs transition-colors space-y-3">
+      {/* Top Header */}
+      <div className="flex items-center justify-between flex-wrap gap-2">
         <div className="flex items-center gap-2">
-          <span className="relative flex h-2.5 w-2.5">
-            <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500" />
+          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+          <span className="font-bold uppercase tracking-wider text-slate-800 dark:text-slate-200 text-xs">
+            Open Positions ({totalPositions})
           </span>
-          <span className="font-bold text-slate-900 dark:text-white uppercase tracking-wider text-xs sm:text-sm">
-            Live Running Positions ({totalPositions})
-          </span>
-          <span className="text-[10px] text-slate-500 dark:text-zinc-400 bg-slate-100 dark:bg-zinc-800/80 px-2 py-0.5 rounded border border-slate-200 dark:border-zinc-700/60">
+          <span className="text-slate-400 dark:text-slate-500 text-[11px]">
             1:{engine.leverage || 2000} Lev
           </span>
         </div>
 
-        {/* Floating P&L Counter */}
         <div className="flex items-center gap-3">
-          <div className="text-right">
-            <div className="text-[10px] uppercase text-slate-400">Total Floating Basket</div>
-            <div
-              className={`text-base sm:text-lg font-black tracking-tight ${
-                isOverallProfitable ? 'text-emerald-500' : 'text-rose-500'
+          <div className="flex items-center gap-1.5">
+            <span className="text-slate-400 text-[11px]">Floating P&L:</span>
+            <strong
+              className={`text-sm tabular-nums font-bold ${
+                isOverallProfitable ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'
               }`}
             >
-              {isOverallProfitable ? '+' : ''}${totalFloatingPnl.toFixed(2)} USD
-            </div>
+              {isOverallProfitable ? '+' : ''}${totalFloatingPnl.toFixed(2)}
+            </strong>
           </div>
           <button
             type="button"
             onClick={() => tradingEngine.closeAll('Manual')}
-            className="px-2.5 py-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-500 font-bold border border-rose-500/30 transition-colors cursor-pointer text-[11px]"
+            className="px-2.5 py-1 rounded-md bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/30 dark:hover:bg-rose-950/50 text-rose-600 dark:text-rose-400 font-bold border border-rose-200 dark:border-rose-900/50 transition-colors cursor-pointer text-[11px]"
             title="Immediately close all open market positions"
           >
             Close All
@@ -91,8 +76,8 @@ export const RunningTradesHUD: React.FC<RunningTradesHUDProps> = ({ onOpenTradeS
         </div>
       </div>
 
-      {/* Individual Running Trade Cards */}
-      <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-2.5 sm:gap-3">
+      {/* Position Cards Grid */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
         {positions.map((pos) => {
           const isBuy = pos.type === 'BUY';
           const isPosProfit = pos.profit >= 0;
@@ -104,132 +89,53 @@ export const RunningTradesHUD: React.FC<RunningTradesHUDProps> = ({ onOpenTradeS
             ? isBuy ? ticker.bid : ticker.ask
             : pos.price_open + (isBuy ? pipsGain : -pipsGain) * cfg.pipSize;
 
-          const slDistancePips = pos.sl > 0 ? Math.abs(currentPrice - pos.sl) / cfg.pipSize : 0;
-          const tpDistancePips = pos.tp > 0 ? Math.abs(pos.tp - currentPrice) / cfg.pipSize : 0;
-
-          // Progress bar towards TP / SL
-          let progressPct = 50;
-          if (pos.tp > 0 && pos.sl > 0) {
-            const totalSpan = Math.abs(pos.tp - pos.sl);
-            if (totalSpan > 0) {
-              const fromSl = isBuy ? currentPrice - pos.sl : pos.sl - currentPrice;
-              progressPct = Math.max(5, Math.min(95, (fromSl / totalSpan) * 100));
-            }
-          }
-
           return (
             <div
               key={pos.ticket}
-              className="neo-panel neo-card border rounded-2xl p-4 flex flex-col justify-between gap-3 transition-all min-w-0 overflow-hidden"
+              className="p-3 rounded-lg border border-slate-200 dark:border-[#222d29] bg-slate-50/60 dark:bg-[#0f1513] flex items-center justify-between gap-3 text-xs"
             >
-              {/* Row 1: Symbol, Direction, Volume, Live P&L */}
-              <div className="flex items-center justify-between gap-2 min-w-0">
-                <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
-                  <span className="font-black text-slate-900 dark:text-white text-sm">
-                    {posSymbol}
-                  </span>
-                  <span
-                    className={`flex items-center gap-0.5 px-2 py-0.5 rounded text-[11px] font-bold shrink-0 ${
-                      isBuy
-                        ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20'
-                        : 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20'
-                    }`}
-                  >
-                    {isBuy ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
-                    <span>{pos.type}</span>
-                    <span className="ml-0.5 text-[10px] font-mono">{pos.volume}L</span>
-                  </span>
-                  <span className="text-[10px] text-slate-400 shrink-0">#{pos.ticket}</span>
+              <div className="flex items-center gap-2">
+                <span
+                  className={`w-6 h-6 rounded flex items-center justify-center font-bold text-[10px] ${
+                    isBuy
+                      ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300'
+                      : 'bg-rose-100 text-rose-700 dark:bg-rose-950/50 dark:text-rose-300'
+                  }`}
+                >
+                  {isBuy ? 'B' : 'S'}
+                </span>
+                <div>
+                  <div className="flex items-center gap-1.5 font-bold text-slate-800 dark:text-slate-200">
+                    <span>{posSymbol}</span>
+                    <span className="text-[11px] text-slate-400 font-normal">{pos.volume}L</span>
+                  </div>
+                  <div className="text-[11px] text-slate-400 dark:text-slate-500 tabular-nums">
+                    Open: {pos.price_open.toFixed(cfg.digits)} · Spot: {currentPrice.toFixed(cfg.digits)}
+                  </div>
                 </div>
+              </div>
 
-                <div className="text-right shrink-0">
+              <div className="flex items-center gap-2.5">
+                <div className="text-right">
                   <div
-                    className={`font-black text-sm sm:text-base ${
-                      isPosProfit ? 'text-emerald-500' : 'text-rose-500'
+                    className={`font-bold tabular-nums ${
+                      isPosProfit ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'
                     }`}
                   >
                     {isPosProfit ? '+' : ''}${pos.profit.toFixed(2)}
                   </div>
-                  <div className="text-[10px] text-slate-400">
-                    {pipsGain >= 0 ? '+' : ''}{pipsGain.toFixed(1)} pips
+                  <div className="text-[10px] text-slate-400 tabular-nums">
+                    {pipsGain > 0 ? `+${pipsGain}` : pipsGain} pips
                   </div>
                 </div>
-              </div>
-
-              {/* Row 2: Price Telemetry (Entry -> Current -> SL/TP) */}
-              <div className="grid grid-cols-3 gap-1 bg-white dark:bg-[#0a0d13] p-2 rounded-lg border border-slate-200/80 dark:border-zinc-800/80 text-[11px]">
-                <div>
-                  <div className="text-[9px] uppercase text-slate-400">Entry Price</div>
-                  <div className="font-bold text-slate-900 dark:text-slate-200">
-                    {pos.price_open.toFixed(cfg.digits)}
-                  </div>
-                </div>
-                <div>
-                  <div className="text-[9px] uppercase text-slate-400">{hasLiveQuote ? 'Live Spot' : 'Position Mark'}</div>
-                  <div className="font-bold text-slate-900 dark:text-white">
-                    {currentPrice.toFixed(cfg.digits)}
-                  </div>
-                </div>
-                <div>
-                  <div className="text-[9px] uppercase text-slate-400">Stop Loss / TP</div>
-                  <div className="font-bold text-slate-500 dark:text-slate-400 truncate">
-                    {pos.sl > 0 ? pos.sl.toFixed(cfg.digits) : 'None'} / {pos.tp > 0 ? pos.tp.toFixed(cfg.digits) : 'Open'}
-                  </div>
-                </div>
-              </div>
-
-              {/* Visual Trajectory Bar */}
-              {pos.tp > 0 && pos.sl > 0 && (
-                <div className="space-y-1">
-                  <div className="flex justify-between text-[10px] text-slate-400">
-                    <span className="text-rose-500">SL: {pos.sl.toFixed(cfg.digits)} ({slDistancePips.toFixed(1)}p)</span>
-                    <span className="text-emerald-500">TP: {pos.tp.toFixed(cfg.digits)} ({tpDistancePips.toFixed(1)}p)</span>
-                  </div>
-                  <div className="w-full bg-slate-200 dark:bg-zinc-800 rounded-full h-1.5 overflow-hidden flex">
-                    <div
-                      className={`h-full transition-all duration-300 ${
-                        isPosProfit ? 'bg-emerald-500' : 'bg-rose-500'
-                      }`}
-                      style={{ width: `${progressPct}%` }}
-                    />
-                  </div>
-                </div>
-              )}
-
-              {/* Row 3: Action Buttons (Breakeven, Partial Scale Out, Close) */}
-              <div className="flex items-center gap-1.5 pt-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    const bePrice = Number(
-                      (isBuy ? pos.price_open + (cfg.pointSize * 2) : pos.price_open - (cfg.pointSize * 2)).toFixed(cfg.digits)
-                    );
-                    tradingEngine.modifyPositionStops(pos.ticket, bePrice, pos.tp);
-                  }}
-                  className="flex-1 py-1 px-2 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-slate-700 dark:text-zinc-200 font-bold transition-colors cursor-pointer text-[10px] flex items-center justify-center gap-1"
-                  title="Move Stop Loss to Entry + 2 ticks to lock zero risk"
-                >
-                  <Shield className="w-3 h-3 text-slate-400" />
-                  <span>Lock BE</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => tradingEngine.scaleOutPosition(pos.ticket, 0.5)}
-                  className="py-1 px-2.5 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-slate-700 dark:text-zinc-200 font-bold transition-colors cursor-pointer text-[10px]"
-                  title="Close 50% of the volume to take partial profit"
-                >
-                  Scale 50%
-                </button>
 
                 <button
                   type="button"
                   onClick={() => tradingEngine.closePosition(pos.ticket, 'Manual')}
-                  className="py-1 px-3 rounded-lg bg-rose-500 hover:bg-rose-600 text-white font-bold transition-colors cursor-pointer text-[10px] flex items-center gap-1"
-                  title="Close this order immediately at market"
+                  className="p-1 rounded text-slate-400 hover:text-rose-600 hover:bg-slate-200 dark:hover:bg-zinc-800 transition-colors cursor-pointer"
+                  title="Close Position"
                 >
-                  <X className="w-3 h-3" />
-                  <span>Close</span>
+                  <X className="w-3.5 h-3.5" />
                 </button>
               </div>
             </div>

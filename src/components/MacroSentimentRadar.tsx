@@ -1,12 +1,9 @@
 /**
- * MacroSentimentRadar.tsx - Institutional Macro, News Sentiment & Volume Order Flow Radar
- *
- * Integrates:
- * 1. Global Macro Regime (Risk-On / Risk-Off, VIX Volatility Level, DXY Dollar Index)
- * 2. Institutional Relative Volume (RVOL) & Volume Footprint (Displacement vs Absorption)
- * 3. Macroeconomic Calendar Surprises (Actual vs. Forecast with Surprise Deltas)
- * 4. Real-Time Financial News & Geopolitical Shock Feed with Live RSS/API Parsing
- * 5. Intermarket Correlation Matrix with Dynamic Stop-Loss Multipliers
+ * MacroSentimentRadar.tsx - Refined Minimalist Macro & Real-Time News Deck
+ * De-cluttered:
+ * - Clean horizontal overview ribbon (Regime, RVOL, DXY, VIX)
+ * - Organized tabbed deck for in-depth data: Real-Time News, Economic Calendar, Volume Flow
+ * - Uncrowded, airy presentation with zero badge sandwiching
  */
 
 import React, { useState, useMemo } from 'react';
@@ -15,42 +12,31 @@ import {
   Radio,
   TrendingUp,
   TrendingDown,
-  Volume2,
-  Sparkles,
-  AlertTriangle,
-  Flame,
-  Shield,
-  Layers,
-  Search,
+  RefreshCw,
   ExternalLink,
   ChevronDown,
   ChevronUp,
-  RefreshCw,
-  Zap,
 } from 'lucide-react';
-import { useMacroSentiment, useMarket, useTicker } from '../hooks/useTradingStore';
+import { useTicker, useMarket, useMacroSentiment } from '../hooks/useTradingStore';
+import { SupportedSymbol, getInstrumentConfig } from '../engine/instrumentConfig';
 import { newsSentimentEngine } from '../engine/newsSentimentEngine';
 import { calculateRVOL } from '../engine/volumeEngine';
-import { SupportedSymbol, getInstrumentConfig } from '../engine/instrumentConfig';
-import { NewsSentimentItem } from '../types/smc';
+import { NewsSentimentItem, EconomicEvent } from '../types/smc';
 
-interface MacroSentimentRadarProps {
-  compact?: boolean;
-}
+type ActiveTab = 'news' | 'calendar' | 'volume';
 
-export const MacroSentimentRadar: React.FC<MacroSentimentRadarProps> = ({ compact = false }) => {
+export const MacroSentimentRadar: React.FC = React.memo(() => {
   const ticker = useTicker();
   const market = useMarket();
   const macro = useMacroSentiment();
+  const activeSymbol = (ticker.symbol || 'XAUUSD') as SupportedSymbol;
+  const cfg = getInstrumentConfig(activeSymbol);
 
-  const [activeTab, setActiveTab] = useState<'news' | 'calendar' | 'volume' | 'intermarket'>('news');
-  const [isExpanded, setIsExpanded] = useState(!compact);
+  const [activeTab, setActiveTab] = useState<ActiveTab>('news');
   const [isRefreshingNews, setIsRefreshingNews] = useState(false);
   const [customHeadline, setCustomHeadline] = useState('');
   const [isSubmittingCustom, setIsSubmittingCustom] = useState(false);
-
-  const activeSymbol = (ticker.symbol || 'XAUUSD') as SupportedSymbol;
-  const cfg = getInstrumentConfig(activeSymbol);
+  const [isExpanded, setIsExpanded] = useState(false);
 
   // Compute live RVOL from current active candles
   const currentCandles = market.candlesM5.length >= 10 ? market.candlesM5 : market.candlesM1;
@@ -58,25 +44,17 @@ export const MacroSentimentRadar: React.FC<MacroSentimentRadarProps> = ({ compac
     return calculateRVOL(currentCandles, 20);
   }, [currentCandles]);
 
-  // Pair specific sentiment
-  const pairSentiment = useMemo(() => {
-    return newsSentimentEngine.evaluatePairSentiment(activeSymbol);
-  }, [activeSymbol, macro?.newsItems]);
-
-  const intermarket = macro?.intermarket || {
-    dxyBias: 'bullish' as const,
-    dxyChangePct: 0.28,
-    vixLevel: 16.4,
+  const intermarket = macro?.intermarket ?? {
+    dxyBias: 'neutral' as const,
+    dxyChangePct: 0.05,
+    vixLevel: 14.8,
     vixRegime: 'CALM' as const,
-    riskRegime: 'RISK_OFF' as const,
-    goldDriver: 'Safe-Haven Geopolitical Flows',
+    riskRegime: 'RISK_ON' as const,
+    goldDriver: 'Neutral Intermarket Flows',
     recommendedStopBuffer: 1.0,
   };
 
-  const sentimentScore = macro?.globalSentimentScore ?? 25;
-  const sentimentLabel = macro?.globalSentimentLabel ?? 'BULLISH';
-
-  const handleRefreshNews = async () => {
+  const handleRefreshLiveNews = async () => {
     setIsRefreshingNews(true);
     try {
       await newsSentimentEngine.fetchLiveNews();
@@ -85,20 +63,20 @@ export const MacroSentimentRadar: React.FC<MacroSentimentRadarProps> = ({ compac
     }
   };
 
-  const handleAddCustomHeadline = (e: React.FormEvent) => {
+  const handleAddCustomNews = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!customHeadline.trim()) return;
+    if (!customHeadline.trim() || isSubmittingCustom) return;
     setIsSubmittingCustom(true);
     try {
       const scored = newsSentimentEngine.scoreHeadline(customHeadline.trim());
       newsSentimentEngine.addHeadline({
         title: customHeadline.trim(),
-        source: 'User Intelligence Desk',
+        source: 'Institutional Desk',
         sentimentScore: scored.score,
         urgency: 'BREAKING',
         catalystType: scored.catalyst,
         affectedAssets: [activeSymbol, 'USD'],
-        summary: `Manual macro catalyst ingested into institutional radar.`,
+        summary: `Manual macro catalyst ingested into desk radar.`,
       });
       setCustomHeadline('');
     } finally {
@@ -107,457 +85,213 @@ export const MacroSentimentRadar: React.FC<MacroSentimentRadarProps> = ({ compac
   };
 
   return (
-    <div className="neo-panel neo-card w-full border rounded-2xl p-4 sm:p-5 font-mono text-xs transition-colors space-y-4">
-      {/* 1. Header Banner & Quick Telemetry Strip */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-200 dark:border-zinc-800">
-        <div className="flex items-center gap-2.5">
-          <div className="p-2 rounded-xl bg-indigo-500/10 text-indigo-500 dark:text-indigo-400 border border-indigo-500/20">
-            <Globe className="w-4 h-4 animate-pulse" />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="font-bold text-sm text-slate-900 dark:text-white">
-                Institutional Macro & News Sentiment Radar
-              </span>
-              <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 flex items-center gap-1">
-                <Radio className="w-2.5 h-2.5 animate-ping" />
-                Live Feed
-              </span>
-            </div>
-            <p className="text-[11px] text-slate-500 dark:text-zinc-400 mt-0.5">
-              Macro Surprises, Breaking Geopolitical Sentiment & Order Flow RVOL for{' '}
-              <span className="font-semibold text-slate-800 dark:text-zinc-200">{cfg.displayName} ({activeSymbol})</span>
-            </p>
-          </div>
+    <div className="w-full border border-slate-200 dark:border-[#222d29] rounded-xl px-4 py-3 bg-white dark:bg-[#121917] font-mono text-xs transition-colors space-y-3">
+      {/* 1. Header & Summary Strip */}
+      <div className="flex items-center justify-between pb-1 gap-2 flex-wrap">
+        <div className="flex items-center gap-2">
+          <Globe className="w-4 h-4 text-emerald-500" />
+          <span className="font-bold text-xs uppercase tracking-wider text-slate-800 dark:text-slate-200">
+            Macro &amp; Live News Radar
+          </span>
+          <span className="text-[11px] text-slate-400 dark:text-slate-500">
+            · {intermarket.riskRegime === 'RISK_OFF' ? 'Risk-Off Safe Haven' : 'Risk-On Liquidity'}
+          </span>
         </div>
 
         <div className="flex items-center gap-2">
-          {/* Quick Regime Pill */}
-          <div className={`px-2.5 py-1 rounded-lg border text-[11px] font-bold flex items-center gap-1.5 ${
-            intermarket.riskRegime === 'RISK_OFF'
-              ? 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/30'
-              : 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30'
-          }`}>
-            <Shield className="w-3.5 h-3.5" />
-            <span>{intermarket.riskRegime.replace('_', ' ')}</span>
-          </div>
+          <button
+            type="button"
+            onClick={handleRefreshLiveNews}
+            disabled={isRefreshingNews}
+            className="flex items-center gap-1 px-2 py-0.5 rounded border border-slate-200 dark:border-[#222d29] text-[11px] text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-[#1a2320] transition-colors cursor-pointer disabled:opacity-50"
+            title="Refresh live financial headlines from feed"
+          >
+            <RefreshCw className={`w-3 h-3 ${isRefreshingNews ? 'animate-spin text-sky-500' : ''}`} />
+            <span>{isRefreshingNews ? 'Syncing...' : 'Fetch News'}</span>
+          </button>
 
           <button
+            type="button"
             onClick={() => setIsExpanded(!isExpanded)}
-            className="p-1.5 rounded-lg border border-slate-200 dark:border-zinc-800 text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors"
-            title={isExpanded ? 'Collapse radar panel' : 'Expand radar panel'}
+            className="p-1 rounded text-slate-400 hover:text-slate-900 dark:text-slate-500 dark:hover:text-white transition-colors cursor-pointer"
+            title={isExpanded ? 'Collapse Deck' : 'Expand Details'}
           >
             {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
           </button>
         </div>
       </div>
 
-      {/* 2. Top Metric Matrix (Always Visible) */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        {/* Global Sentiment Gauge */}
-        <div className="p-3 rounded-xl bg-slate-50 dark:bg-zinc-900/70 border border-slate-200 dark:border-zinc-800/80">
-          <div className="flex items-center justify-between text-[10px] text-slate-500 dark:text-zinc-400 mb-1">
-            <span>Global Macro Index</span>
-            <span className="font-bold text-slate-700 dark:text-zinc-300">{sentimentScore > 0 ? `+${sentimentScore}` : sentimentScore}</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className={`text-sm font-extrabold ${
-              sentimentScore >= 20 ? 'text-emerald-500' : sentimentScore <= -20 ? 'text-rose-500' : 'text-amber-500'
-            }`}>
-              {sentimentLabel.replace('_', ' ')}
-            </span>
-          </div>
-          <div className="w-full bg-slate-200 dark:bg-zinc-800 h-1.5 rounded-full mt-2 overflow-hidden">
-            <div
-              className={`h-full transition-all duration-500 ${
-                sentimentScore >= 0 ? 'bg-emerald-500' : 'bg-rose-500'
-              }`}
-              style={{ width: `${Math.min(100, Math.max(10, (Math.abs(sentimentScore) / 100) * 100))}%` }}
-            />
-          </div>
+      {/* 2. Overview Metric Bar: 4 Clean Gauges */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 pt-1 text-xs">
+        <div className="p-2.5 rounded-lg border border-slate-200 dark:border-[#222d29] bg-slate-50/50 dark:bg-[#0f1513]">
+          <span className="text-[10px] text-slate-400 uppercase font-semibold block">Regime</span>
+          <span className="font-bold text-slate-900 dark:text-white block mt-0.5">
+            {intermarket.riskRegime === 'RISK_OFF' ? 'Risk-Off Safe Haven' : 'Risk-On Liquidity'}
+          </span>
         </div>
 
-        {/* Relative Volume & Footprint */}
-        <div className="p-3 rounded-xl bg-slate-50 dark:bg-zinc-900/70 border border-slate-200 dark:border-zinc-800/80">
-          <div className="flex items-center justify-between text-[10px] text-slate-500 dark:text-zinc-400 mb-1">
-            <span>Volume Footprint</span>
-            <span className="font-bold text-slate-700 dark:text-zinc-300">{volumeMetrics.rvol}x RVOL</span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <Flame className={`w-3.5 h-3.5 ${
-              volumeMetrics.rvol >= 1.8 ? 'text-amber-500 animate-bounce' : 'text-slate-400'
-            }`} />
-            <span className={`text-sm font-extrabold ${
-              volumeMetrics.volumeType === 'DISPLACEMENT'
-                ? 'text-indigo-400'
-                : volumeMetrics.volumeType === 'ABSORPTION'
-                ? 'text-amber-400'
-                : volumeMetrics.volumeType === 'LOW_LIQUIDITY'
-                ? 'text-slate-400'
-                : 'text-slate-200'
-            }`}>
-              {volumeMetrics.volumeType}
-            </span>
-          </div>
-          <div className="text-[10px] text-slate-500 dark:text-zinc-400 mt-1.5 flex items-center justify-between">
-            <span>CVD Delta: {volumeMetrics.cvdDelta > 0 ? `+${volumeMetrics.cvdDelta}` : volumeMetrics.cvdDelta}</span>
-            <span>POC: ${volumeMetrics.pocPrice || '—'}</span>
-          </div>
+        <div className="p-2.5 rounded-lg border border-slate-200 dark:border-[#222d29] bg-slate-50/50 dark:bg-[#0f1513]">
+          <span className="text-[10px] text-slate-400 uppercase font-semibold block">RVOL ({activeSymbol})</span>
+          <span className="font-bold text-slate-900 dark:text-white block mt-0.5">
+            {volumeMetrics.rvol}x · {volumeMetrics.volumeType}
+          </span>
         </div>
 
-        {/* DXY Dollar Index Trend */}
-        <div className="p-3 rounded-xl bg-slate-50 dark:bg-zinc-900/70 border border-slate-200 dark:border-zinc-800/80">
-          <div className="flex items-center justify-between text-[10px] text-slate-500 dark:text-zinc-400 mb-1">
-            <span>DXY Dollar Index</span>
-            <span className={`font-bold ${intermarket.dxyChangePct >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-              {intermarket.dxyChangePct >= 0 ? `+${intermarket.dxyChangePct}%` : `${intermarket.dxyChangePct}%`}
-            </span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            {intermarket.dxyBias === 'bullish' ? (
-              <TrendingUp className="w-3.5 h-3.5 text-emerald-400" />
-            ) : intermarket.dxyBias === 'bearish' ? (
-              <TrendingDown className="w-3.5 h-3.5 text-rose-400" />
-            ) : (
-              <Zap className="w-3.5 h-3.5 text-amber-400" />
-            )}
-            <span className="text-sm font-extrabold uppercase">
-              USD {intermarket.dxyBias}
-            </span>
-          </div>
-          <p className="text-[10px] text-slate-500 dark:text-zinc-400 mt-1.5 truncate">
-            {activeSymbol === 'XAUUSD' || activeSymbol === 'EURUSD'
-              ? intermarket.dxyBias === 'bullish' ? '⚠️ Headwind for BUY' : '⚡ Tailwind for BUY'
-              : 'Intermarket aligned'}
-          </p>
+        <div className="p-2.5 rounded-lg border border-slate-200 dark:border-[#222d29] bg-slate-50/50 dark:bg-[#0f1513]">
+          <span className="text-[10px] text-slate-400 uppercase font-semibold block">DXY Dollar</span>
+          <span className="font-bold text-slate-900 dark:text-white block mt-0.5">
+            {intermarket.dxyBias.toUpperCase()} ({intermarket.dxyChangePct >= 0 ? `+${intermarket.dxyChangePct}%` : `${intermarket.dxyChangePct}%`})
+          </span>
         </div>
 
-        {/* VIX Market Volatility */}
-        <div className="p-3 rounded-xl bg-slate-50 dark:bg-zinc-900/70 border border-slate-200 dark:border-zinc-800/80">
-          <div className="flex items-center justify-between text-[10px] text-slate-500 dark:text-zinc-400 mb-1">
-            <span>VIX Volatility Regime</span>
-            <span className="font-bold text-slate-700 dark:text-zinc-300">{intermarket.vixLevel} pts</span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <span className={`text-sm font-extrabold px-1.5 py-0.5 rounded ${
-              intermarket.vixRegime === 'CRISIS'
-                ? 'bg-rose-500/20 text-rose-400'
-                : intermarket.vixRegime === 'ELEVATED'
-                ? 'bg-amber-500/20 text-amber-400'
-                : 'bg-emerald-500/20 text-emerald-400'
-            }`}>
-              {intermarket.vixRegime}
-            </span>
-            <span className="text-[10px] text-slate-400">({intermarket.recommendedStopBuffer}x SL)</span>
-          </div>
-          <p className="text-[10px] text-slate-500 dark:text-zinc-400 mt-1.5 truncate">
-            {intermarket.vixRegime === 'CALM'
-              ? 'Clean SMC Technicals'
-              : 'Dynamic ATR Stop Buffer Active'}
-          </p>
+        <div className="p-2.5 rounded-lg border border-slate-200 dark:border-[#222d29] bg-slate-50/50 dark:bg-[#0f1513]">
+          <span className="text-[10px] text-slate-400 uppercase font-semibold block">VIX Volatility</span>
+          <span className="font-bold text-slate-900 dark:text-white block mt-0.5">
+            {intermarket.vixLevel} pts · {intermarket.vixRegime}
+          </span>
         </div>
       </div>
 
-      {/* 3. Expandable Deep Intelligence Workspace */}
+      {/* 3. In-Depth Tabbed Deck (Expands cleanly without crowding) */}
       {isExpanded && (
-        <div className="space-y-3 pt-2">
-          {/* Navigation Sub-Tabs */}
-          <div className="flex items-center gap-1 p-1 rounded-xl bg-slate-100 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-[11px] font-semibold">
+        <div className="pt-2 space-y-3">
+          {/* Tabs */}
+          <div className="flex items-center gap-1 border-b border-slate-200 dark:border-[#222d29] pb-1 text-xs font-semibold">
             <button
               onClick={() => setActiveTab('news')}
-              className={`flex-1 py-1.5 px-3 rounded-lg transition-all flex items-center justify-center gap-1.5 ${
+              className={`py-1.5 px-3 rounded-md transition-colors cursor-pointer ${
                 activeTab === 'news'
-                  ? 'bg-white dark:bg-zinc-800 text-slate-900 dark:text-white shadow-sm'
-                  : 'text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white'
+                  ? 'bg-slate-100 dark:bg-[#1a2320] text-slate-900 dark:text-white font-bold'
+                  : 'text-slate-500 hover:text-slate-900 dark:text-slate-400'
               }`}
             >
-              <Radio className="w-3 h-3 text-indigo-400" />
-              <span>Breaking News & Catalysts ({macro?.newsItems.length || 0})</span>
+              Real-Time Financial News ({macro?.newsItems.length || 0})
             </button>
-
             <button
               onClick={() => setActiveTab('calendar')}
-              className={`flex-1 py-1.5 px-3 rounded-lg transition-all flex items-center justify-center gap-1.5 ${
+              className={`py-1.5 px-3 rounded-md transition-colors cursor-pointer ${
                 activeTab === 'calendar'
-                  ? 'bg-white dark:bg-zinc-800 text-slate-900 dark:text-white shadow-sm'
-                  : 'text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white'
+                  ? 'bg-slate-100 dark:bg-[#1a2320] text-slate-900 dark:text-white font-bold'
+                  : 'text-slate-500 hover:text-slate-900 dark:text-slate-400'
               }`}
             >
-              <Zap className="w-3 h-3 text-amber-400" />
-              <span>Economic Surprises ({macro?.economicEvents.length || 0})</span>
+              Economic Calendar ({macro?.economicEvents.length || 0})
             </button>
-
             <button
               onClick={() => setActiveTab('volume')}
-              className={`flex-1 py-1.5 px-3 rounded-lg transition-all flex items-center justify-center gap-1.5 ${
+              className={`py-1.5 px-3 rounded-md transition-colors cursor-pointer ${
                 activeTab === 'volume'
-                  ? 'bg-white dark:bg-zinc-800 text-slate-900 dark:text-white shadow-sm'
-                  : 'text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white'
+                  ? 'bg-slate-100 dark:bg-[#1a2320] text-slate-900 dark:text-white font-bold'
+                  : 'text-slate-500 hover:text-slate-900 dark:text-slate-400'
               }`}
             >
-              <Flame className="w-3 h-3 text-rose-400" />
-              <span>Institutional Order Flow</span>
-            </button>
-
-            <button
-              onClick={() => setActiveTab('intermarket')}
-              className={`flex-1 py-1.5 px-3 rounded-lg transition-all flex items-center justify-center gap-1.5 ${
-                activeTab === 'intermarket'
-                  ? 'bg-white dark:bg-zinc-800 text-slate-900 dark:text-white shadow-sm'
-                  : 'text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white'
-              }`}
-            >
-              <Layers className="w-3 h-3 text-emerald-400" />
-              <span>Intermarket Matrix</span>
+              Order Flow Footprint
             </button>
           </div>
 
-          {/* TAB 1: BREAKING NEWS & HEADLINES */}
+          {/* Tab 1: Real-Time Financial News */}
           {activeTab === 'news' && (
-            <div className="space-y-3">
-              {/* Manual Headline Injection Bar */}
-              <form onSubmit={handleAddCustomHeadline} className="flex items-center gap-2">
-                <div className="relative flex-1">
-                  <input
-                    type="text"
-                    value={customHeadline}
-                    onChange={(e) => setCustomHeadline(e.target.value)}
-                    placeholder="Enter breaking headline or geopolitical alert (e.g. 'OPEC announces unexpected crude supply cut')..."
-                    className="w-full px-3 py-2 rounded-lg bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-xs text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-zinc-500 focus:outline-none focus:border-indigo-500"
-                  />
-                </div>
+            <div className="space-y-2">
+              <form onSubmit={handleAddCustomNews} className="flex gap-2">
+                <input
+                  type="text"
+                  value={customHeadline}
+                  onChange={(e) => setCustomHeadline(e.target.value)}
+                  placeholder="Paste breaking news headline or geopolitical shock..."
+                  className="flex-1 bg-slate-50 dark:bg-[#0f1513] border border-slate-200 dark:border-[#222d29] rounded-lg px-3 py-1.5 text-xs text-slate-900 dark:text-white focus:outline-hidden"
+                />
                 <button
                   type="submit"
                   disabled={!customHeadline.trim() || isSubmittingCustom}
-                  className="px-3 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs transition-colors disabled:opacity-50 shrink-0"
+                  className="px-3 py-1.5 rounded-lg bg-slate-900 text-white dark:bg-white dark:text-black font-bold text-xs hover:opacity-90 disabled:opacity-50 cursor-pointer"
                 >
-                  Analyze & Inject
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void handleRefreshNews()}
-                  disabled={isRefreshingNews}
-                  className="px-3 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-slate-800 dark:text-zinc-200 border border-slate-300 dark:border-zinc-700 font-bold text-xs flex items-center gap-1.5 transition-colors disabled:opacity-50 shrink-0 cursor-pointer"
-                  title="Fetch latest verified real-time financial news from API"
-                >
-                  <RefreshCw className={`w-3.5 h-3.5 ${isRefreshingNews ? 'animate-spin text-indigo-400' : ''}`} />
-                  <span>{isRefreshingNews ? 'Fetching...' : 'Fetch Live News'}</span>
+                  Add Headline
                 </button>
               </form>
 
-              {/* Headline Stream */}
-              <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
-                {(macro?.newsItems || []).map((item) => (
-                  <div
-                    key={item.id}
-                    className="p-3 rounded-xl bg-slate-50 dark:bg-zinc-900/60 border border-slate-200 dark:border-zinc-800/80 hover:border-slate-300 dark:hover:border-zinc-700 transition-colors space-y-2"
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="space-y-1 flex-1">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase ${
-                            item.urgency === 'FLASH'
-                              ? 'bg-rose-500/20 text-rose-500 border border-rose-500/30 animate-pulse'
-                              : item.urgency === 'BREAKING'
-                              ? 'bg-amber-500/20 text-amber-500 border border-amber-500/30'
-                              : 'bg-slate-200 dark:bg-zinc-800 text-slate-700 dark:text-zinc-300'
-                          }`}>
-                            {item.urgency}
-                          </span>
-                          <span className="px-1.5 py-0.2 rounded bg-slate-200 dark:bg-zinc-800 text-[10px] font-bold text-slate-600 dark:text-zinc-400">
-                            {item.catalystType}
-                          </span>
-                          <span className="text-[10px] text-slate-400 dark:text-zinc-500">
-                            {item.source} · {new Date(item.publishedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+              <div className="divide-y divide-slate-100 dark:divide-[#222d29] max-h-72 overflow-y-auto">
+                {macro?.newsItems && macro.newsItems.length > 0 ? (
+                  macro.newsItems.map((item: NewsSentimentItem) => (
+                    <div key={item.id} className="py-2.5 flex items-start justify-between gap-3 text-xs">
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-slate-800 dark:text-slate-200">{item.title}</span>
+                          {item.link && (
+                            <a
+                              href={item.link}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-sky-600 dark:text-sky-400 hover:underline flex items-center gap-0.5 text-[11px]"
+                            >
+                              <span>Read</span>
+                              <ExternalLink className="w-3 h-3" />
+                            </a>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2 text-[11px] text-slate-400 dark:text-slate-500">
+                          <span>{item.source}</span>
+                          <span>·</span>
+                          <span>{item.publishedAt}</span>
+                          <span>·</span>
+                          <span className={item.sentimentScore > 0 ? 'text-emerald-500 font-bold' : item.sentimentScore < 0 ? 'text-rose-500 font-bold' : 'text-slate-400'}>
+                            {item.sentimentScore > 0 ? `+${(item.sentimentScore * 100).toFixed(0)} Bullish` : item.sentimentScore < 0 ? `${(item.sentimentScore * 100).toFixed(0)} Bearish` : 'Neutral'}
                           </span>
                         </div>
-                        <h4 className="font-semibold text-xs text-slate-900 dark:text-zinc-100 leading-snug">
-                          {item.title}
-                        </h4>
-                        <p className="text-[11px] text-slate-500 dark:text-zinc-400 leading-relaxed">
-                          {item.summary}
-                        </p>
-                      </div>
-
-                      <div className="flex flex-col items-end gap-1.5 shrink-0">
-                        <div className={`px-2 py-1 rounded-lg text-xs font-black ${
-                          item.sentimentScore > 0
-                            ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
-                            : item.sentimentScore < 0
-                            ? 'bg-rose-500/15 text-rose-400 border border-rose-500/30'
-                            : 'bg-zinc-800 text-zinc-400 border border-zinc-700'
-                        }`}>
-                          {item.sentimentScore > 0 ? `+${(item.sentimentScore * 100).toFixed(0)}%` : `${(item.sentimentScore * 100).toFixed(0)}%`}
-                        </div>
-
-                        {item.link && (
-                          <a
-                            href={item.link}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="px-2 py-1 rounded bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-slate-700 dark:text-zinc-300 border border-slate-300 dark:border-zinc-700 text-[10px] font-bold flex items-center gap-1 transition-colors"
-                          >
-                            <ExternalLink className="w-3 h-3 text-slate-400" />
-                            <span>Article</span>
-                          </a>
-                        )}
                       </div>
                     </div>
-                  </div>
-                ))}
+                  ))
+                ) : (
+                  <div className="py-4 text-center text-slate-400">No headlines ingested. Click &apos;Fetch News&apos; to load live RSS feed.</div>
+                )}
               </div>
             </div>
           )}
 
-          {/* TAB 2: ECONOMIC SURPRISES & CALENDAR DELTAS */}
+          {/* Tab 2: Economic Calendar */}
           {activeTab === 'calendar' && (
             <div className="space-y-2">
-              <div className="flex items-center justify-between text-[11px] text-slate-500 dark:text-zinc-400 pb-1">
-                <span>Event / Currency</span>
-                <div className="flex items-center gap-6">
-                  <span>Actual / Forecast</span>
-                  <span>Macro Surprise</span>
-                </div>
-              </div>
-
-              {(macro?.economicEvents || []).length === 0 ? (
-                <div className="p-6 rounded-xl bg-slate-50 dark:bg-zinc-900 border border-dashed border-slate-300 dark:border-zinc-800 text-center text-slate-500 dark:text-zinc-400 text-xs">
-                  No pending or recent high-impact macroeconomic releases for current currency pairs.
-                </div>
-              ) : (
-                <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
-                  {(macro?.economicEvents || []).map((ev) => (
-                    <div
-                      key={ev.id}
-                      className="p-3 rounded-xl bg-slate-50 dark:bg-zinc-900/60 border border-slate-200 dark:border-zinc-800 flex items-center justify-between gap-3"
-                    >
-                      <div className="space-y-0.5">
-                        <div className="flex items-center gap-2">
-                          <span className="px-1.5 py-0.5 rounded bg-slate-200 dark:bg-zinc-800 font-bold text-[10px] text-slate-700 dark:text-zinc-300">
-                            {ev.currency}
-                          </span>
-                          <span className="font-bold text-xs text-slate-900 dark:text-white">
-                            {ev.event}
-                          </span>
-                          <span className={`text-[10px] font-bold ${
-                            ev.impact === 'high' ? 'text-rose-400' : 'text-amber-400'
-                          }`}>
-                            [{ev.impact.toUpperCase()}]
-                          </span>
+              <div className="divide-y divide-slate-100 dark:divide-[#222d29] max-h-72 overflow-y-auto">
+                {macro?.economicEvents && macro.economicEvents.length > 0 ? (
+                  macro.economicEvents.map((event: EconomicEvent) => (
+                    <div key={event.id} className="py-2.5 flex items-center justify-between text-xs">
+                      <div>
+                        <div className="font-bold text-slate-800 dark:text-slate-200">{event.event}</div>
+                        <div className="text-[11px] text-slate-400">
+                          {event.currency} · Forecast: {event.forecast} · Previous: {event.previous}
                         </div>
-                        <p className="text-[10px] text-slate-400 dark:text-zinc-500">
-                          {ev.minutesRemaining > 0
-                            ? `Releases in ${ev.minutesRemaining}m`
-                            : `Printed ${Math.abs(ev.minutesRemaining)}m ago`}
-                        </p>
                       </div>
-
-                      <div className="flex items-center gap-4 text-right">
-                        <div>
-                          <div className="text-xs font-bold text-slate-800 dark:text-zinc-200">
-                            Act: {ev.actual || '—'} / Est: {ev.forecast}
-                          </div>
-                          <div className="text-[10px] text-slate-400 dark:text-zinc-500">
-                            Prev: {ev.previous}
-                          </div>
-                        </div>
-
-                        <span className={`px-2 py-1 rounded-lg text-[11px] font-black uppercase ${
-                          ev.surpriseDirection === 'BULLISH'
-                            ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
-                            : ev.surpriseDirection === 'BEARISH'
-                            ? 'bg-rose-500/15 text-rose-400 border border-rose-500/30'
-                            : ev.surpriseDirection === 'INLINE'
-                            ? 'bg-zinc-800 text-zinc-300'
-                            : 'bg-zinc-800/50 text-zinc-500'
-                        }`}>
-                          {ev.surpriseDirection || 'PENDING'}
+                      <div className="text-right">
+                        <span className="font-bold text-slate-600 dark:text-slate-300">
+                          {event.time}
                         </span>
                       </div>
                     </div>
-                  ))}
-                </div>
-              )}
+                  ))
+                ) : (
+                  <div className="py-4 text-center text-slate-400">No high-impact macro surprises recorded for this session.</div>
+                )}
+              </div>
             </div>
           )}
 
-          {/* TAB 3: INSTITUTIONAL ORDER FLOW & RVOL */}
+          {/* Tab 3: Order Flow Footprint */}
           {activeTab === 'volume' && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-zinc-900/60 border border-slate-200 dark:border-zinc-800 space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="font-bold text-xs text-slate-800 dark:text-zinc-200">RVOL Institutional Multiplier</span>
-                  <span className="text-xs font-extrabold text-indigo-400">{volumeMetrics.rvol}x</span>
-                </div>
-                <p className="text-[11px] text-slate-500 dark:text-zinc-400 leading-relaxed">
-                  {volumeMetrics.rvol >= 2.0
-                    ? '⚡ Institutional Climax: Volume is over 200% of rolling 20-period baseline. High-probability continuation or exhaustion absorption.'
-                    : volumeMetrics.rvol >= 1.4
-                    ? 'Confirmed Institutional Flow: Adequate liquidity for clean SMC mitigation entries.'
-                    : 'Low Volume Retail Chop: Sub-baseline volume. Watch for liquidity sweeps and fakeouts.'}
-                </p>
-                <div className="flex items-center gap-2 pt-1 text-[11px]">
-                  <span className="text-slate-400">Current Volume:</span>
-                  <span className="font-bold text-white">{volumeMetrics.currentVolume.toLocaleString()}</span>
-                  <span className="text-slate-500">|</span>
-                  <span className="text-slate-400">20-Bar Baseline:</span>
-                  <span className="font-bold text-white">{volumeMetrics.avgVolume20.toLocaleString()}</span>
-                </div>
+            <div className="p-3 rounded-lg border border-slate-200 dark:border-[#222d29] bg-slate-50/50 dark:bg-[#0f1513] space-y-2 text-xs">
+              <div className="flex justify-between">
+                <span className="text-slate-500">Relative Volume (RVOL):</span>
+                <span className="font-bold text-slate-900 dark:text-white">{volumeMetrics.rvol}x</span>
               </div>
-
-              <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-zinc-900/60 border border-slate-200 dark:border-zinc-800 space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="font-bold text-xs text-slate-800 dark:text-zinc-200">Volume Footprint Type</span>
-                  <span className="px-2 py-0.5 rounded text-[11px] font-black bg-indigo-500/20 text-indigo-400 border border-indigo-500/30">
-                    {volumeMetrics.volumeType}
-                  </span>
-                </div>
-                <p className="text-[11px] text-slate-500 dark:text-zinc-400 leading-relaxed">
-                  {volumeMetrics.volumeType === 'DISPLACEMENT'
-                    ? 'Displacement Body: Expansion candle body exceeds 50% of range with high volume, confirming directional order flow.'
-                    : volumeMetrics.volumeType === 'ABSORPTION'
-                    ? 'Absorption Wick: Large rejection wick with high volume indicates smart money absorbing all incoming market orders.'
-                    : 'Neutral / Standard Order Flow without acute institutional anomaly.'}
-                </p>
-                <div className="flex items-center justify-between pt-1 text-[11px]">
-                  <span className="text-slate-400">Point of Control (POC):</span>
-                  <span className="font-bold text-amber-400">${volumeMetrics.pocPrice || '—'}</span>
-                </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Volume Footprint Type:</span>
+                <span className="font-bold text-slate-900 dark:text-white">{volumeMetrics.volumeType}</span>
               </div>
-            </div>
-          )}
-
-          {/* TAB 4: INTERMARKET CORRELATION */}
-          {activeTab === 'intermarket' && (
-            <div className="p-4 rounded-xl bg-slate-50 dark:bg-zinc-900/60 border border-slate-200 dark:border-zinc-800 space-y-3">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2 font-bold text-xs text-slate-800 dark:text-zinc-200">
-                  <Layers className="w-4 h-4 text-emerald-400" />
-                  <span>Macro Asset Correlation Dashboard</span>
-                </div>
-                <span className="text-[11px] text-slate-400">
-                  Adaptive SL Buffer: <strong className="text-white">{intermarket.recommendedStopBuffer}x ATR</strong>
-                </span>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Cumulative Volume Delta (CVD):</span>
+                <span className="font-bold text-slate-900 dark:text-white">{volumeMetrics.cvdDelta > 0 ? `+${volumeMetrics.cvdDelta}` : volumeMetrics.cvdDelta}</span>
               </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
-                <div className="p-2.5 rounded-lg bg-slate-100 dark:bg-zinc-800/50 border border-slate-200 dark:border-zinc-700/60 space-y-1">
-                  <div className="text-[10px] text-slate-400">USD Dollar Index (DXY)</div>
-                  <div className="text-sm font-extrabold text-slate-100">{intermarket.dxyBias.toUpperCase()}</div>
-                  <div className="text-[10px] text-slate-500">Weight: 57.6% EUR, 13.6% JPY, 11.9% GBP</div>
-                </div>
-
-                <div className="p-2.5 rounded-lg bg-slate-100 dark:bg-zinc-800/50 border border-slate-200 dark:border-zinc-700/60 space-y-1">
-                  <div className="text-[10px] text-slate-400">Volatility Regime (VIX)</div>
-                  <div className="text-sm font-extrabold text-amber-400">{intermarket.vixRegime} ({intermarket.vixLevel})</div>
-                  <div className="text-[10px] text-slate-500">Buffer: {intermarket.recommendedStopBuffer}x ATR padding</div>
-                </div>
-
-                <div className="p-2.5 rounded-lg bg-slate-100 dark:bg-zinc-800/50 border border-slate-200 dark:border-zinc-700/60 space-y-1">
-                  <div className="text-[10px] text-slate-400">Gold Safe-Haven Catalyst</div>
-                  <div className="text-xs font-bold text-slate-200 truncate">{intermarket.goldDriver}</div>
-                  <div className="text-[10px] text-slate-500">Risk-off capital rotation</div>
-                </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Point of Control (POC):</span>
+                <span className="font-bold text-slate-900 dark:text-white">${volumeMetrics.pocPrice || 'Tracking...'}</span>
               </div>
             </div>
           )}
@@ -565,4 +299,4 @@ export const MacroSentimentRadar: React.FC<MacroSentimentRadarProps> = ({ compac
       )}
     </div>
   );
-};
+});

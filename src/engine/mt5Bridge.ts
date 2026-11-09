@@ -1,4 +1,4 @@
-import { Candle, ClosedTrade, EconomicEvent, InstrumentType, TradeDirection } from '../types/smc';
+import { Candle, ClosedTrade, EconomicEvent, InstrumentType, TradeDirection, NewsSentimentItem } from '../types/smc';
 import type { SymbolRiskSpec } from './riskConfig';
 
 export interface BridgeAccountSnapshot {
@@ -712,6 +712,32 @@ export class MT5BridgeConnector {
       console.warn(`[MT5 Bridge] Economic calendar unavailable; standard setups remain blocked: ${detail}`);
     } finally {
       this.calendarInFlight = false;
+    }
+  }
+
+  public async fetchLiveNews(): Promise<NewsSentimentItem[] | null> {
+    try {
+      const response = await this.request<{
+        available: boolean;
+        news: Array<{ id: string; title: string; summary: string; source: string; publishedAt: string; link?: string }>;
+      }>('/api/live-news', {});
+      if (!response.available || !Array.isArray(response.news)) {
+        return null;
+      }
+      return response.news.map((n) => ({
+        id: n.id,
+        title: n.title,
+        summary: n.summary,
+        source: n.source,
+        publishedAt: n.publishedAt,
+        link: n.link,
+        sentimentScore: 0,
+        urgency: 'BREAKING' as const,
+        catalystType: 'MARKET_FLOW' as const,
+        affectedAssets: ['USD'],
+      }));
+    } catch {
+      return null;
     }
   }
 

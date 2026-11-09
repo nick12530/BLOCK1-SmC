@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { TerminalSnapshot } from '../types/smc';
-import { Sparkles, RefreshCw } from 'lucide-react';
-import { GoogleGenAI } from '@google/genai';
+import { Compass, RefreshCw, Layers, ShieldAlert, CheckCircle2 } from 'lucide-react';
 
 interface AiAnalystProps {
   snapshot: TerminalSnapshot;
@@ -11,52 +10,42 @@ export const AiAnalyst: React.FC<AiAnalystProps> = ({ snapshot }) => {
   const [analysis, setAnalysis] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
-  const generateAnalysis = async () => {
+  const generateAnalysis = () => {
     if (!snapshot.brokerMarketData) {
-      setAnalysis('Analysis unavailable: connect MT5 and wait for verified broker candles before requesting a market brief.');
+      setAnalysis('Analysis unavailable: connect MT5 and wait for verified broker candles before generating an SMC order flow brief.');
       return;
     }
     setIsLoading(true);
 
-    const promptContext = `You are a Tier-1 institutional FX & Commodities market analyst specializing in Smart Money Concepts (SMC) and order flow for Gold (XAUUSD).
-Analyze the current live market state:
-- Current Bid Price: ${snapshot.bid.toFixed(2)}, Ask: ${snapshot.ask.toFixed(2)}, Spread: ${snapshot.spread} pts
-- 24h Range: High ${snapshot.high24h.toFixed(2)} - Low ${snapshot.low24h.toFixed(2)} (Change: ${snapshot.change24h > 0 ? '+' : ''}${snapshot.change24h} / ${snapshot.change24hPct}%)
-- H1 Market Structure Bias: ${snapshot.bias.toUpperCase()}
-- Last BOS: ${snapshot.bos ? `${snapshot.bos.kind} at ${snapshot.bos.price} (${snapshot.bos.direction})` : 'None'}
-- Last CHoCH: ${snapshot.choch ? `${snapshot.choch.price} (${snapshot.choch.direction})` : 'None'}
-- HTF Dealing Range: Low ${snapshot.dealing_range?.low} to High ${snapshot.dealing_range?.high} (Equilibrium: ${snapshot.dealing_range?.equilibrium})
-- Current Dealing Position: ${snapshot.price_pos !== null ? (snapshot.price_pos < 0.5 ? 'DISCOUNT (< EQ)' : 'PREMIUM (> EQ)') : 'Unknown'}
-- Unmitigated Zones: ${snapshot.zones.map((z) => `${z.kind} ${z.bullish ? 'Demand' : 'Supply'} (${z.bottom}-${z.top}) with ${z.tests} tests`).join('; ')}
-- Institutional Session: ${snapshot.session.activeSessionName} (Tradable: ${snapshot.session.tradable})
-- Active Signal: ${snapshot.signal ? `${snapshot.signal.direction} with confluence score ${snapshot.signal.score} (SL: ${snapshot.signal.sl}, TP: ${snapshot.signal.tp})` : 'No active setup above 5.0 threshold'}
-
-Provide an ultra-concise, institutional trading brief in 3 short bullet sections:
-1. Institutional Order Flow & Liquidity
-2. Dealing Range & Zone POI Context
-3. Tactical Execution Plan
-Be professional, analytical, and direct. Avoid conversational filler.`;
-
     try {
-      const runtimeEnv = typeof process !== 'undefined' ? process.env : undefined;
-      const apiKey =
-        import.meta.env.VITE_GEMINI_API_KEY ||
-        runtimeEnv?.VITE_GEMINI_API_KEY ||
-        runtimeEnv?.GEMINI_API_KEY ||
-        undefined;
+      const positionStr = snapshot.price_pos !== null 
+        ? (snapshot.price_pos < 0.5 
+            ? `Discount Zone (${(snapshot.price_pos * 100).toFixed(1)}% of Dealing Range - Favors Longs)`
+            : `Premium Zone (${(snapshot.price_pos * 100).toFixed(1)}% of Dealing Range - Favors Shorts)`)
+        : 'Dealing Range Equilibrium';
 
-      if (!apiKey || apiKey === 'MY_GEMINI_API_KEY') {
-        setAnalysis('Analysis unavailable: configure VITE_GEMINI_API_KEY to generate a brief from the verified MT5 snapshot.');
-        return;
-      }
-      const ai = new GoogleGenAI({ apiKey });
-      const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: promptContext,
-      });
-      setAnalysis(response.text || 'The analysis service returned no content.');
-    } catch (error) {
-      setAnalysis(`Analysis failed: ${error instanceof Error ? error.message : 'Unknown analysis service error.'}`);
+      const biasText = snapshot.bias.toUpperCase();
+      const unmitigatedSupply = snapshot.zones.filter((z) => !z.bullish && z.tests === 0);
+      const unmitigatedDemand = snapshot.zones.filter((z) => z.bullish && z.tests === 0);
+
+      const brief = `• 1. Institutional Order Flow & Market Structure:
+H1 bias is ${biasText} with live Bid at ${snapshot.bid.toFixed(2)} and Ask at ${snapshot.ask.toFixed(2)} (Spread: ${snapshot.spread} pts).
+${snapshot.bos ? `Latest Break of Structure (BOS): ${snapshot.bos.kind} at ${snapshot.bos.price.toFixed(2)} (${snapshot.bos.direction}).` : 'No recent H1 BOS.'}
+${snapshot.choch ? `Change of Character (CHoCH): Detected at ${snapshot.choch.price.toFixed(2)} (${snapshot.choch.direction}) signaling structural shift.` : 'Structure remains intact without conflicting CHoCH.'}
+24h Volatility Range: Low ${snapshot.low24h.toFixed(2)} to High ${snapshot.high24h.toFixed(2)} (Net Change: ${snapshot.change24h > 0 ? '+' : ''}${snapshot.change24h.toFixed(2)} / ${snapshot.change24hPct.toFixed(2)}%).
+
+• 2. Dealing Range & Zone POI Context:
+HTF Dealing Range: Low ${snapshot.dealing_range?.low.toFixed(2)} ⟷ High ${snapshot.dealing_range?.high.toFixed(2)} (Equilibrium 50%: ${snapshot.dealing_range?.equilibrium.toFixed(2)}).
+Current Price Position: ${positionStr}.
+Order Block Liquidity: ${unmitigatedDemand.length} unmitigated Demand POIs (${unmitigatedDemand.map((z) => `${z.bottom.toFixed(2)}-${z.top.toFixed(2)}`).slice(0, 2).join(', ') || 'None'}) | ${unmitigatedSupply.length} unmitigated Supply POIs (${unmitigatedSupply.map((z) => `${z.bottom.toFixed(2)}-${z.top.toFixed(2)}`).slice(0, 2).join(', ') || 'None'}).
+
+• 3. Tactical Execution Plan & Session Liquidity:
+Active Session: ${snapshot.session.activeSessionName} (Tradable: ${snapshot.session.tradable ? 'YES - Optimal Volatility Window' : 'NO - Low Liquidity / Off-Hours'}).
+${snapshot.signal 
+  ? `Active Setup: ${snapshot.signal.direction} Triggered | Confluence Score: ${snapshot.signal.score}/10 | SL: ${snapshot.signal.sl.toFixed(2)} | TP: ${snapshot.signal.tp.toFixed(2)} (R:R ${((Math.abs(snapshot.signal.tp - snapshot.bid) / Math.max(0.01, Math.abs(snapshot.bid - snapshot.signal.sl)))).toFixed(1)}:1).`
+  : 'Tactical Stance: Monitoring for liquidity sweep into unmitigated POI prior to high-confluence entry trigger.'}`;
+
+      setAnalysis(brief);
     } finally {
       setIsLoading(false);
     }
@@ -66,7 +55,7 @@ Be professional, analytical, and direct. Avoid conversational filler.`;
     <div className="flex flex-col gap-3 font-mono text-xs">
       <div className="flex items-center justify-between pb-2 border-b border-[#1e2a3d]">
         <div className="flex items-center gap-1.5 text-white font-semibold">
-          <Sparkles className="w-3.5 h-3.5 text-[#4f8ef7]" />
+          <Compass className="w-3.5 h-3.5 text-[#4f8ef7]" />
           <span>Institutional Order Flow Analyst</span>
         </div>
         <button
@@ -75,7 +64,7 @@ Be professional, analytical, and direct. Avoid conversational filler.`;
           className="flex items-center gap-1 px-2 py-1 rounded bg-[#1a2436] hover:bg-[#24334d] text-[#4f8ef7] text-[11px] font-semibold transition-colors disabled:opacity-50"
         >
           <RefreshCw className={`w-3 h-3 ${isLoading ? 'animate-spin' : ''}`} />
-          <span>{analysis ? 'Refresh' : 'Analyze Flow'}</span>
+          <span>{analysis ? 'Refresh Brief' : 'Generate Brief'}</span>
         </button>
       </div>
 
@@ -86,7 +75,7 @@ Be professional, analytical, and direct. Avoid conversational filler.`;
       ) : (
         <div className="bg-[#0b0f17] border border-dashed border-[#1e2a3d] rounded-lg p-4 text-center space-y-2">
           <p className="text-[#6b7a90] text-[11px]">
-            Synthesizes market structure, dealing ranges, unmitigated order blocks, and session liquidity into an institutional trading narrative.
+            Synthesizes market structure, dealing ranges, unmitigated order blocks, and session liquidity into a deterministic institutional order flow brief in real time.
           </p>
           <button
             onClick={generateAnalysis}

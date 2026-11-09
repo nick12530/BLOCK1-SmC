@@ -5,7 +5,7 @@
  * 1. Global Macro Regime (Risk-On / Risk-Off, VIX Volatility Level, DXY Dollar Index)
  * 2. Institutional Relative Volume (RVOL) & Volume Footprint (Displacement vs Absorption)
  * 3. Macroeconomic Calendar Surprises (Actual vs. Forecast with Surprise Deltas)
- * 4. Streaming Financial News & Geopolitical Shock Feed with Gemini NLP Sentiment
+ * 4. Real-Time Financial News & Geopolitical Shock Feed with Live RSS/API Parsing
  * 5. Intermarket Correlation Matrix with Dynamic Stop-Loss Multipliers
  */
 
@@ -45,8 +45,7 @@ export const MacroSentimentRadar: React.FC<MacroSentimentRadarProps> = ({ compac
 
   const [activeTab, setActiveTab] = useState<'news' | 'calendar' | 'volume' | 'intermarket'>('news');
   const [isExpanded, setIsExpanded] = useState(!compact);
-  const [analyzingId, setAnalyzingId] = useState<string | null>(null);
-  const [geminiAnalysis, setGeminiAnalysis] = useState<{ id: string; text: string; score: number } | null>(null);
+  const [isRefreshingNews, setIsRefreshingNews] = useState(false);
   const [customHeadline, setCustomHeadline] = useState('');
   const [isSubmittingCustom, setIsSubmittingCustom] = useState(false);
 
@@ -77,17 +76,12 @@ export const MacroSentimentRadar: React.FC<MacroSentimentRadarProps> = ({ compac
   const sentimentScore = macro?.globalSentimentScore ?? 25;
   const sentimentLabel = macro?.globalSentimentLabel ?? 'BULLISH';
 
-  const handleAnalyzeWithGemini = async (item: NewsSentimentItem) => {
-    setAnalyzingId(item.id);
+  const handleRefreshNews = async () => {
+    setIsRefreshingNews(true);
     try {
-      const res = await newsSentimentEngine.analyzeWithGemini(item.title);
-      setGeminiAnalysis({
-        id: item.id,
-        text: res.summary,
-        score: res.score,
-      });
+      await newsSentimentEngine.fetchLiveNews();
     } finally {
-      setAnalyzingId(null);
+      setIsRefreshingNews(false);
     }
   };
 
@@ -339,6 +333,16 @@ export const MacroSentimentRadar: React.FC<MacroSentimentRadarProps> = ({ compac
                 >
                   Analyze & Inject
                 </button>
+                <button
+                  type="button"
+                  onClick={() => void handleRefreshNews()}
+                  disabled={isRefreshingNews}
+                  className="px-3 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-slate-800 dark:text-zinc-200 border border-slate-300 dark:border-zinc-700 font-bold text-xs flex items-center gap-1.5 transition-colors disabled:opacity-50 shrink-0 cursor-pointer"
+                  title="Fetch latest verified real-time financial news from API"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isRefreshingNews ? 'animate-spin text-indigo-400' : ''}`} />
+                  <span>{isRefreshingNews ? 'Fetching...' : 'Fetch Live News'}</span>
+                </button>
               </form>
 
               {/* Headline Stream */}
@@ -386,26 +390,19 @@ export const MacroSentimentRadar: React.FC<MacroSentimentRadarProps> = ({ compac
                           {item.sentimentScore > 0 ? `+${(item.sentimentScore * 100).toFixed(0)}%` : `${(item.sentimentScore * 100).toFixed(0)}%`}
                         </div>
 
-                        <button
-                          onClick={() => void handleAnalyzeWithGemini(item)}
-                          disabled={analyzingId === item.id}
-                          className="px-2 py-1 rounded bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 border border-indigo-500/30 text-[10px] font-bold flex items-center gap-1 transition-colors disabled:opacity-50"
-                        >
-                          <Sparkles className={`w-3 h-3 ${analyzingId === item.id ? 'animate-spin' : ''}`} />
-                          <span>{analyzingId === item.id ? 'Analyzing...' : 'Gemini AI'}</span>
-                        </button>
+                        {item.link && (
+                          <a
+                            href={item.link}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="px-2 py-1 rounded bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-slate-700 dark:text-zinc-300 border border-slate-300 dark:border-zinc-700 text-[10px] font-bold flex items-center gap-1 transition-colors"
+                          >
+                            <ExternalLink className="w-3 h-3 text-slate-400" />
+                            <span>Article</span>
+                          </a>
+                        )}
                       </div>
                     </div>
-
-                    {geminiAnalysis?.id === item.id && (
-                      <div className="p-2.5 rounded-lg bg-indigo-950/30 border border-indigo-500/30 text-indigo-200 text-[11px] space-y-1">
-                        <div className="flex items-center gap-1.5 font-bold text-indigo-400">
-                          <Sparkles className="w-3.5 h-3.5" />
-                          <span>Gemini Institutional Synthesis</span>
-                        </div>
-                        <p>{geminiAnalysis.text}</p>
-                      </div>
-                    )}
                   </div>
                 ))}
               </div>

@@ -274,6 +274,7 @@ export interface NewsSentimentItem {
   catalystType: 'MACRO_DATA' | 'CENTRAL_BANK' | 'GEOPOLITICAL' | 'EARNINGS' | 'MARKET_FLOW';
   affectedAssets: string[]; // e.g. ['USD', 'XAUUSD', 'EURUSD']
   summary: string;
+  link?: string;
 }
 
 export interface IntermarketStatus {

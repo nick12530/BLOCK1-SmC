@@ -48,6 +48,9 @@ _closed_trades_cache_ttl = 5.0  # Cache closed trades for 5s to eliminate redund
 _economic_calendar_cache: tuple[float, str, list[dict]] | None = None
 _economic_calendar_cache_lock = threading.Lock()
 _economic_calendar_cache_ttl = 15 * 60
+_live_news_cache: tuple[float, list[dict]] | None = None
+_live_news_cache_lock = threading.Lock()
+_live_news_cache_ttl = 60.0
 RISK_CONFIG = json.loads((Path(__file__).resolve().parents[1] / "risk-config.json").read_text(encoding="utf-8"))
 STATE_DIRECTORY = Path(os.environ.get("LOCALAPPDATA", str(Path.home()))) / "SMCBridge"
 STATE_DIRECTORY.mkdir(parents=True, exist_ok=True)
@@ -812,6 +815,86 @@ def economic_calendar(request: Request) -> dict:
         status_code=503,
         detail=f"Economic calendar is unavailable: {failure_summary}.",
     )
+
+
+@app.get("/api/live-news")
+def live_news(request: Request) -> dict:
+    require_bridge_token(request)
+    global _live_news_cache
+
+    now_monotonic = time.monotonic()
+    with _live_news_cache_lock:
+        if (
+            _live_news_cache is not None
+            and now_monotonic - _live_news_cache[0] < _live_news_cache_ttl
+        ):
+            return {
+                "available": True,
+                "news": _live_news_cache[1],
+                "updatedAt": datetime.now(timezone.utc).isoformat(),
+            }
+
+    rss_urls = [
+        ("MarketWatch Top Stories", "https://feeds.content.dowjones.io/public/rss/mw_topstories"),
+        ("MarketWatch Real-time", "https://feeds.content.dowjones.io/public/rss/mw_realtimeheadlines"),
+    ]
+    parsed_items: list[dict[str, Any]] = []
+
+    import xml.etree.ElementTree as ET
+
+    for source_name, url in rss_urls:
+        req = UrlRequest(url, headers={"User-Agent": "NIFTY-Terminal/1.0", "Accept": "application/xml, text/xml"})
+        try:
+            with urlopen(req, timeout=8) as resp:
+                xml_data = resp.read()
+                root = ET.fromstring(xml_data)
+                channel = root.find("channel")
+                if channel is not None:
+                    for item in channel.findall("item"):
+                        title_el = item.find("title")
+                        desc_el = item.find("description")
+                        link_el = item.find("link")
+                        pub_el = item.find("pubDate")
+                        guid_el = item.find("guid")
+
+                        title = (title_el.text or "").strip() if title_el is not None else ""
+                        desc = (desc_el.text or "").strip() if desc_el is not None else ""
+                        link = (link_el.text or "").strip() if link_el is not None else ""
+                        pub_date = (pub_el.text or "").strip() if pub_el is not None else ""
+                        guid = (guid_el.text or "").strip() if guid_el is not None else title
+
+                        if title and len(title) > 5 and not any(p["title"] == title for p in parsed_items):
+                            parsed_items.append({
+                                "id": f"rss:{guid or title[:30]}",
+                                "title": title,
+                                "summary": desc or title,
+                                "source": source_name,
+                                "publishedAt": pub_date or datetime.now(timezone.utc).isoformat(),
+                                "link": link,
+                            })
+                            if len(parsed_items) >= 20:
+                                break
+        except Exception as e:
+            logger.warning(f"Live news fetch failed from {url}: {e}")
+            continue
+
+        if len(parsed_items) >= 15:
+            break
+
+    if parsed_items:
+        with _live_news_cache_lock:
+            _live_news_cache = (now_monotonic, parsed_items)
+        return {
+            "available": True,
+            "news": parsed_items,
+            "updatedAt": datetime.now(timezone.utc).isoformat(),
+        }
+
+    return {
+        "available": False,
+        "news": [],
+        "message": "Live financial news feed temporarily unreachable",
+    }
 
 
 @app.post("/api/connect")

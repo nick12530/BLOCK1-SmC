@@ -43,6 +43,7 @@ import { TradingViewWidget } from './components/TradingViewWidget';
 import { SignalEngineCard } from './components/SignalEngineCard';
 import { RunningTradesHUD } from './components/RunningTradesHUD';
 import { SignalQualityCard } from './components/SignalQualityCard';
+import { MacroSentimentRadar } from './components/MacroSentimentRadar';
 
 // Floating Notification Beacon
 import { SignalToastNotification } from './components/SignalToastNotification';
@@ -373,6 +374,11 @@ export default function App() {
                 onOpenHelp={handleOpenHelp}
               />
             </div>
+          </div>
+
+          {/* Institutional Macro, News Sentiment & Volume Order Flow Radar */}
+          <div className="min-w-0">
+            <MacroSentimentRadar />
           </div>
 
           <SignalQualityCard

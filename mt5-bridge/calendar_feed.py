@@ -29,6 +29,48 @@ IMPACT_LEVELS = {
 }
 
 
+def parse_numeric(val: Any) -> float | None:
+    if val is None:
+        return None
+    cleaned = str(val).strip().replace(",", "")
+    # Strip symbols like %, K, M, B
+    for suffix in ("%", "K", "k", "M", "m", "B", "b"):
+        if cleaned.endswith(suffix):
+            cleaned = cleaned[:-1]
+            break
+    try:
+        return float(cleaned)
+    except (ValueError, TypeError):
+        return None
+
+
+def calculate_surprise(
+    event_name: str,
+    actual: float | None,
+    estimate: float | None,
+) -> tuple[float | None, str]:
+    if actual is None or estimate is None:
+        return None, "PENDING"
+    delta = actual - estimate
+    if abs(delta) < 1e-6:
+        return 0.0, "INLINE"
+
+    # Higher is generally bullish for currency unless it's unemployment
+    is_inverse = "unemployment" in event_name.lower() or "jobless" in event_name.lower()
+    if delta > 0:
+        direction = "BEARISH" if is_inverse else "BULLISH"
+    else:
+        direction = "BULLISH" if is_inverse else "BEARISH"
+
+    # Normalize relative surprise score capped between -2.0 and +2.0
+    denom = max(abs(estimate), 0.5)
+    normalized = max(-2.0, min(2.0, round((delta / denom) * 2.0, 2)))
+    if is_inverse:
+        normalized = -normalized
+
+    return normalized, direction
+
+
 def normalize_finnhub_calendar(
     records: list[dict[str, Any]],
     now: datetime | None = None,
@@ -61,6 +103,12 @@ def normalize_finnhub_calendar(
         if seconds_remaining < 0 or seconds_remaining > 7 * 24 * 60 * 60:
             continue
 
+        raw_actual = record.get("actual")
+        raw_estimate = record.get("estimate")
+        act_num = parse_numeric(raw_actual)
+        est_num = parse_numeric(raw_estimate)
+        surprise_score, surprise_dir = calculate_surprise(event_name, act_num, est_num)
+
         country_code = country[:3]
         events.append(
             {
@@ -69,8 +117,11 @@ def normalize_finnhub_calendar(
                 "currency": currency,
                 "event": event_name,
                 "impact": impact,
-                "forecast": str(record.get("estimate") or "—"),
+                "forecast": str(raw_estimate) if raw_estimate is not None else "—",
                 "previous": str(record.get("prev") or "—"),
+                "actual": str(raw_actual) if raw_actual is not None else "—",
+                "surpriseScore": surprise_score,
+                "surpriseDirection": surprise_dir,
                 "minutesRemaining": floor(seconds_remaining / 60),
             }
         )
@@ -106,7 +157,9 @@ def normalize_forexfactory_calendar(
                 "time": record.get("date"),
                 "estimate": record.get("forecast"),
                 "prev": record.get("previous"),
+                "actual": record.get("actual"),
             }
         )
 
     return normalize_finnhub_calendar(normalized_records, now)
+

@@ -22,12 +22,17 @@ import type {
   Swing,
   TradeDirection,
   Zone,
+  VolumeMetrics,
 } from '../types/smc';
 import { calculateATR, detectFVGs, detectOrderBlocks, MarketStructureEngine } from './smcCore';
 import { INSTRUMENTS, SupportedSymbol, getInstrumentConfig } from './instrumentConfig';
 import { getGlobalSessionStatus, isSessionPreferredForPair, evaluateNewsRisk } from './sessionTimezones';
 import { dispatchApproachingEntryAlert, dispatchSniperAlert } from '../utils/webhookNotifier';
 import { analyzeCandlestickPatterns, CandlestickPatternMatch } from './candlestickPatterns';
+import { calculateRVOL } from './volumeEngine';
+import { evaluateMacroSurpriseConfluence } from './macroSurpriseEngine';
+import { newsSentimentEngine } from './newsSentimentEngine';
+import { intermarketEngine } from './intermarketEngine';
 
 export interface LiquidityLevels {
   equalHighs: number[];
@@ -71,6 +76,10 @@ export interface PairAnalysis {
   sessionName: string;
   isPreferredSession: boolean;
   newsStatus: string;
+  volumeMetrics?: VolumeMetrics;
+  macroBias?: 'BULLISH' | 'BEARISH' | 'NEUTRAL';
+  sentimentBias?: 'BULLISH' | 'BEARISH' | 'NEUTRAL';
+  sentimentScore?: number;
 
   // Signal & Score
   bias: 'BUY' | 'SELL' | 'WAITING';
@@ -86,6 +95,8 @@ export interface PairAnalysis {
     sessionConfirm: number;    // max 5
     spreadAcceptable: number;  // max 5
     candleConfirm?: number;    // max 5
+    volumeConfirm?: number;    // max 10
+    macroConfirm?: number;     // max 10
   };
   candlestickPattern?: CandlestickPatternMatch;
 
@@ -592,9 +603,34 @@ export function analyzeInstrument(
     scoreCandle = Math.round((candlePattern.reliability / 100) * 5);
   }
 
+  // 8b. Institutional Volume & RVOL Analysis
+  const volMetrics = calculateRVOL(candlesM5.length > 0 ? candlesM5 : candlesM15, 20);
+  let scoreVolume = 0;
+  if (volMetrics.rvol >= 2.0) scoreVolume = 10;
+  else if (volMetrics.rvol >= 1.4) scoreVolume = 6;
+  else if (volMetrics.rvol >= 1.0) scoreVolume = 3;
+
+  // 8c. Macroeconomic Surprise & Headline Sentiment Analysis
+  const macroConfluence = tentativeBias !== 'WAITING'
+    ? evaluateMacroSurpriseConfluence(symbol, tentativeBias, economicEvents)
+    : { scoreBonus: 0, macroBias: 'NEUTRAL' as const, postNewsDriftActive: false, reasons: [] };
+
+  const sentiment = newsSentimentEngine.evaluatePairSentiment(symbol);
+  let scoreMacro = 0;
+  if (macroConfluence.scoreBonus > 0) scoreMacro += 6;
+  else if (macroConfluence.scoreBonus < 0) scoreMacro -= 8;
+
+  if (
+    (tentativeBias === 'BUY' && sentiment.sentimentBias === 'BULLISH') ||
+    (tentativeBias === 'SELL' && sentiment.sentimentBias === 'BEARISH')
+  ) {
+    scoreMacro += 4;
+  }
+  scoreMacro = Math.max(0, Math.min(10, scoreMacro));
+
   const confluenceScore =
     scoreHtf + scoreStructure + scoreLiquidity + scoreBosChoch + scoreObFvg +
-    scoreMomentum + scoreSession + scoreSpread + scoreCandle;
+    scoreMomentum + scoreSession + scoreSpread + scoreCandle + scoreVolume + scoreMacro;
 
   // 9. Stop Loss & Multi-Target Take Profit (Structure-based for Maximum Pips)
   const slBuffer = atr * 0.3;
@@ -777,6 +813,10 @@ export function analyzeInstrument(
     sessionName: sessions.activeSessionName,
     isPreferredSession,
     newsStatus: newsRisk.reason || (newsRisk.isDataUnavailable ? 'NEWS FILTER: DATA UNAVAILABLE' : 'Normal Conditions'),
+    volumeMetrics: volMetrics,
+    macroBias: macroConfluence.macroBias,
+    sentimentBias: sentiment.sentimentBias,
+    sentimentScore: sentiment.sentimentScore,
     bias: tentativeBias,
     signal: signalObj,
     confluenceScore,
@@ -790,6 +830,8 @@ export function analyzeInstrument(
       sessionConfirm: scoreSession,
       spreadAcceptable: scoreSpread,
       candleConfirm: scoreCandle,
+      volumeConfirm: scoreVolume,
+      macroConfirm: scoreMacro,
     },
     candlestickPattern: candlePattern,
     entryPrice: Number(price.toFixed(config.digits)),

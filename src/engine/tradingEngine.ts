@@ -44,6 +44,8 @@ import { analyzeCandlestickPatterns } from './candlestickPatterns';
 import { getGoldMarketSchedule, MarketScheduleStatus } from './marketHours';
 import { evaluateTechnicalStrategies } from './technicalStrategies';
 import { mt5Bridge } from './mt5Bridge';
+import { newsSentimentEngine } from './newsSentimentEngine';
+import { intermarketEngine } from './intermarketEngine';
 import {
   buildSignalRationale,
   persistClosedTrades,
@@ -416,6 +418,10 @@ export class TradingEngine {
     this.restorePersistentMt5State();
     this.refreshScanner();
     this.startEngineLoops();
+    newsSentimentEngine.subscribe(() => {
+      this.invalidateEvents();
+      this.emit('events');
+    });
     if (this.mt5Account.connected) void this.refreshBrokerPairData();
   }
 
@@ -974,14 +980,22 @@ export class TradingEngine {
                     this.candlesM5,
                     this.account.auto_rr,
                     SCORE_THRESHOLD,
-                    'M1'
+                    'M1',
+                    {
+                      symbol: this.activeSymbol,
+                      economicEvents: this.economicCalendarAvailable ? this.economicEvents : undefined,
+                    }
                   ),
                   evaluateConfluence(
                     this.candlesM5,
                     this.candlesM15,
                     this.account.auto_rr,
                     SCORE_THRESHOLD,
-                    'M5'
+                    'M5',
+                    {
+                      symbol: this.activeSymbol,
+                      economicEvents: this.economicCalendarAvailable ? this.economicEvents : undefined,
+                    }
                   ),
                   // M15 scanning for maximum pips
                   evaluateConfluence(
@@ -989,7 +1003,11 @@ export class TradingEngine {
                     this.candlesH1.length > 5 ? this.candlesH1 : this.candlesM15,
                     this.account.auto_rr,
                     SCORE_THRESHOLD,
-                    'M15'
+                    'M15',
+                    {
+                      symbol: this.activeSymbol,
+                      economicEvents: this.economicCalendarAvailable ? this.economicEvents : undefined,
+                    }
                   ),
                 ].filter((signal): signal is Signal => signal !== null)
               : []),
@@ -1498,9 +1516,19 @@ export class TradingEngine {
 
   getEventsSnapshot(): EventsState {
     if (!this._cachedEvents) {
+      const globalIndex = newsSentimentEngine.getGlobalSentimentIndex();
       this._cachedEvents = {
         log: this.logs,
         economicEvents: this.economicEvents,
+        macroSentiment: {
+          newsItems: newsSentimentEngine.getNews(),
+          economicEvents: this.economicEvents,
+          intermarket: intermarketEngine.getStatus(),
+          globalSentimentScore: globalIndex.score,
+          globalSentimentLabel: globalIndex.label,
+          activeCatalysts: newsSentimentEngine.getNews().map((n) => n.title).slice(0, 3),
+          updatedAt: new Date().toISOString(),
+        },
       };
     }
     return this._cachedEvents;

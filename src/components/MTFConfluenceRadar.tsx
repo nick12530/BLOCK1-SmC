@@ -189,6 +189,33 @@ export const MTFConfluenceRadar: React.FC<MTFConfluenceRadarProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Institutional Macro & Volume Footprint Bar */}
+      {signal?.volumeMetrics && (
+        <div className="pt-2 border-t border-zinc-800/80 flex flex-wrap items-center justify-between gap-2 text-[10px]">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className="font-bold text-zinc-400">Order Flow:</span>
+            <span className="px-1.5 py-0.5 rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 font-bold">
+              {signal.volumeMetrics.rvol}x RVOL {signal.volumeMetrics.volumeType}
+            </span>
+            {signal.confluenceBreakdown && signal.confluenceBreakdown.macroSurpriseScore !== 0 && (
+              <span className={`px-1.5 py-0.5 rounded font-bold border ${
+                signal.confluenceBreakdown.macroSurpriseScore > 0
+                  ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
+                  : 'bg-rose-500/20 text-rose-300 border-rose-500/30'
+              }`}>
+                Macro: {signal.confluenceBreakdown.macroSurpriseScore > 0 ? '+Aligned' : 'Headwind'}
+              </span>
+            )}
+            {signal.confluenceBreakdown && (
+              <span className="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30 font-bold">
+                {signal.confluenceBreakdown.verdict.replace('_', ' ')}
+              </span>
+            )}
+          </div>
+          <span className="text-zinc-500">Multi-Factor Confluence</span>
+        </div>
+      )}
     </div>
   );
 };

@@ -13,8 +13,16 @@ import {
   SessionInfo,
   Signal,
   LiquiditySweepInfo,
+  VolumeMetrics,
+  EconomicEvent,
+  MultiFactorConfluenceBreakdown,
 } from '../types/smc';
 import { analyzeGoldCandlestickPatterns } from './candlestickPatterns';
+import { evaluateVolumeConfluence } from './volumeEngine';
+import { evaluateMacroSurpriseConfluence } from './macroSurpriseEngine';
+import { newsSentimentEngine } from './newsSentimentEngine';
+import { intermarketEngine } from './intermarketEngine';
+import type { SupportedSymbol } from './instrumentConfig';
 
 // ============================================================
 // 1. INDICATORS: Wilder's ATR
@@ -436,7 +444,11 @@ export function evaluateConfluence(
   dfHtf: Candle[],
   rr: number = 2.0,
   minScoreThreshold: number = 4.5,
-  timeframe: 'M1' | 'M5' | 'M15' = 'M5'
+  timeframe: 'M1' | 'M5' | 'M15' = 'M5',
+  context?: {
+    symbol?: SupportedSymbol;
+    economicEvents?: EconomicEvent[];
+  }
 ): Signal | null {
   if (dfExec.length < 26 || dfHtf.length < 21) return null;
 
@@ -657,6 +669,69 @@ export function evaluateConfluence(
     ? lastCandle.close > lastCandle.open && (body >= 0.50 * range || lastCandle.close > prevCandle.high)
     : lastCandle.close < lastCandle.open && (body >= 0.50 * range || lastCandle.close < prevCandle.low);
 
+  // 1. Institutional Volume Footprint & RVOL Confluence
+  const volResult = evaluateVolumeConfluence(closed, direction);
+  const smcBaseScore = score;
+  score += volResult.scoreBonus;
+  reasons.push(...volResult.reasons);
+
+  // 2. Macroeconomic Calendar Surprises (CPI, NFP, GDP, Rate Decisions)
+  let macroBonus = 0;
+  if (context?.symbol && context?.economicEvents) {
+    const macroResult = evaluateMacroSurpriseConfluence(context.symbol, direction, context.economicEvents);
+    macroBonus = macroResult.scoreBonus;
+    score += macroResult.scoreBonus;
+    reasons.push(...macroResult.reasons);
+  }
+
+  // 3. Institutional Real-Time News Headline Sentiment
+  let sentimentBonus = 0;
+  if (context?.symbol) {
+    const sentiment = newsSentimentEngine.evaluatePairSentiment(context.symbol);
+    if (
+      (direction === 'BUY' && sentiment.sentimentBias === 'BULLISH') ||
+      (direction === 'SELL' && sentiment.sentimentBias === 'BEARISH')
+    ) {
+      sentimentBonus = 0.5;
+      score += 0.5;
+      reasons.push(`📰 Institutional News Sentiment aligned with ${direction} (+0.5)`);
+    } else if (
+      (direction === 'BUY' && sentiment.sentimentBias === 'BEARISH') ||
+      (direction === 'SELL' && sentiment.sentimentBias === 'BULLISH')
+    ) {
+      sentimentBonus = -0.5;
+      score -= 0.5;
+      reasons.push(`⚠️ Headline Sentiment Drag: News leans against ${direction} (-0.5)`);
+    }
+  }
+
+  // 4. Intermarket Volatility & Correlation Matrix (DXY / Yields / VIX)
+  let intermarketBonus = 0;
+  if (context?.symbol) {
+    const intermarket = intermarketEngine.evaluateConfluence(context.symbol, direction);
+    intermarketBonus = intermarket.scoreBonus;
+    score += intermarket.scoreBonus;
+    reasons.push(...intermarket.reasons);
+  }
+
+  const confluenceBreakdown: MultiFactorConfluenceBreakdown = {
+    smcStructureScore: Number(smcBaseScore.toFixed(2)),
+    volumeRvolScore: Number(volResult.scoreBonus.toFixed(2)),
+    macroSurpriseScore: Number(macroBonus.toFixed(2)),
+    newsSentimentScore: Number(sentimentBonus.toFixed(2)),
+    intermarketScore: Number(intermarketBonus.toFixed(2)),
+    totalScore: Number(score.toFixed(2)),
+    verdict:
+      score >= 6.5
+        ? 'PRIME_INSTITUTIONAL'
+        : score >= 5.0
+        ? 'HIGH_CONFLUENCE'
+        : score >= 4.0
+        ? 'MODERATE'
+        : 'DISQUALIFIED',
+    reasons,
+  };
+
   const triggerConfirmed = isAbsorptionWick || isDisplacementBody;
   if (!triggerConfirmed || score < minScoreThreshold) return null;
   const wickRatio = isBear
@@ -763,6 +838,8 @@ export function evaluateConfluence(
     humanExplanation,
     liquiditySweep: sweep,
     isOutOfSessionException: inAsianConsolidation && isHighProfitException,
+    volumeMetrics: volResult.metrics,
+    confluenceBreakdown,
     triggerPattern: {
       name: patternName,
       bias: isBear ? 'bearish' : 'bullish',

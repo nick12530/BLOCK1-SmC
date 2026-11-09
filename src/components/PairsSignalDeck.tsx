@@ -265,6 +265,27 @@ export const PairsSignalDeck: React.FC<PairsSignalDeckProps> = React.memo(({
                   </span>
                 </div>
 
+                {/* 2b. Macro & Volume Footprint Chips */}
+                <div className="flex items-center justify-between text-[10px] text-slate-400 dark:text-zinc-500 px-0.5">
+                  <span className="flex items-center gap-1 font-semibold">
+                    <span className={`w-1.5 h-1.5 rounded-full ${
+                      (item.volumeMetrics?.rvol ?? 1) >= 1.5 ? 'bg-amber-400 animate-pulse' : 'bg-slate-400 dark:bg-zinc-600'
+                    }`} />
+                    <span>{item.volumeMetrics ? `${item.volumeMetrics.rvol}x RVOL` : '1.0x Vol'}</span>
+                  </span>
+                  {item.macroBias && item.macroBias !== 'NEUTRAL' ? (
+                    <span className={`px-1.5 py-0.5 rounded font-black text-[9px] ${
+                      item.macroBias === 'BULLISH'
+                        ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30'
+                        : 'bg-rose-500/15 text-rose-600 dark:text-rose-400 border border-rose-500/30'
+                    }`}>
+                      Macro: {item.macroBias}
+                    </span>
+                  ) : (
+                    <span className="text-[9px] text-slate-400 dark:text-zinc-500">Macro: Neutral</span>
+                  )}
+                </div>
+
                 {/* 3. Action Button */}
                 <div>
                   {isActive ? (

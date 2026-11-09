@@ -133,6 +133,8 @@ export interface Signal {
   humanExplanation?: HumanSignalExplanation;
   liquiditySweep?: LiquiditySweepInfo;
   isOutOfSessionException?: boolean;
+  volumeMetrics?: VolumeMetrics;
+  confluenceBreakdown?: MultiFactorConfluenceBreakdown;
 }
 
 export interface Position {
@@ -246,7 +248,55 @@ export interface EconomicEvent {
   forecast: string;
   previous: string;
   minutesRemaining: number;
+  actual?: string;
+  surpriseScore?: number; // Normalized deviation (-2.0 to +2.0)
+  surpriseDirection?: 'BULLISH' | 'BEARISH' | 'INLINE' | 'PENDING';
 }
+
+export interface VolumeMetrics {
+  currentVolume: number;
+  avgVolume20: number;
+  rvol: number; // e.g. 2.4 = 240% of 20-period baseline
+  volumeType: 'DISPLACEMENT' | 'ABSORPTION' | 'NEUTRAL' | 'LOW_LIQUIDITY';
+  cvdDelta: number; // Cumulative Volume Delta proxy
+  isInstitutionalSpike: boolean; // rvol >= 1.8
+  isAbsorptionWick: boolean;
+  pocPrice?: number; // Point of Control
+}
+
+export interface NewsSentimentItem {
+  id: string;
+  title: string;
+  source: string;
+  publishedAt: string;
+  sentimentScore: number; // -1.0 (bearish) to +1.0 (bullish)
+  urgency: 'FLASH' | 'BREAKING' | 'ROUTINE';
+  catalystType: 'MACRO_DATA' | 'CENTRAL_BANK' | 'GEOPOLITICAL' | 'EARNINGS' | 'MARKET_FLOW';
+  affectedAssets: string[]; // e.g. ['USD', 'XAUUSD', 'EURUSD']
+  summary: string;
+}
+
+export interface IntermarketStatus {
+  dxyBias: 'bullish' | 'bearish' | 'neutral';
+  dxyChangePct: number;
+  vixLevel: number;
+  vixRegime: 'CALM' | 'ELEVATED' | 'CRISIS';
+  riskRegime: 'RISK_ON' | 'RISK_OFF' | 'NEUTRAL';
+  goldDriver: string;
+  recommendedStopBuffer: number; // ATR SL multiplier (e.g. 1.0 to 1.4)
+}
+
+export interface MultiFactorConfluenceBreakdown {
+  smcStructureScore: number;
+  volumeRvolScore: number;
+  macroSurpriseScore: number;
+  newsSentimentScore: number;
+  intermarketScore: number;
+  totalScore: number;
+  verdict: 'PRIME_INSTITUTIONAL' | 'HIGH_CONFLUENCE' | 'MODERATE' | 'DISQUALIFIED';
+  reasons: string[];
+}
+
 
 export interface MultiTimeframeAlignment {
   tf: 'M1' | 'M5' | 'M15' | 'H1' | 'H4';
@@ -391,9 +441,20 @@ export interface EngineState {
   autoSelectBestScenario?: boolean;
 }
 
+export interface MacroSentimentState {
+  newsItems: NewsSentimentItem[];
+  economicEvents: EconomicEvent[];
+  intermarket: IntermarketStatus;
+  globalSentimentScore: number; // -100 to +100
+  globalSentimentLabel: 'EXTREME_BEARISH' | 'BEARISH' | 'NEUTRAL' | 'BULLISH' | 'EXTREME_BULLISH';
+  activeCatalysts: string[];
+  updatedAt: string;
+}
+
 export interface EventsState {
   log: EngineLog[];
   economicEvents: EconomicEvent[];
+  macroSentiment?: MacroSentimentState;
 }
 
 export interface AccountRiskConfig {
@@ -421,6 +482,7 @@ export interface TerminalSnapshot extends TickerState, MarketState, EngineState 
   positions: Position[];
   log: EngineLog[];
   economicEvents: EconomicEvent[];
+  macroSentiment?: MacroSentimentState;
 }
 
 export type StoreChannel = 'ticker' | 'market' | 'positions' | 'engine' | 'events' | 'scanner';

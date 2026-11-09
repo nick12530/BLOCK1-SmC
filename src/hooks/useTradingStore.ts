@@ -11,6 +11,7 @@ import {
   PositionsState,
   EngineState,
   EventsState,
+  MacroSentimentState,
   ClosedTrade,
   JournalSignalRecord,
   JournalTradeRecord,
@@ -48,6 +49,11 @@ export function useEvents(): EventsState {
   const subscribe = useCallback((cb: () => void) => tradingEngine.on('events', cb), []);
   const getSnapshot = useCallback(() => tradingEngine.getEventsSnapshot(), []);
   return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+}
+
+export function useMacroSentiment(): MacroSentimentState | undefined {
+  const events = useEvents();
+  return events.macroSentiment;
 }
 
 export function useClosedTrades(): ClosedTrade[] {
